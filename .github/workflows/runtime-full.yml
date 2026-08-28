@@ -17,6 +17,6 @@ jobs:
           node-version: 22.19.0
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vitest run packages/acp/acp/tests
+      - run: pnpm exec vitest run packages/acp/acp/tests tests/runtime-portability.e2e.ts
       - run: pnpm exec tsc -p packages/acp/acp/tsconfig.json --noEmit
       - run: pnpm exec tsx scripts/verify-client-runtime-boundary.ts
