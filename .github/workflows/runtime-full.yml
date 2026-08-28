@@ -34,6 +34,8 @@ jobs:
         run: pnpm --dir apps/cli exec tsdown
       - name: Test CLI to persistent ACP Runtime binaries
         run: pnpm exec vitest run apps/cli/tests/acp-binary.spec.ts
+      - name: Test CLI to VS Code durable Session handoff
+        run: pnpm exec vitest run apps/vscode/tests/cross-client.e2e.ts
       - name: Verify client/runtime boundary
         run: pnpm exec tsx scripts/verify-client-runtime-boundary.ts
       - name: Verify tool side-effect boundary
