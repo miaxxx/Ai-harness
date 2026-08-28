@@ -1,0 +1,65 @@
+{
+  "name": "deepseek-harness-vscode",
+  "displayName": "DeepSeek Harness",
+  "description": "Thin ACP client for a standalone DeepSeek Harness Runtime",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "deepseek-ai",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onCommand:deepseekHarness.openSession",
+    "onCommand:deepseekHarness.newSession",
+    "onCommand:deepseekHarness.prompt",
+    "onCommand:deepseekHarness.closeSession",
+    "onCommand:deepseekHarness.showOutput"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "deepseekHarness.openSession",
+        "title": "DeepSeek Harness: Open Durable Session"
+      },
+      {
+        "command": "deepseekHarness.newSession",
+        "title": "DeepSeek Harness: New Session"
+      },
+      {
+        "command": "deepseekHarness.prompt",
+        "title": "DeepSeek Harness: Prompt Active Session"
+      },
+      {
+        "command": "deepseekHarness.closeSession",
+        "title": "DeepSeek Harness: Close Active Session"
+      },
+      {
+        "command": "deepseekHarness.showOutput",
+        "title": "DeepSeek Harness: Show Output"
+      }
+    ],
+    "configuration": {
+      "title": "DeepSeek Harness",
+      "properties": {
+        "deepseekHarness.runtimeCommand": {
+          "type": "string",
+          "default": "dsh-acp-demo",
+          "description": "Replaceable ACP Runtime executable launched by the VS Code Extension Host."
+        },
+        "deepseekHarness.runtimeArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Arguments passed verbatim to the ACP Runtime executable."
+        }
+      }
+    }
+  }
+}
