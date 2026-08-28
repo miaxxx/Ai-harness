@@ -6,7 +6,7 @@
  * internals. The Runtime command is deployment-owned and replaceable.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { Readable as NodeReadable, Writable as NodeWritable } from 'node:stream'
 import {
@@ -42,7 +42,7 @@ function rejectPermission(): RequestPermissionResponse {
   return { outcome: { outcome: 'cancelled' } }
 }
 
-async function waitForExit(child: ChildProcessWithoutNullStreams, graceMs = 3_000): Promise<void> {
+async function waitForExit(child: ChildProcess, graceMs = 3_000): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = once(child, 'exit').then(() => true)
   const timeout = new Promise<false>(resolve => {
