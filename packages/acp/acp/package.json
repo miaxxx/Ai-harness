@@ -41,14 +41,8 @@
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-session-persistence": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@deepseek-ai/dsh-attachment": "workspace:^",
