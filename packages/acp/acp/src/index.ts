@@ -41,7 +41,6 @@ import {
 } from '@agentclientprotocol/sdk'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { SessionId, type SessionEvent, type TurnEndReason } from '@deepseek-ai/dsh-session'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 // Side-effect type import: declaration-merges the approval waterfall answered below.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { AcpContentError, admitAcpPrompt, supportsAcpImagePrompts } from './content.ts'
@@ -51,6 +50,7 @@ import {
   activatePersistedSession,
   DEFAULT_SESSION_LIST_PAGE_SIZE,
   listPersistedSessions,
+  type SessionPersistenceCapability,
   validatePersistentWorkspace,
 } from './session-lifecycle.ts'
 import { projectionToAcpUpdates } from './updates.ts'
@@ -116,7 +116,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
   let conn: AgentSideConnection
   let imagePromptEnabled = false
 
-  const persistence = (): SessionPersistence | undefined => ctx.get('sessionPersistence')
+  const persistence = (): SessionPersistenceCapability | undefined => (
+    ctx.get('sessionPersistence') as SessionPersistenceCapability | undefined
+  )
 
   const ownedRecord = (agent: Agent): SessionRecord | undefined => {
     const record = sessions.get(agent.session.id)
@@ -133,7 +135,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
     return record
   }
 
-  const requirePersistence = (): SessionPersistence => {
+  const requirePersistence = (): SessionPersistenceCapability => {
     const service = persistence()
     if (service === undefined) {
       throw internalError('session persistence is not configured')
@@ -353,11 +355,11 @@ export function apply(ctx: Context, config: AcpConfig): void {
           protocolVersion: PROTOCOL_VERSION,
           agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' },
           agentCapabilities: {
-            loadSession: durable,
             promptCapabilities: { image: imagePromptEnabled, audio: false, embeddedContext: false },
             sessionCapabilities: durable
               ? { close: {}, list: {}, resume: {} }
               : { close: {} },
+            ...(durable ? { loadSession: true } : {}),
           },
           authMethods: [],
         }
