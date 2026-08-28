@@ -2,7 +2,7 @@
 
 [English](runtime-implementation-status.md) | 中文
 
-本分支以一系列小而可独立审查的改动实现 Standalone Agent Runtime 计划。先完成持久 Runtime，再接产品客户端；每个标记完成的阶段都必须有可执行的边界检查或可移植性测试支撑，而不是只更新清单。
+本状态表记录 Standalone Agent Runtime 计划。先完成持久运行时，再接产品客户端；每个标记完成的阶段都有可执行的边界检查或可移植性测试支撑。
 
 ## 阶段 A：持久化 ACP
 
@@ -34,18 +34,18 @@
 
 ## 阶段 C：IDE
 
-- [ ] VS Code 扩展启动可替换的 Harness ACP 子进程
-- [ ] Extension Host 只依赖 ACP / 产品客户端 seam，不导入 Runtime 内部实现
-- [ ] 加载 CLI 创建的会话
-- [ ] 渲染 ACP 更新和权限请求
-- [ ] 扩展清理只关闭 transport / live handle，不删除持久 Session
+- [x] VS Code 扩展启动可替换的 Harness ACP 子进程
+- [x] Extension Host 只依赖 ACP / 产品客户端 seam，不导入 Runtime 内部实现
+- [x] 加载 CLI 创建的会话
+- [x] 渲染 ACP 更新和权限请求
+- [x] 扩展清理只关闭 transport / live handle，不删除持久 Session
 
 ## 阶段 D：Desktop
 
-- [ ] 主进程监管 Harness ACP 子进程
-- [ ] Renderer 保持无特权
-- [ ] 加载 CLI / IDE 创建的会话
-- [ ] 权限 UI 只映射 ACP permission choice
+- [x] 主进程监管 Harness ACP 子进程
+- [x] Renderer 保持无特权
+- [x] 加载 CLI / IDE 创建的会话
+- [x] 权限 UI 只映射 ACP permission choice
 
 ## 阶段 E：工具治理
 

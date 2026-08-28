@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/architecture/runtime-implementation-status.md
-runtime-implementation-status.md: d6a96b389498ad8c571c4add3096e25d4b0c3fb9
-runtime-implementation-status.zh.md: e32dcaf5e36da0a30625b81be867e9aa694b8f09
+runtime-implementation-status.md: ae44baf4d29b3d46a8bb33a42ab4b36fbbdc2c3f
+runtime-implementation-status.zh.md: b5fc66ef4e90e8b3bec395ae79b83321953d3df2

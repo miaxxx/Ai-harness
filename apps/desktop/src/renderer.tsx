@@ -25,7 +25,7 @@ function App(): React.JSX.Element {
   const refreshSessions = useCallback(async (): Promise<void> => {
     const listed = await window.dshDesktop.listSessions()
     setSessions(listed)
-    setSelectedSessionId(current => {
+    setSelectedSessionId((current) => {
       if (current.length > 0 && listed.some(session => session.sessionId === current)) return current
       return listed[0]?.sessionId ?? ''
     })
@@ -48,18 +48,18 @@ function App(): React.JSX.Element {
   }), [activeSessionId, appendEvent])
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     void (async () => {
       try {
         const cwd = await window.dshDesktop.workspace()
-        if (cancelled) return
+        if (controller.signal.aborted) return
         setWorkspace(cwd)
         await refreshSessions()
       } catch (error: unknown) {
-        if (!cancelled) appendEvent(`ERROR ${errorText(error)}`)
+        if (!controller.signal.aborted) appendEvent(`ERROR ${errorText(error)}`)
       }
     })()
-    return () => { cancelled = true }
+    return () => { controller.abort() }
   }, [appendEvent, refreshSessions])
 
   const createSession = async (): Promise<void> => {

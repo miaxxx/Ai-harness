@@ -2,13 +2,13 @@
 
 English | [中文](README.zh.md)
 
-This application is the phase-zero macOS Electron proof of concept. It keeps the existing DeepSeek Harness Agent composition in an independent Node child process, removes the Web server and browser client from that composition, and carries the existing typed API through Electron without opening a local TCP port.
+This application is the phase-zero macOS Electron proof of concept. Its main process starts an independent standalone ACP Runtime through stdio and exposes only typed Session operations to the Renderer without opening a local TCP port.
 
 ## Process ownership
 
-The Electron main process owns the window, the `dsh-app://` resource protocol, IPC admission, and Agent Host supervision. Its Renderer is sandboxed with context isolation and no Node integration. The preload exposes only request start/resume/cancel, frame subscription, and Host restart; it does not expose generic IPC, filesystem, shell, or process primitives.
+The Electron main process owns the window, the `dsh-app://` resource protocol, IPC admission, and ACP Runtime supervision. Its Renderer is sandboxed with context isolation and no Node integration. The preload exposes workspace lookup, Session list/create/load/close, prompt/cancel, frame subscription, and Runtime restart; it does not expose generic IPC, filesystem, shell, or process primitives.
 
-The Agent Host starts from the existing Web profile plus `host.patch.yml`. The overlay retains Host plugins and agent presets, disables the Web server and all browser-client plugins, installs the native directory picker, and adds the stdio Fetch carrier. The main process translates transport frames only; API envelopes remain owned and validated by `@deepseek-ai/dsh-host-apiproxy`.
+The main process uses `@deepseek-ai/dsh-acp-client` to launch the built ACP example Runtime by default. `DSH_DESKTOP_ACP_COMMAND` and `DSH_DESKTOP_ACP_ARGS_JSON` replace that command when a different Runtime is required. It maps ACP Session updates into display frames and presents ACP permission choices; the Runtime still owns permission policy and sandbox enforcement.
 
 ## Run the preview
 
@@ -22,9 +22,9 @@ The command builds the Host libraries and Electron application before opening th
 
 ## Current scope
 
-- The main process supervises one independent Agent Host and terminates it before quitting.
-- `events.mux` and `events.host` remain independent long-lived streams over one versioned stdio connection.
-- Request cancellation remains per-request; it does not close either event stream.
-- The technical Renderer can describe the Host, create a session, submit a prompt, cancel the active turn, and display raw mux frames.
+- The main process supervises one independent ACP Runtime and terminates it before quitting.
+- Session list and load use the Runtime's durable ACP operations; loading replays presentation updates.
+- Session close releases the live handle without deleting durable history.
+- The technical Renderer can create and load Sessions, submit a prompt, cancel the active turn, answer permission requests, and display ACP update frames.
 
 This is not a distributable desktop release. It does not yet package an ordinary Node runtime or native modules into a `.app`, provide code signing, notarization, DMG generation, updates, crash recovery, a first-run flow, or the full product interface. Those remain later phases of the attached desktop plan.

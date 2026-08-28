@@ -36,10 +36,14 @@ const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.u
 type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
 type SessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item): item is string => typeof item === 'string')
+}
+
 function parseRuntimeArgs(value: string | undefined): string[] {
   if (value === undefined || value.trim().length === 0) return []
   const parsed: unknown = JSON.parse(value)
-  if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+  if (!isStringArray(parsed)) {
     throw new Error('DSH_DESKTOP_ACP_ARGS_JSON must be a JSON array of strings')
   }
   return parsed
@@ -161,12 +165,12 @@ class AcpRuntimeSupervisor {
     }
     this.publishStatus('starting')
     const pending = connectAcpRuntime(desktopRuntimeSpec(), {
-      onSessionUpdate: notification => {
+      onSessionUpdate: (notification) => {
         const frame = renderSessionUpdate(notification)
         if (frame !== undefined) this.publish(frame)
       },
       onPermissionRequest: request => this.requestPermission(request),
-      onRuntimeStderr: text => { process.stderr.write(`[desktop-runtime] ${text}`) },
+      onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) },
     })
     this.connecting = pending
     try {
@@ -222,7 +226,7 @@ class AcpRuntimeSupervisor {
     return result.sessions.map(session => ({
       sessionId: session.sessionId,
       cwd: session.cwd,
-      ...(session.title === undefined ? {} : { title: session.title }),
+      ...(session.title === undefined || session.title === null ? {} : { title: session.title }),
     }))
   }
 
@@ -249,7 +253,7 @@ class AcpRuntimeSupervisor {
   cancel(sessionId: string): void {
     void this.runtime()
       .then(runtime => runtime.client.cancel({ sessionId }))
-      .catch(error => {
+      .catch((error: unknown) => {
         this.publishStatus('failed', error instanceof Error ? error.message : String(error))
       })
   }

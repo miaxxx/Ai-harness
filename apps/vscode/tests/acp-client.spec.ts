@@ -91,9 +91,9 @@ describe('VS Code ACP client ownership', () => {
     const updates: SessionNotification[] = []
     const client = new VscodeAcpClient(
       { command: 'runtime', args: [], cwd: '/workspace' },
-      { onSessionUpdate: notification => { updates.push(notification) } },
+      { onSessionUpdate: (notification) => { updates.push(notification) } },
     )
-    fixture.loadSession.mockImplementation(async (request: { sessionId: string }) => {
+    fixture.loadSession.mockImplementation((request: { sessionId: string }) => {
       const replay: SessionNotification[] = [
         {
           sessionId: request.sessionId,
@@ -112,7 +112,7 @@ describe('VS Code ACP client ownership', () => {
           },
         },
       ]
-      for (const notification of replay) await handlers?.onSessionUpdate(notification)
+      for (const notification of replay) void handlers?.onSessionUpdate(notification)
       return {}
     })
 
@@ -153,8 +153,8 @@ describe('VS Code ACP client ownership', () => {
       sessionId: 'cli-session',
       toolCall: { toolCallId: 'call-1' },
       options: [
-        { optionId: 'allow-once', kind: 'allow_once' },
-        { optionId: 'reject-once', kind: 'reject_once' },
+        { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject-once', name: 'Reject once', kind: 'reject_once' },
       ],
     }
     await expect(handlers?.onPermissionRequest?.(request)).resolves.toEqual({

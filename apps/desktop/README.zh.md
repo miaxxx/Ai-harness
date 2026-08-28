@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-本应用是 macOS Electron 第零阶段技术验证。它把现有 DeepSeek Harness agent（智能体）组合保留在独立 Node 子进程中，从该组合移除 Web 服务器和浏览器客户端，并通过 Electron 承载既有类型化 API，不开放本地 TCP 端口。
+本应用是 macOS Electron 第零阶段技术验证。主进程通过 stdio 启动独立的 ACP（Agent Client Protocol）运行时，并且只向 Renderer 提供类型化的 Session（会话）操作，不开放本地 TCP 端口。
 
 ## 进程职责
 
-Electron 主进程负责窗口、`dsh-app://` 资源协议、IPC 准入和 Agent Host 监督。Renderer 运行在沙箱内，启用上下文隔离且不集成 Node。preload 只暴露请求开始／恢复／取消、帧订阅和 Host 重启；它不暴露通用 IPC、文件系统、shell 或进程原语。
+Electron 主进程负责窗口、`dsh-app://` 资源协议、IPC 准入和 ACP 运行时监督。Renderer 运行在沙箱内，启用上下文隔离且不集成 Node。preload 只暴露工作区读取、Session 列出／创建／加载／关闭、提示词／取消、帧订阅和运行时重启；它不暴露通用 IPC、文件系统、shell 或进程原语。
 
-Agent Host 从现有 Web profile 加 `host.patch.yml` 启动。该覆盖层保留 Host 插件和 agent preset，禁用 Web 服务器及全部浏览器客户端插件，安装原生目录选择器，并添加 stdio Fetch 载体。主进程只转换传输帧；API 信封仍由 `@deepseek-ai/dsh-host-apiproxy` 拥有并校验。
+主进程使用 `@deepseek-ai/dsh-acp-client` 默认启动已构建的 ACP 示例运行时。需要其他运行时时，可用 `DSH_DESKTOP_ACP_COMMAND` 和 `DSH_DESKTOP_ACP_ARGS_JSON` 替换该命令。主进程把 ACP Session 更新映射为展示帧，并呈现 ACP 权限选项；运行时仍拥有权限策略与沙箱强制执行。
 
 ## 运行预览
 
@@ -22,9 +22,9 @@ pnpm run desktop
 
 ## 当前范围
 
-- 主进程监督一个独立 Agent Host，并在退出前终止它。
-- `events.mux` 与 `events.host` 仍是同一条带版本 stdio 连接上的两个独立长连接流。
-- 请求取消仍按请求生效，不会关闭任一事件流。
-- 技术验证 Renderer 可以描述 Host、创建会话、提交提示词、取消活动轮次并显示原始 mux 帧。
+- 主进程监督一个独立 ACP 运行时，并在退出前终止它。
+- Session 列表和加载使用 Runtime 的持久 ACP 操作；加载会回放展示更新。
+- Session 关闭会释放实时句柄，不删除持久历史。
+- 技术验证 Renderer 可以创建和加载 Session、提交提示词、取消活动轮次、回答权限请求，并显示 ACP 更新帧。
 
 这还不是可分发的桌面版本。它尚未把普通 Node 运行时或原生模块打包进 `.app`，也未提供代码签名、公证、DMG 生成、更新、崩溃恢复、首次运行流程或完整产品界面。这些仍属于所附桌面计划的后续阶段。

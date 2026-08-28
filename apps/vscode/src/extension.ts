@@ -47,10 +47,11 @@ class ExtensionHost implements vscode.Disposable {
 
   private workspaceRoot(): string {
     const folders = vscode.workspace.workspaceFolders
-    if (folders === undefined || folders.length === 0) {
+    const folder = folders?.[0]
+    if (folder === undefined) {
       throw new Error('Open a VS Code workspace before using DeepSeek Harness')
     }
-    return folders[0]!.uri.fsPath
+    return folder.uri.fsPath
   }
 
   private runtimeSpec(cwd: string): AcpRuntimeSpec {
@@ -87,12 +88,12 @@ class ExtensionHost implements vscode.Disposable {
     if (this.active?.cwd === cwd) return this.active.client
     await this.active?.client.dispose()
     const client = new VscodeAcpClient(this.runtimeSpec(cwd), {
-      onSessionUpdate: notification => {
+      onSessionUpdate: (notification) => {
         const rendered = renderUpdate(notification)
         if (rendered !== undefined) this.output.appendLine(rendered)
       },
       onPermissionRequest: request => this.requestPermission(request),
-      onRuntimeStderr: text => {
+      onRuntimeStderr: (text) => {
         for (const line of text.split(/\r?\n/u)) {
           if (line.length > 0) this.output.appendLine(`[runtime] ${line}`)
         }
@@ -178,7 +179,8 @@ let host: ExtensionHost | undefined
 
 /** Activate the ACP-only VS Code product client. */
 export function activate(context: vscode.ExtensionContext): void {
-  host = new ExtensionHost()
+  const extensionHost = new ExtensionHost()
+  host = extensionHost
   const command = (name: string, action: () => Promise<void>): vscode.Disposable =>
     vscode.commands.registerCommand(name, async () => {
       try {
@@ -189,11 +191,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     })
   context.subscriptions.push(
-    host,
-    command('dsh.createSession', () => host!.createSession()),
-    command('dsh.openSession', () => host!.openSession()),
-    command('dsh.prompt', () => host!.prompt()),
-    command('dsh.closeSession', () => host!.closeSession()),
+    extensionHost,
+    command('dsh.createSession', () => extensionHost.createSession()),
+    command('dsh.openSession', () => extensionHost.openSession()),
+    command('dsh.prompt', () => extensionHost.prompt()),
+    command('dsh.closeSession', () => extensionHost.closeSession()),
   )
 }
 

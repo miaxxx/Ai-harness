@@ -23,13 +23,13 @@ interface RunJson {
     sessionId: string
     update: {
       sessionUpdate: string
-      content?: { type: string, text?: string }
+      content?: { type: string; text?: string }
     }
   }>
 }
 
 interface ListJson {
-  sessions: Array<{ sessionId: string, cwd: string }>
+  sessions: Array<{ sessionId: string; cwd: string }>
   nextCursor?: string
 }
 
@@ -50,7 +50,7 @@ async function runCli(
   args: readonly string[],
   cwd: string,
   env: Readonly<Record<string, string>>,
-): Promise<{ code: number, stdout: string, stderr: string }> {
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const result = await execa(process.execPath, [dshBin, ...args], {
     cwd,
     input: '',

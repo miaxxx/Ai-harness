@@ -7,6 +7,6 @@
   },
   "include": ["src/main.ts", "src/preload.ts", "src/shared.ts"],
   "references": [
-    { "path": "../../packages/host/apiproxy" }
+    { "path": "../../packages/acp/acp-client" }
   ]
 }

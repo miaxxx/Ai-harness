@@ -63,7 +63,7 @@ async function createFromCli(
 }
 
 function transcript(updates: readonly SessionNotification[]): string[] {
-  return updates.flatMap(notification => {
+  return updates.flatMap((notification) => {
     const update = notification.update
     if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') return []
     if (update.content.type !== 'text') return []

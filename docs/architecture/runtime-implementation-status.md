@@ -2,7 +2,7 @@
 
 English | [中文](runtime-implementation-status.zh.md)
 
-This branch implements the Standalone Agent Runtime plan as a sequence of small, independently reviewable changes. Durable Runtime work lands before product-client adapters, and every completed phase is backed by an executable boundary or portability gate rather than a checklist-only claim.
+This tracker records the Standalone Agent Runtime plan. Durable Runtime work precedes product-client adapters, and each completed phase has an executable boundary or portability check.
 
 ## Phase A — Persistent ACP
 
@@ -34,18 +34,18 @@ Acceptance: the CI gate builds the authoritative host release closure, builds th
 
 ## Phase C — IDE
 
-- [ ] VS Code extension launches a replaceable Harness ACP subprocess
-- [ ] Extension host imports ACP/product-client seams only, never Runtime internals
-- [ ] Loads sessions created by CLI
-- [ ] Renders ACP updates and permission requests
-- [ ] Extension teardown closes transport/live handles without deleting durable Sessions
+- [x] VS Code extension launches a replaceable Harness ACP subprocess
+- [x] Extension host imports ACP/product-client seams only, never Runtime internals
+- [x] Loads sessions created by CLI
+- [x] Renders ACP updates and permission requests
+- [x] Extension teardown closes transport/live handles without deleting durable Sessions
 
 ## Phase D — Desktop
 
-- [ ] Main process supervises Harness ACP subprocess
-- [ ] Renderer remains privilege-free
-- [ ] Loads sessions created by CLI/IDE
-- [ ] Permission UI maps to ACP permission choices only
+- [x] Main process supervises Harness ACP subprocess
+- [x] Renderer remains privilege-free
+- [x] Loads sessions created by CLI/IDE
+- [x] Permission UI maps to ACP permission choices only
 
 ## Phase E — Tool governance
 

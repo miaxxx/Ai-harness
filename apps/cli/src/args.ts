@@ -71,6 +71,35 @@ interface AcpRuntimeOptions {
 
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
 
+/** Return the first ACP subcommand that follows a root profile selection. */
+function profileArgumentBoundary(argv: readonly string[]): number | undefined {
+  let profileSelected = false
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]
+    if (argument === undefined) return undefined
+    if (argument === '--profile') {
+      profileSelected = true
+      index += 1
+      continue
+    }
+    if (argument.startsWith('--profile=')) {
+      profileSelected = true
+      continue
+    }
+    if (argument === '--patch') {
+      index += 1
+      continue
+    }
+    if (argument.startsWith('--patch=') || argument === '--dump-config' || argument === '--dump-default-config') continue
+    if (profileSelected && (argument === 'run' || argument === 'sessions')) {
+      const acpInvocation = argv.slice(index + 1).some(next => next === '--runtime-command' || next.startsWith('--runtime-command='))
+      return acpInvocation ? undefined : index
+    }
+    return undefined
+  }
+  return undefined
+}
+
 const HELP_EXAMPLES = `
 Examples:
   dsh run --runtime-command dsh-acp-runtime "fix the tests"
@@ -156,7 +185,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .option('--resume', 'restore --session without replaying historical presentation updates')
     .option('--json', 'emit one machine-readable JSON result')
     .argument('<prompt...>', 'task to send through session/prompt')
-    .action((prompt: string[], options: AcpRuntimeOptions & { session?: string, resume?: boolean }) => {
+    .action((prompt: string[], options: AcpRuntimeOptions & { session?: string; resume?: boolean }) => {
       rejectParentOptions('run')
       if (options.resume === true && options.session === undefined) run.error('error: --resume requires --session <id>')
       if (options.session === '') run.error('error: --session needs an id')
@@ -215,10 +244,22 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       resolved = { mode: 'plugin', profile: options.profile, args }
     })
 
+  const profileBoundary = profileArgumentBoundary(argv)
+  const parsedArgv = profileBoundary === undefined
+    ? argv
+    : argv.slice(0, profileBoundary)
   try {
-    program.parse(argv, { from: 'user' })
+    program.parse(parsedArgv, { from: 'user' })
   } catch (error) {
     return process.exit(error instanceof CommanderError ? error.exitCode : 1)
+  }
+  if (profileBoundary !== undefined && resolved !== undefined) {
+    const appArgs = argv.slice(profileBoundary)
+    if (resolved.mode === 'profile') {
+      resolved = { ...resolved, args: [...resolved.args, ...appArgs] }
+    } else if (resolved.mode === 'dump-config') {
+      program.error(`error: config dumps take no app arguments, got ${appArgs.map(argument => JSON.stringify(argument)).join(' ')}`)
+    }
   }
   /* v8 ignore next -- an action resolves or Commander throws */
   if (resolved === undefined) throw new Error('dsh: no invocation resolved')

@@ -21,7 +21,7 @@ const PROCESS_IO: AcpCliIo = {
   stdin: process.stdin,
 }
 
-function textFromUpdate(notification: SessionNotification): { role: 'user' | 'assistant', text: string } | undefined {
+function textFromUpdate(notification: SessionNotification): { role: 'user' | 'assistant'; text: string } | undefined {
   const update = notification.update
   if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') return undefined
   if (update.content.type !== 'text') return undefined
@@ -46,7 +46,7 @@ async function requestPermission(
   const allow = request.options.find(option => option.kind === 'allow_once' || option.kind === 'allow_always')
   // Machine mode and redirected stdin are fail-closed: product automation must
   // never turn a missing human prompt into implicit permission.
-  if (json || io.stdin.isTTY !== true || io.stdout.isTTY !== true || allow === undefined) {
+  if (json || ! io.stdin.isTTY || ! io.stdout.isTTY || allow === undefined) {
     return { outcome: { outcome: 'cancelled' } }
   }
 
