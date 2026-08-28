@@ -2,7 +2,9 @@
  * Ratchet migrated product clients away from Agent Runtime internals.
  *
  * This is intentionally a small repository guard, not a policy framework.
- * Add a client root here only after that surface has migrated behind ACP.
+ * Add a client surface here only after that surface has migrated behind ACP.
+ * Runtime bootstrap code may coexist in the same package as long as it stays
+ * outside the protected source subtree.
  *
  * Run directly:
  *   pnpm exec tsx scripts/verify-client-runtime-boundary.ts
@@ -13,11 +15,23 @@ import { join, resolve, sep } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 
+interface ProtectedClientSurface {
+  root: string
+  sourceGlob: string
+  scanManifest: boolean
+}
+
 /** Client surfaces whose runtime dependency migration is complete enough to enforce. */
-const PROTECTED_CLIENT_ROOTS = ['apps/desktop'] as const
+const PROTECTED_CLIENT_SURFACES: readonly ProtectedClientSurface[] = [
+  { root: 'apps/desktop', sourceGlob: 'src/**/*.{ts,tsx,js,jsx,mjs,cjs}', scanManifest: true },
+  // apps/cli still owns legitimate profile/Runtime bootstrap code. Only the
+  // product client path is ACP-only and therefore protected today.
+  { root: 'apps/cli', sourceGlob: 'src/client/**/*.{ts,tsx,js,jsx,mjs,cjs}', scanManifest: false },
+]
 
 /** Runtime-internal package families product clients must not reach directly. */
 const FORBIDDEN_RUNTIME_PACKAGES = [
+  '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-agent-loop',
   '@deepseek-ai/dsh-tools',
   '@deepseek-ai/dsh-session',
@@ -54,9 +68,9 @@ function sourceSpecifiers(source: string): string[] {
   return found
 }
 
-function scanSources(clientRoot: string): Violation[] {
+function scanSources(clientRoot: string, sourceGlob: string): Violation[] {
   const violations: Violation[] = []
-  for (const rel of globSync('src/**/*.{ts,tsx,js,jsx,mjs,cjs}', { cwd: clientRoot })) {
+  for (const rel of globSync(sourceGlob, { cwd: clientRoot })) {
     const file = join(clientRoot, rel)
     const source = readFileSync(file, 'utf8')
     for (const specifier of sourceSpecifiers(source)) {
@@ -96,14 +110,15 @@ function scanManifest(clientRoot: string): Violation[] {
 
 function main(): void {
   const violations: Violation[] = []
-  for (const rel of PROTECTED_CLIENT_ROOTS) {
-    const clientRoot = join(root, rel)
+  for (const surface of PROTECTED_CLIENT_SURFACES) {
+    const clientRoot = join(root, surface.root)
     if (!existsSync(clientRoot)) {
-      console.error(`verify-client-runtime-boundary: configured client root is missing: ${rel}`)
+      console.error(`verify-client-runtime-boundary: configured client root is missing: ${surface.root}`)
       process.exitCode = 1
       return
     }
-    violations.push(...scanManifest(clientRoot), ...scanSources(clientRoot))
+    if (surface.scanManifest) violations.push(...scanManifest(clientRoot))
+    violations.push(...scanSources(clientRoot, surface.sourceGlob))
   }
 
   const unique = [...new Map(violations.map(v => [`${v.file}\0${v.dependency}\0${v.source}`, v])).values()]
@@ -116,7 +131,7 @@ function main(): void {
     return
   }
 
-  console.log(`verify-client-runtime-boundary: ${PROTECTED_CLIENT_ROOTS.length} protected client surface(s) clean.`)
+  console.log(`verify-client-runtime-boundary: ${PROTECTED_CLIENT_SURFACES.length} protected client surface(s) clean.`)
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? '')) main()
