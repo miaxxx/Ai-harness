@@ -5,7 +5,15 @@ import { isAbsolute } from 'node:path'
 import type { ListSessionsRequest, ListSessionsResponse } from '@agentclientprotocol/sdk'
 import type { AgentHandle, AgentOptions, AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+
+/**
+ * The minimal persistence read face ACP needs directly. The concrete
+ * SessionPersistence implementation remains owned by the runtime composition;
+ * AgentRegistry.resume() consumes the full seam internally.
+ */
+export interface SessionPersistenceCapability {
+  list(signal?: AbortSignal): Promise<SessionHeader[]>
+}
 
 export const DEFAULT_SESSION_LIST_PAGE_SIZE = 100
 
@@ -29,7 +37,7 @@ export function validatePersistentWorkspace(
 
 /** Find one top-level persisted session and validate the workspace takeover. */
 export async function resumableHeader(
-  persistence: SessionPersistence,
+  persistence: SessionPersistenceCapability,
   sessionId: SessionId,
   cwd: string,
 ): Promise<SessionHeader> {
@@ -44,7 +52,7 @@ export async function resumableHeader(
 /** Resume through the existing AgentRegistry; this is not a second Resume Engine. */
 export async function activatePersistedSession(
   agents: AgentRegistry,
-  persistence: SessionPersistence,
+  persistence: SessionPersistenceCapability,
   options: {
     sessionId: SessionId
     cwd: string
@@ -60,7 +68,7 @@ export async function activatePersistedSession(
 
 /** Boundary-only cursor pagination over the persistence seam's lightweight list. */
 export async function listPersistedSessions(
-  persistence: SessionPersistence,
+  persistence: SessionPersistenceCapability,
   params: ListSessionsRequest,
   active: ReadonlySet<SessionId>,
   pageSize = DEFAULT_SESSION_LIST_PAGE_SIZE,
