@@ -18,6 +18,9 @@
       "path": "../../vendor/include"
     },
     {
+      "path": "../../packages/acp/acp-client"
+    },
+    {
       "path": "../../packages/boot/app-boot"
     },
     {
