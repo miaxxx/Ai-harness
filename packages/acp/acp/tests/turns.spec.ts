@@ -59,10 +59,10 @@ describe('ACP prompt lifecycle', () => {
     ])
     const sessionId = await newSession(harness)
     await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'show it' }] })
-    expect(harness.updates).toContainEqual({
+    expect(harness.updates).toContainEqual(expect.objectContaining({
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'image', data: 'AQ==', mimeType: 'image/png' },
-    })
+    }))
   })
 
   it('preserves committed text/image/text order on the ACP wire', async () => {
@@ -82,7 +82,12 @@ describe('ACP prompt lifecycle', () => {
 
     await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'show it' }] })
 
-    expect(harness.updates).toEqual([
+    const agentUpdates = harness.updates.flatMap(update => (
+      update.sessionUpdate === 'agent_message_chunk'
+        ? [{ sessionUpdate: update.sessionUpdate, content: update.content }]
+        : []
+    ))
+    expect(agentUpdates).toEqual([
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'before' } },
       { sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'Ag==', mimeType: 'image/jpeg' } },
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'after' } },
@@ -132,7 +137,11 @@ describe('ACP prompt lifecycle', () => {
 
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'show it' }] }))
       .rejects.toThrow(/assistant output delivery failed/)
-    expect(harness.updates).toEqual([])
+    expect(harness.updates).toHaveLength(1)
+    expect(harness.updates[0]).toEqual(expect.objectContaining({
+      sessionUpdate: 'user_message_chunk',
+      content: { type: 'text', text: 'show it' },
+    }))
   })
 
   it('rejects a failed turn and never publishes its partial chunks', async () => {

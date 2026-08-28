@@ -1,5 +1,7 @@
 # Standalone Runtime Boundary
 
+English | [中文](runtime-boundary.zh.md)
+
 Ai-harness is a **standalone, event-sourced, tool-governed, sandbox-aware Agent Runtime**. Product surfaces such as Desktop, CLI, and IDE are clients of that runtime; they must not become alternate owners of agent logic.
 
 ## Architecture invariants
@@ -54,6 +56,10 @@ The verifier lives at `scripts/verify-client-runtime-boundary.ts` and should sta
 Internal Session events are not wire DTOs. ACP must project durable/runtime read models into ACP-specific semantic updates. Historical replay and live streaming must share the same projection semantics so reconnect behavior cannot drift from live behavior.
 
 Likewise, ACP DTOs stay at the protocol boundary and must not leak into the Agent loop or persistence layer.
+
+## Session concurrency contract
+
+P0 does not provide cross-process writer exclusion. A persisted session may be active in only one Harness process at a time. Clients hand a session off sequentially by closing the live ACP session before another process loads or resumes it. Distributed locks, leases, CRDTs, and a local daemon are deliberately deferred until a real concurrent multi-client requirement exists.
 
 ## Non-goals for this phase
 

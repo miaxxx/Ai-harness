@@ -18,20 +18,22 @@
 需要：`agents`
 
 ```ts config-catalog
-/** Plugin config: the provider/model selection used for each ACP-created agent. */
+/** Configures ACP defaults and its protocol stream. */
 export interface AcpConfig {
-  /** Provider route for created agents. */
+  /** Default registered LLM provider for new sessions. */
   provider?: string
-  /** Model name for created agents. */
+  /** Default provider model for new sessions. */
   model?: string
-  /** Runtime-only transport override; production uses stdio. */
+  /** Maximum number of persisted sessions returned by one list page. */
+  sessionListPageSize?: number
+  /** Protocol stream; omitted to use JSON-RPC over process stdin and stdout. */
   stream?: Stream
 }
 ```
 
 依赖：`Stream`（`@agentclientprotocol/sdk`）
 
-来源：[`packages/acp/acp/src/index.ts:71`](../packages/acp/acp/src/index.ts)
+来源：[`packages/acp/acp/src/index.ts:75`](../packages/acp/acp/src/index.ts)
 
 <a id="deepseek-aidsh-acp-demo"></a>
 

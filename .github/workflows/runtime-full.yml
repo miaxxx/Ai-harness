@@ -1,0 +1,34 @@
+name: Standalone runtime
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  acp-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Test persistent ACP runtime
+        run: pnpm exec vitest run packages/acp/acp/tests tests/runtime-portability.e2e.ts
+      # This repository uses TypeScript project references. A naked
+      # `tsc -p packages/acp/acp/tsconfig.json --noEmit` asks ACP to consume
+      # declaration outputs for upstream packages before those projects have
+      # been built, producing TS6305 in a clean CI checkout. Type-check the
+      # authoritative host aggregate in build mode so referenced projects are
+      # built/validated in dependency order and ACP is checked in the same
+      # graph as the repository's normal host contracts.
+      - name: Typecheck host project graph
+        run: pnpm exec tsc -b tsconfig.host.json --pretty false
+      - name: Verify client/runtime boundary
+        run: pnpm exec tsx scripts/verify-client-runtime-boundary.ts
+      - name: Verify tool side-effect boundary
+        run: pnpm exec tsx scripts/verify-side-effect-boundaries.ts

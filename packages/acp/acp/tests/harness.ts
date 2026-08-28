@@ -180,10 +180,13 @@ export async function makeBridgeHarness(options: {
   persona?: string
   imageCapable?: boolean
   attachments?: boolean
+  /** Mount runtime capabilities after SessionStore and before AgentLoop/ACP. */
+  mount?: (ctx: Context) => Promise<void>
 } = {}): Promise<BridgeHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: options.persona ?? '' } })
+  await options.mount?.(ctx)
   if (options.attachments !== false) await ctx.plugin(MemoryAttachmentStore)
   const loopFiber = await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
