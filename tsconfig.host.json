@@ -250,6 +250,7 @@
     { "path": "./packages/runtime-diagnostics/invariants" },
     { "path": "./packages/test-support/agent-loop-testkit" },
     { "path": "./packages/acp/acp" },
+    { "path": "./packages/acp/acp-client" },
     { "path": "./packages/examples/acp-demo" },
     { "path": "./packages/bundle/base" },
     { "path": "./packages/bundle/headless" },
