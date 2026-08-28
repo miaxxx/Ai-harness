@@ -30,7 +30,7 @@ jobs:
       - name: Build ACP Runtime acceptance binary
         run: pnpm --dir packages/examples/acp-demo exec tsdown
       - name: Test CLI to persistent ACP Runtime binaries
-        run: pnpm exec vitest run apps/cli/tests/acp-binary.e2e.ts
+        run: pnpm exec vitest run apps/cli/tests/acp-binary.spec.ts
       - name: Verify client/runtime boundary
         run: pnpm exec tsx scripts/verify-client-runtime-boundary.ts
       - name: Verify tool side-effect boundary
