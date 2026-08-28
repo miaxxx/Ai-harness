@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AcpRuntimeConnection } from '@deepseek-ai/dsh-acp-client'
+import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk'
+import type { AcpClientHandlers, AcpRuntimeConnection } from '@deepseek-ai/dsh-acp-client'
 import { VscodeAcpClient } from '../src/acp-client.ts'
 
 const mock = vi.hoisted(() => ({ connect: vi.fn() }))
@@ -78,6 +79,88 @@ describe('VS Code ACP client ownership', () => {
       mcpServers: [],
     })
     expect(client.activeSessionId).toBe('persisted-session')
+  })
+
+  it('delivers load replay through the same ACP update handler and continues the CLI-created Session', async () => {
+    const fixture = makeRuntime()
+    let handlers: AcpClientHandlers | undefined
+    mock.connect.mockImplementation(async (_spec, nextHandlers: AcpClientHandlers) => {
+      handlers = nextHandlers
+      return fixture.runtime
+    })
+    const updates: SessionNotification[] = []
+    const client = new VscodeAcpClient(
+      { command: 'runtime', args: [], cwd: '/workspace' },
+      { onSessionUpdate: notification => { updates.push(notification) } },
+    )
+    fixture.loadSession.mockImplementation(async (request: { sessionId: string }) => {
+      const replay: SessionNotification[] = [
+        {
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId: 'cli-user',
+            content: { type: 'text', text: 'created from CLI' },
+          },
+        },
+        {
+          sessionId: request.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'cli-agent',
+            content: { type: 'text', text: 'persisted answer' },
+          },
+        },
+      ]
+      for (const notification of replay) await handlers?.onSessionUpdate(notification)
+      return {}
+    })
+
+    await client.loadSession('cli-session', '/workspace')
+    await client.prompt('continue from IDE')
+
+    expect(updates.map(notification => notification.update.sessionUpdate)).toEqual([
+      'user_message_chunk',
+      'agent_message_chunk',
+    ])
+    expect(fixture.prompt).toHaveBeenCalledWith({
+      sessionId: 'cli-session',
+      prompt: [{ type: 'text', text: 'continue from IDE' }],
+    })
+  })
+
+  it('passes the Runtime permission request to the IDE-owned ACP approval handler', async () => {
+    const fixture = makeRuntime()
+    let handlers: AcpClientHandlers | undefined
+    mock.connect.mockImplementation(async (_spec, nextHandlers: AcpClientHandlers) => {
+      handlers = nextHandlers
+      return fixture.runtime
+    })
+    const seen: RequestPermissionRequest[] = []
+    const client = new VscodeAcpClient(
+      { command: 'runtime', args: [], cwd: '/workspace' },
+      {
+        onSessionUpdate() {},
+        onPermissionRequest(request) {
+          seen.push(request)
+          return Promise.resolve({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+        },
+      },
+    )
+    await client.listSessions('/workspace')
+
+    const request: RequestPermissionRequest = {
+      sessionId: 'cli-session',
+      toolCall: { toolCallId: 'call-1' },
+      options: [
+        { optionId: 'allow-once', kind: 'allow_once' },
+        { optionId: 'reject-once', kind: 'reject_once' },
+      ],
+    }
+    await expect(handlers?.onPermissionRequest?.(request)).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+    expect(seen).toEqual([request])
   })
 
   it('lists durable Sessions without inventing a client-side Session store', async () => {
