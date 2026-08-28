@@ -19,13 +19,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test persistent ACP runtime
         run: pnpm exec vitest run packages/acp/acp/tests tests/runtime-portability.e2e.ts
-      # The product-boundary acceptance below executes published lib/bin.js
-      # entrypoints, so use the repository's canonical host build rather than a
-      # typecheck-only tsc invocation. This still validates the authoritative
-      # TypeScript project-reference graph and additionally materializes the
-      # release-shaped CLI and ACP Runtime artifacts with tsdown.
-      - name: Build and typecheck host project graph
-        run: pnpm run build:lib:host
+      # Keep correctness and packaging as separate gates. The host project graph
+      # is the authoritative TypeScript boundary. The Phase-B acceptance only
+      # needs two release-shaped binaries, so do not make it depend on unrelated
+      # workspace packaging (for example packages/api/sdk declaration bundling).
+      - name: Typecheck host project graph
+        run: pnpm exec tsc -b tsconfig.host.json --pretty false
+      - name: Build CLI acceptance binary
+        run: pnpm --dir apps/cli exec tsdown
+      - name: Build ACP Runtime acceptance binary
+        run: pnpm --dir packages/examples/acp-demo exec tsdown
       - name: Test CLI to persistent ACP Runtime binaries
         run: pnpm exec vitest run apps/cli/tests/acp-binary.e2e.ts
       - name: Verify client/runtime boundary
