@@ -1,24 +1,25 @@
 /**
- * Electron main process: secure window/resource ownership, strict Renderer
- * IPC, and lifecycle supervision for the independent Node Agent Host.
+ * Electron main process: secure window/resource ownership, typed Renderer IPC,
+ * and lifecycle supervision for one standalone ACP Runtime subprocess.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createInterface } from 'node:readline'
 import {
-  app, BrowserWindow, ipcMain, Menu, protocol,
+  app, BrowserWindow, dialog, ipcMain, Menu, protocol,
 } from 'electron'
 import {
-  parseStdioFetchClientFrame,
-  parseStdioFetchServerFrame,
-  STDIO_FETCH_PROTOCOL_VERSION,
-  type StdioFetchRequestFrame,
-  type StdioFetchServerFrame,
-} from '@deepseek-ai/dsh-host-apiproxy/stdio-protocol'
-import type { DesktopFetchResponse, DesktopRendererFrame } from './shared.ts'
+  connectAcpRuntime,
+  type AcpClientHandlers,
+  type AcpRuntimeConnection,
+  type AcpRuntimeSpec,
+} from '@deepseek-ai/dsh-acp-client'
+import type {
+  DesktopPromptResult,
+  DesktopRendererFrame,
+  DesktopSessionSummary,
+} from './shared.ts'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'dsh-app',
@@ -26,27 +27,87 @@ protocol.registerSchemesAsPrivileged([{
 }])
 
 const APP_ORIGIN = 'dsh-app://app'
-const HOST_START_TIMEOUT_MS = 20_000
-const HOST_STOP_TIMEOUT_MS = 5_000
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
-const HOST_PATCH = resolve(REPOSITORY_ROOT, 'apps/desktop/host.patch.yml')
-const CLI_SOURCE = resolve(REPOSITORY_ROOT, 'apps/cli/src/bin.ts')
+const ACP_RUNTIME_BIN = resolve(REPOSITORY_ROOT, 'packages/examples/acp-demo/lib/bin.js')
+const ACP_RUNTIME_CONFIG = resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml')
+const DESKTOP_WORKSPACE = resolve(process.env.DSH_DESKTOP_WORKSPACE ?? REPOSITORY_ROOT)
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
 
-interface PendingRequest {
-  sender: Electron.WebContents
-  resolve(response: DesktopFetchResponse): void
-  reject(error: Error): void
-  responded: boolean
-  resumed: boolean
-  terminal: boolean
-  buffered: DesktopRendererFrame[]
+type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
+type SessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
+
+function parseRuntimeArgs(value: string | undefined): string[] {
+  if (value === undefined || value.trim().length === 0) return []
+  const parsed: unknown = JSON.parse(value)
+  if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+    throw new Error('DSH_DESKTOP_ACP_ARGS_JSON must be a JSON array of strings')
+  }
+  return parsed
 }
 
-class AgentHostSupervisor {
-  private child: ChildProcessWithoutNullStreams | undefined
-  private ready: Promise<void> | undefined
-  private readonly pending = new Map<string, PendingRequest>()
+function desktopRuntimeSpec(): AcpRuntimeSpec {
+  const command = process.env.DSH_DESKTOP_ACP_COMMAND
+  if (command !== undefined && command.trim().length > 0) {
+    return {
+      command,
+      args: parseRuntimeArgs(process.env.DSH_DESKTOP_ACP_ARGS_JSON),
+      cwd: DESKTOP_WORKSPACE,
+    }
+  }
+  return {
+    command: process.env.DSH_DESKTOP_NODE ?? process.env.npm_node_execpath ?? 'node',
+    args: [ACP_RUNTIME_BIN, '--config', ACP_RUNTIME_CONFIG],
+    cwd: DESKTOP_WORKSPACE,
+  }
+}
+
+function permissionLabel(kind: PermissionRequest['options'][number]['kind']): string {
+  switch (kind) {
+    case 'allow_once': return 'Allow once'
+    case 'allow_always': return 'Allow always'
+    case 'reject_once': return 'Reject'
+    case 'reject_always': return 'Always reject'
+    default: return kind
+  }
+}
+
+function renderSessionUpdate(notification: SessionNotification): DesktopRendererFrame | undefined {
+  const update = notification.update
+  switch (update.sessionUpdate) {
+    case 'user_message_chunk':
+      return update.content.type === 'text'
+        ? { type: 'session-update', sessionId: notification.sessionId, text: `user> ${update.content.text}` }
+        : undefined
+    case 'agent_message_chunk':
+      return update.content.type === 'text'
+        ? { type: 'session-update', sessionId: notification.sessionId, text: `assistant> ${update.content.text}` }
+        : undefined
+    case 'tool_call':
+      return {
+        type: 'session-update',
+        sessionId: notification.sessionId,
+        text: `[tool ${update.toolCallId}] ${update.title} — ${update.status}`,
+      }
+    case 'tool_call_update':
+      return {
+        type: 'session-update',
+        sessionId: notification.sessionId,
+        text: `[tool ${update.toolCallId}] ${update.status}`,
+      }
+    case 'plan':
+      return {
+        type: 'session-update',
+        sessionId: notification.sessionId,
+        text: update.entries.map(entry => `[plan:${entry.status}] ${entry.content}`).join('\n'),
+      }
+    default:
+      return undefined
+  }
+}
+
+class AcpRuntimeSupervisor {
+  private connection: AcpRuntimeConnection | undefined
+  private connecting: Promise<AcpRuntimeConnection> | undefined
   private window: BrowserWindow | undefined
 
   attachWindow(window: BrowserWindow): void {
@@ -54,78 +115,90 @@ class AgentHostSupervisor {
   }
 
   running(): boolean {
-    return this.child !== undefined
+    return this.connection !== undefined || this.connecting !== undefined
+  }
+
+  private publish(frame: DesktopRendererFrame): void {
+    this.window?.webContents.send('dsh:frame', frame)
+  }
+
+  private publishStatus(
+    status: Extract<DesktopRendererFrame, { type: 'runtime-status' }>['status'],
+    message?: string,
+  ): void {
+    this.publish({
+      type: 'runtime-status',
+      status,
+      ...(message === undefined ? {} : { message }),
+    })
+  }
+
+  private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> {
+    const window = this.window
+    if (window === undefined || request.options.length === 0) {
+      return { outcome: { outcome: 'cancelled' } }
+    }
+    const buttons = request.options.map(option => permissionLabel(option.kind))
+    const result = await dialog.showMessageBox(window, {
+      type: 'warning',
+      message: `DeepSeek Harness requests permission for tool call ${request.toolCall.toolCallId}`,
+      detail: 'Permission decides whether this action should run. Runtime sandbox policy independently constrains what it can access.',
+      buttons,
+      cancelId: Math.max(0, request.options.findIndex(option => option.kind.startsWith('reject_'))),
+      noLink: true,
+    })
+    const option = request.options[result.response]
+    return option === undefined
+      ? { outcome: { outcome: 'cancelled' } }
+      : { outcome: { outcome: 'selected', optionId: option.optionId } }
   }
 
   async start(): Promise<void> {
-    if (this.child !== undefined) return this.ready
+    if (this.connection !== undefined) return
+    if (this.connecting !== undefined) {
+      await this.connecting
+      return
+    }
     this.publishStatus('starting')
-    const node = process.env.DSH_DESKTOP_NODE ?? process.env.npm_node_execpath ?? 'node'
-    const child = spawn(node, [
-      '--import', 'tsx/esm', CLI_SOURCE,
-      '--profile', 'web', '--patch', HOST_PATCH,
-    ], {
-      cwd: REPOSITORY_ROOT,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const pending = connectAcpRuntime(desktopRuntimeSpec(), {
+      onSessionUpdate: notification => {
+        const frame = renderSessionUpdate(notification)
+        if (frame !== undefined) this.publish(frame)
+      },
+      onPermissionRequest: request => this.requestPermission(request),
+      onRuntimeStderr: text => { process.stderr.write(`[desktop-runtime] ${text}`) },
     })
-    this.child = child
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (chunk: string) => { process.stderr.write(`[desktop-host] ${chunk}`) })
-
-    let settleReady!: () => void
-    let rejectReady!: (error: Error) => void
-    this.ready = new Promise<void>((resolveReady, reject) => {
-      settleReady = resolveReady
-      rejectReady = reject
-    })
-    const timeout = setTimeout(() => {
-      rejectReady(new Error(`Agent Host did not complete its protocol handshake within ${String(HOST_START_TIMEOUT_MS)}ms`))
-      child.kill('SIGTERM')
-    }, HOST_START_TIMEOUT_MS)
-
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity, terminal: false })
-    lines.on('line', (line) => {
-      try {
-        this.receive(parseStdioFetchServerFrame(JSON.parse(line) as unknown), settleReady, rejectReady, timeout)
-      } catch (error: unknown) {
-        rejectReady(new Error(`Agent Host emitted an invalid protocol frame: ${String(error)}`))
-        child.kill('SIGTERM')
-      }
-    })
-    child.once('error', (error) => { rejectReady(error) })
-    child.once('exit', (code, signal) => {
-      clearTimeout(timeout)
-      lines.close()
-      const expected = this.child === undefined
-      if (this.child === child) this.child = undefined
-      this.ready = undefined
-      const reason = `Agent Host exited (${code === null ? signal : `code ${String(code)}`})`
-      for (const [id, request] of this.pending) {
-        request.reject(new Error(reason))
-        this.pending.delete(id)
-      }
-      this.publishStatus(expected ? 'stopped' : 'failed', expected ? undefined : reason)
-    })
-    this.write({ type: 'hello', version: STDIO_FETCH_PROTOCOL_VERSION })
+    this.connecting = pending
     try {
-      await this.ready
-    } catch (error) {
+      const connection = await pending
+      this.connection = connection
+      this.publishStatus('ready')
+      void connection.client.closed.then(() => {
+        if (this.connection !== connection) return
+        this.connection = undefined
+        this.publishStatus('failed', 'ACP Runtime connection closed unexpectedly')
+      })
+    } catch (error: unknown) {
       this.publishStatus('failed', error instanceof Error ? error.message : String(error))
       throw error
+    } finally {
+      if (this.connecting === pending) this.connecting = undefined
     }
   }
 
   async stop(): Promise<void> {
-    const child = this.child
-    if (child === undefined) return
-    this.child = undefined
-    const exited = new Promise<void>((resolveExit) => { child.once('exit', () => { resolveExit() }) })
-    child.stdin.end()
-    child.kill('SIGTERM')
-    const timer = setTimeout(() => { child.kill('SIGKILL') }, HOST_STOP_TIMEOUT_MS)
-    await exited
-    clearTimeout(timer)
+    if (this.connection === undefined && this.connecting !== undefined) {
+      await this.connecting.catch(() => {})
+    }
+    const connection = this.connection
+    this.connection = undefined
+    this.connecting = undefined
+    if (connection === undefined) {
+      this.publishStatus('stopped')
+      return
+    }
+    await connection.dispose()
+    this.publishStatus('stopped')
   }
 
   async restart(): Promise<void> {
@@ -133,107 +206,103 @@ class AgentHostSupervisor {
     await this.start()
   }
 
-  async request(sender: Electron.WebContents, value: unknown): Promise<DesktopFetchResponse> {
+  private async runtime(): Promise<AcpRuntimeConnection> {
     await this.start()
-    const frame = parseStdioFetchClientFrame(value)
-    if (frame.type !== 'request') throw new Error('desktop IPC accepts request frames only')
-    if (this.pending.has(frame.id)) throw new Error(`desktop request id ${JSON.stringify(frame.id)} is already active`)
-    return new Promise<DesktopFetchResponse>((resolveResponse, reject) => {
-      this.pending.set(frame.id, {
-        sender, resolve: resolveResponse, reject, responded: false, resumed: false, terminal: false, buffered: [],
-      })
-      this.write(frame)
+    if (this.connection === undefined) throw new Error('ACP Runtime is not available')
+    return this.connection
+  }
+
+  workspace(): string {
+    return DESKTOP_WORKSPACE
+  }
+
+  async listSessions(): Promise<DesktopSessionSummary[]> {
+    const runtime = await this.runtime()
+    const result = await runtime.client.listSessions({ cwd: DESKTOP_WORKSPACE })
+    return result.sessions.map(session => ({
+      sessionId: session.sessionId,
+      cwd: session.cwd,
+      ...(session.title === undefined ? {} : { title: session.title }),
+    }))
+  }
+
+  async createSession(): Promise<string> {
+    const runtime = await this.runtime()
+    const created = await runtime.client.newSession({ cwd: DESKTOP_WORKSPACE, mcpServers: [] })
+    return created.sessionId
+  }
+
+  async loadSession(sessionId: string): Promise<void> {
+    const runtime = await this.runtime()
+    await runtime.client.loadSession({ sessionId, cwd: DESKTOP_WORKSPACE, mcpServers: [] })
+  }
+
+  async prompt(sessionId: string, text: string): Promise<DesktopPromptResult> {
+    const runtime = await this.runtime()
+    const result = await runtime.client.prompt({
+      sessionId,
+      prompt: [{ type: 'text', text }],
     })
+    return { stopReason: result.stopReason }
   }
 
-  resume(sender: Electron.WebContents, id: string): void {
-    const request = this.pending.get(id)
-    if (request === undefined || request.sender !== sender || request.resumed) return
-    request.resumed = true
-    for (const frame of request.buffered) request.sender.send('dsh:frame', frame)
-    request.buffered.length = 0
-    if (request.terminal) this.pending.delete(id)
+  cancel(sessionId: string): void {
+    void this.runtime()
+      .then(runtime => runtime.client.cancel({ sessionId }))
+      .catch(error => {
+        this.publishStatus('failed', error instanceof Error ? error.message : String(error))
+      })
   }
 
-  cancel(sender: Electron.WebContents, id: string): void {
-    const request = this.pending.get(id)
-    if (request === undefined || request.sender !== sender) return
-    this.write({ type: 'cancel', id })
-  }
-
-  private receive(
-    frame: StdioFetchServerFrame,
-    settleReady: () => void,
-    rejectReady: (error: Error) => void,
-    timeout: ReturnType<typeof setTimeout>,
-  ): void {
-    if (frame.type === 'ready') {
-      clearTimeout(timeout)
-      if (frame.version !== STDIO_FETCH_PROTOCOL_VERSION) {
-        rejectReady(new Error(`Agent Host protocol version ${String(frame.version)} is incompatible`))
-        return
-      }
-      settleReady()
-      this.publishStatus('ready')
-      return
-    }
-    if (frame.type === 'error' && frame.fatal) {
-      rejectReady(new Error(frame.message))
-      return
-    }
-    if (!('id' in frame) || frame.id === undefined) return
-    const request = this.pending.get(frame.id)
-    if (request === undefined) return
-    if (frame.type === 'response') {
-      request.responded = true
-      request.resolve({ status: frame.status, statusText: frame.statusText, headers: frame.headers })
-      return
-    }
-    if (frame.type === 'error' && !request.responded) {
-      request.reject(new Error(frame.message))
-      this.pending.delete(frame.id)
-      return
-    }
-    const rendererFrame: DesktopRendererFrame = frame
-    if (request.resumed) request.sender.send('dsh:frame', rendererFrame)
-    else request.buffered.push(rendererFrame)
-    if (frame.type === 'end' || frame.type === 'error') {
-      request.terminal = true
-      if (request.resumed) this.pending.delete(frame.id)
-    }
-  }
-
-  private write(frame: object): void {
-    const stdin = this.child?.stdin
-    if (stdin === undefined || stdin.destroyed) throw new Error('Agent Host is not running')
-    stdin.write(`${JSON.stringify(frame)}\n`)
-  }
-
-  private publishStatus(status: Extract<DesktopRendererFrame, { type: 'host-status' }>['status'], message?: string): void {
-    this.window?.webContents.send('dsh:frame', {
-      type: 'host-status', status, ...(message === undefined ? {} : { message }),
-    } satisfies DesktopRendererFrame)
+  async closeSession(sessionId: string): Promise<void> {
+    const runtime = await this.runtime()
+    await runtime.client.closeSession({ sessionId })
   }
 }
 
-const supervisor = new AgentHostSupervisor()
+const supervisor = new AcpRuntimeSupervisor()
 
 function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
   return event.senderFrame?.url.startsWith(`${APP_ORIGIN}/`) === true
 }
 
+function nonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${label} must be a non-empty string`)
+  return value
+}
+
 function installIpc(): void {
-  ipcMain.handle('dsh:fetch-start', async (event, request: StdioFetchRequestFrame) => {
+  ipcMain.handle('dsh:workspace', (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return supervisor.request(event.sender, request)
+    return supervisor.workspace()
   })
-  ipcMain.on('dsh:fetch-resume', (event, id: unknown) => {
-    if (trustedSender(event) && typeof id === 'string') supervisor.resume(event.sender, id)
+  ipcMain.handle('dsh:session-list', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return supervisor.listSessions()
   })
-  ipcMain.on('dsh:fetch-cancel', (event, id: unknown) => {
-    if (trustedSender(event) && typeof id === 'string') supervisor.cancel(event.sender, id)
+  ipcMain.handle('dsh:session-create', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return supervisor.createSession()
   })
-  ipcMain.handle('dsh:host-restart', async (event) => {
+  ipcMain.handle('dsh:session-load', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    await supervisor.loadSession(nonEmptyString(value, 'sessionId'))
+  })
+  ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawText: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return supervisor.prompt(
+      nonEmptyString(rawSessionId, 'sessionId'),
+      nonEmptyString(rawText, 'prompt'),
+    )
+  })
+  ipcMain.on('dsh:session-cancel', (event, value: unknown) => {
+    if (trustedSender(event) && typeof value === 'string' && value.length > 0) supervisor.cancel(value)
+  })
+  ipcMain.handle('dsh:session-close', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    await supervisor.closeSession(nonEmptyString(value, 'sessionId'))
+  })
+  ipcMain.handle('dsh:runtime-restart', async (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     await supervisor.restart()
   })
