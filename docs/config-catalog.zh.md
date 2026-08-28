@@ -3321,6 +3321,7 @@ export interface Config {
 
 由其他包作为库导入；`cordis.yml` 无法加载它们。
 
+- `@deepseek-ai/dsh-acp-client`（[`packages/acp/acp-client/src/index.ts`](../packages/acp/acp-client/src/index.ts)）
 - `@deepseek-ai/dsh-acp-snapshot`（[`packages/test-support/acp-snapshot/src/index.ts`](../packages/test-support/acp-snapshot/src/index.ts)）
 - `@deepseek-ai/dsh-agent-loop-testkit`（[`packages/test-support/agent-loop-testkit/src/index.ts`](../packages/test-support/agent-loop-testkit/src/index.ts)）
 - `@deepseek-ai/dsh-anonymous-user-id`（[`packages/identity/anonymous-user-id/src/index.ts`](../packages/identity/anonymous-user-id/src/index.ts)）

@@ -29,7 +29,7 @@ interface PluginInvocation {
   args: string[]
 }
 
-export interface AcpRuntimeInvocation {
+interface AcpRuntimeInvocation {
   runtimeCommand: string
   runtimeArgs: string[]
   cwd: string

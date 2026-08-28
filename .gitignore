@@ -32,6 +32,7 @@ python/**/__pycache__/
 python/**/.pytest_cache/
 apps/web/dist/
 apps/desktop/dist/
+apps/vscode/dist/
 .artifacts/
 .dsh-build/
 .playwright-mcp/
@@ -40,3 +41,6 @@ apps/desktop/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+# Generated Electron application and embedded Runtime staging.
+apps/desktop/dist-electron/
+apps/desktop/runtime-dist/

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-29-electron-desktop-embedded-acp-runtime.md
+2026-08-29-electron-desktop-embedded-acp-runtime.md: 35699887080e43b7c1e6618ebd56ff7a98533f3a
+2026-08-29-electron-desktop-embedded-acp-runtime.zh.md: a2308f948c7db55a8cf04d32fd5e6778e6c61ba3

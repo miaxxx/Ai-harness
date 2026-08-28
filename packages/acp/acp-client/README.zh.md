@@ -40,7 +40,7 @@ Dispose 首先关闭 Runtime stdin。符合当前产品契约的 ACP Runtime 将
 
 ## Model Experience
 
-无直接影响。该 transport 运行在 Harness 进程之外，不增加任何 model-visible content。Prompt block、tool result 与 durable history 由 ACP 和 Runtime Session Log 定义。
+无，因为该产品侧 transport 运行在 Harness 进程之外，全部模型可见内容都由 ACP Runtime 拥有。
 
 #### KV Cache effect
 

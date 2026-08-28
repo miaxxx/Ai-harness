@@ -40,7 +40,7 @@ The package does not scrub inherited environment variables. Product launch polic
 
 ## Model Experience
 
-None directly. The package is outside the Harness process and contributes no model-visible content. Prompt blocks, tool results, and durable history are defined by ACP and the Runtime session log.
+None, as this product-side transport runs outside the Harness process and the ACP Runtime owns all model-visible content.
 
 #### KV Cache effect
 

@@ -11,7 +11,10 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
-    deps: { skipNodeModulesBundle: true },
+    deps: {
+      alwaysBundle: ['@deepseek-ai/dsh-acp-client', '@agentclientprotocol/sdk', 'zod'],
+      neverBundle: ['electron'],
+    },
   },
   {
     entry: ['lib/types/main/preload.js'],

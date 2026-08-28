@@ -40,6 +40,8 @@ peerDependencyRules:
 allowBuilds:
   # Electron downloads the reviewed macOS runtime used by the desktop preview.
   electron: true
+  # electron-builder's Windows-only installer helper is present in the cross-platform graph.
+  electron-winstaller: false
   esbuild: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.

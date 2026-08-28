@@ -4,7 +4,7 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { extname, resolve, sep } from 'node:path'
+import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, protocol,
@@ -28,10 +28,15 @@ protocol.registerSchemesAsPrivileged([{
 
 const APP_ORIGIN = 'dsh-app://app'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
-const ACP_RUNTIME_BIN = resolve(REPOSITORY_ROOT, 'packages/examples/acp-demo/lib/bin.js')
-const ACP_RUNTIME_CONFIG = resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml')
-const DESKTOP_WORKSPACE = resolve(process.env.DSH_DESKTOP_WORKSPACE ?? REPOSITORY_ROOT)
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
+
+function packagedRuntimePath(...parts: string[]): string {
+  return join(process.resourcesPath, 'runtime', ...parts)
+}
+
+function desktopWorkspace(): string {
+  return resolve(process.env.DSH_DESKTOP_WORKSPACE ?? (app.isPackaged ? app.getPath('home') : REPOSITORY_ROOT))
+}
 
 type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
 type SessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
@@ -55,13 +60,28 @@ function desktopRuntimeSpec(): AcpRuntimeSpec {
     return {
       command,
       args: parseRuntimeArgs(process.env.DSH_DESKTOP_ACP_ARGS_JSON),
-      cwd: DESKTOP_WORKSPACE,
+      cwd: desktopWorkspace(),
+    }
+  }
+  if (app.isPackaged) {
+    return {
+      command: packagedRuntimePath('node', 'bin', 'node'),
+      args: [
+        packagedRuntimePath('app', 'node_modules', '@deepseek-ai', 'dsh-acp-demo', 'lib', 'bin.js'),
+        '--config',
+        packagedRuntimePath('app', 'cordis.yml'),
+      ],
+      cwd: desktopWorkspace(),
     }
   }
   return {
     command: process.env.DSH_DESKTOP_NODE ?? process.env.npm_node_execpath ?? 'node',
-    args: [ACP_RUNTIME_BIN, '--config', ACP_RUNTIME_CONFIG],
-    cwd: DESKTOP_WORKSPACE,
+    args: [
+      resolve(REPOSITORY_ROOT, 'packages/examples/acp-demo/lib/bin.js'),
+      '--config',
+      resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml'),
+    ],
+    cwd: desktopWorkspace(),
   }
 }
 
@@ -217,12 +237,12 @@ class AcpRuntimeSupervisor {
   }
 
   workspace(): string {
-    return DESKTOP_WORKSPACE
+    return desktopWorkspace()
   }
 
   async listSessions(): Promise<DesktopSessionSummary[]> {
     const runtime = await this.runtime()
-    const result = await runtime.client.listSessions({ cwd: DESKTOP_WORKSPACE })
+    const result = await runtime.client.listSessions({ cwd: desktopWorkspace() })
     return result.sessions.map(session => ({
       sessionId: session.sessionId,
       cwd: session.cwd,
@@ -232,13 +252,13 @@ class AcpRuntimeSupervisor {
 
   async createSession(): Promise<string> {
     const runtime = await this.runtime()
-    const created = await runtime.client.newSession({ cwd: DESKTOP_WORKSPACE, mcpServers: [] })
+    const created = await runtime.client.newSession({ cwd: desktopWorkspace(), mcpServers: [] })
     return created.sessionId
   }
 
   async loadSession(sessionId: string): Promise<void> {
     const runtime = await this.runtime()
-    await runtime.client.loadSession({ sessionId, cwd: DESKTOP_WORKSPACE, mcpServers: [] })
+    await runtime.client.loadSession({ sessionId, cwd: desktopWorkspace(), mcpServers: [] })
   }
 
   async prompt(sessionId: string, text: string): Promise<DesktopPromptResult> {
@@ -385,7 +405,21 @@ async function main(): Promise<void> {
     if (window.isMinimized()) window.restore()
     window.focus()
   })
-  void supervisor.start().catch(() => {})
+  const runtimeStart = supervisor.start()
+  if (process.env.DSH_DESKTOP_DIST_SMOKE === '1') {
+    void runtimeStart
+      .then(() => supervisor.listSessions())
+      .then(() => {
+        process.stderr.write('desktop-dist-smoke: ready\n')
+        app.quit()
+      })
+      .catch((error: unknown) => {
+        process.stderr.write(`desktop-dist-smoke: ${error instanceof Error ? error.message : String(error)}\n`)
+        app.exit(1)
+      })
+  } else {
+    void runtimeStart.catch(() => {})
+  }
 }
 
 app.on('before-quit', (event) => {

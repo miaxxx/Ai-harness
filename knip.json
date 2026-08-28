@@ -637,6 +637,21 @@
         "src/**/*.tsx"
       ]
     },
+    "apps/vscode": {
+      "entry": [
+        "src/extension.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
+    "packages/acp/acp-client": {
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",
