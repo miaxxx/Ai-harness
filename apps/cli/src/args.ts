@@ -166,7 +166,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
         mode: 'acp-run',
         ...runtimeFields(run, options),
         prompt: text,
-        sessionId: options.session,
+        ...(options.session === undefined ? {} : { sessionId: options.session }),
         resume: options.resume === true,
       }
     })
@@ -184,7 +184,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       resolved = {
         mode: 'acp-sessions',
         ...runtimeFields(sessions, options),
-        cursor: options.cursor,
+        ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
       }
     })
 
