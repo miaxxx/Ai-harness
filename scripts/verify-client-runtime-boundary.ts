@@ -24,6 +24,7 @@ interface ProtectedClientSurface {
 /** Client surfaces whose runtime dependency migration is complete enough to enforce. */
 const PROTECTED_CLIENT_SURFACES: readonly ProtectedClientSurface[] = [
   { root: 'apps/desktop', sourceGlob: 'src/**/*.{ts,tsx,js,jsx,mjs,cjs}', scanManifest: true },
+  { root: 'apps/vscode', sourceGlob: 'src/**/*.{ts,tsx,js,jsx,mjs,cjs}', scanManifest: true },
   // apps/cli still owns legitimate profile/Runtime bootstrap code. Only the
   // product client path is ACP-only and therefore protected today.
   { root: 'apps/cli', sourceGlob: 'src/client/**/*.{ts,tsx,js,jsx,mjs,cjs}', scanManifest: false },
