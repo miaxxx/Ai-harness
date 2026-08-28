@@ -6,8 +6,8 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from '@agentclientprotocol/sdk'
+import { connectAcpRuntime } from '@deepseek-ai/dsh-acp-client'
 import type { AcpRunInvocation, AcpSessionsInvocation } from '../args.ts'
-import { connectAcpRuntime } from './transport.ts'
 
 export interface AcpCliIo {
   stdout: NodeJS.WriteStream
