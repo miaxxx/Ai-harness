@@ -1,0 +1,20 @@
+name: Runtime boundary
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-client-runtime-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx scripts/verify-client-runtime-boundary.ts
