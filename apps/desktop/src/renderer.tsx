@@ -1,164 +1,213 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AbstractApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
-import type { ResponseValue } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { DesktopFetchResponse, DesktopRendererFrame } from './shared.ts'
+import type { DesktopRendererFrame, DesktopSessionSummary } from './shared.ts'
 import './renderer.css'
 
-interface PendingBody {
-  controller: ReadableStreamDefaultController<Uint8Array>
-  disposeAbort(): void
-}
-
-type SessionId = ResponseValue<'session.create'>['sessionId']
-
-class DesktopApiClient extends AbstractApiClient {
-  private readonly pending = new Map<string, PendingBody>()
-
-  constructor() {
-    super()
-    window.dshDesktop.subscribe((frame) => { this.receive(frame) })
-  }
-
-  protected async doFetch(input: URL, init?: RequestInit): Promise<Response> {
-    if (init?.signal?.aborted === true) {
-      throw init.signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
-    }
-    const id = crypto.randomUUID()
-    const body = init?.body
-    if (body !== undefined && body !== null && typeof body !== 'string') {
-      throw new Error('desktop transport accepts UTF-8 string request bodies only')
-    }
-    let bodyController!: ReadableStreamDefaultController<Uint8Array>
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) { bodyController = controller },
-      cancel: () => { window.dshDesktop.cancel(id) },
-    })
-    const abort = (): void => { window.dshDesktop.cancel(id) }
-    const signal = init?.signal
-    signal?.addEventListener('abort', abort, { once: true })
-    const disposeAbort = (): void => { signal?.removeEventListener('abort', abort) }
-    this.pending.set(id, { controller: bodyController, disposeAbort })
-    try {
-      const response: DesktopFetchResponse = await window.dshDesktop.start({
-        type: 'request', id, path: `${input.pathname}${input.search}`,
-        method: init?.method ?? 'GET', headers: [...new Headers(init?.headers).entries()],
-        ...(body === undefined || body === null ? {} : { body }),
-      })
-      window.dshDesktop.resume(id)
-      return new Response(stream, response)
-    } catch (error) {
-      this.pending.delete(id)
-      disposeAbort()
-      bodyController.error(error)
-      throw error
-    }
-  }
-
-  private receive(frame: DesktopRendererFrame): void {
-    if (frame.type === 'host-status') return
-    if (frame.id === undefined) return
-    const body = this.pending.get(frame.id)
-    if (body === undefined) return
-    if (frame.type === 'data') {
-      const raw = atob(frame.chunk)
-      body.controller.enqueue(Uint8Array.from(raw, character => character.charCodeAt(0)))
-      return
-    }
-    this.pending.delete(frame.id)
-    body.disposeAbort()
-    if (frame.type === 'end') body.controller.close()
-    else body.controller.error(new Error(frame.message))
-  }
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function App(): React.JSX.Element {
-  const api = useMemo(() => new DesktopApiClient(), [])
-  const [hostStatus, setHostStatus] = useState('starting')
-  const [host, setHost] = useState('Waiting for Agent Host…')
-  const [prompt, setPrompt] = useState('Reply with a short greeting, then run pwd.')
-  const [sessionId, setSessionId] = useState<SessionId>()
+  const [runtimeStatus, setRuntimeStatus] = useState<'starting' | 'ready' | 'stopped' | 'failed'>('starting')
+  const [runtimeMessage, setRuntimeMessage] = useState('Connecting to standalone ACP Runtime…')
+  const [workspace, setWorkspace] = useState('')
+  const [sessions, setSessions] = useState<DesktopSessionSummary[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState('')
+  const [activeSessionId, setActiveSessionId] = useState<string>()
+  const [prompt, setPrompt] = useState('Reply with a short greeting.')
   const [events, setEvents] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => window.dshDesktop.subscribe((frame) => {
-    if (frame.type !== 'host-status') return
-    setHostStatus(frame.status)
-    if (frame.message !== undefined) setHost(frame.message)
-  }), [])
+  const appendEvent = useCallback((text: string): void => {
+    setEvents(current => [...current.slice(-119), text])
+  }, [])
+
+  const refreshSessions = useCallback(async (): Promise<void> => {
+    const listed = await window.dshDesktop.listSessions()
+    setSessions(listed)
+    setSelectedSessionId(current => {
+      if (current.length > 0 && listed.some(session => session.sessionId === current)) return current
+      return listed[0]?.sessionId ?? ''
+    })
+  }, [])
+
+  useEffect(() => window.dshDesktop.subscribe((frame: DesktopRendererFrame) => {
+    if (frame.type === 'runtime-status') {
+      setRuntimeStatus(frame.status)
+      if (frame.message !== undefined) setRuntimeMessage(frame.message)
+      else if (frame.status === 'ready') setRuntimeMessage('ACP Runtime ready')
+      else if (frame.status === 'starting') setRuntimeMessage('Starting standalone ACP Runtime…')
+      else if (frame.status === 'stopped') setRuntimeMessage('ACP Runtime stopped')
+      return
+    }
+    // Replay and live presentation use the same ACP Session update path. Keep
+    // the event log scoped to the active UI Session once one has been chosen.
+    if (activeSessionId === undefined || frame.sessionId === activeSessionId) {
+      appendEvent(frame.text)
+    }
+  }), [activeSessionId, appendEvent])
 
   useEffect(() => {
-    const abort = new AbortController()
+    let cancelled = false
     void (async () => {
       try {
-        const description = await api.host.describe({}, abort.signal)
-        setHost(description.result.ok
-          ? `${description.result.value.version} · ${description.result.value.cwd}`
-          : description.result.error.message)
-        for await (const frame of api.events.mux({}, abort.signal)) {
-          setEvents(current => [...current.slice(-79), JSON.stringify(frame.payload)])
-        }
-      } catch (error) {
-        if (!abort.signal.aborted) setHost(String(error))
+        const cwd = await window.dshDesktop.workspace()
+        if (cancelled) return
+        setWorkspace(cwd)
+        await refreshSessions()
+      } catch (error: unknown) {
+        if (!cancelled) appendEvent(`ERROR ${errorText(error)}`)
       }
     })()
-    return () => { abort.abort() }
-  }, [api])
+    return () => { cancelled = true }
+  }, [appendEvent, refreshSessions])
 
-  const sendPrompt = async (): Promise<void> => {
+  const createSession = async (): Promise<void> => {
     setBusy(true)
     try {
-      let target = sessionId
-      if (target === undefined) {
-        const created = await api.sessions.create({})
-        if (!created.result.ok) throw new Error(created.result.error.message)
-        target = created.result.value.sessionId
-        setSessionId(target)
-      }
-      const accepted = await api.sessions.prompt({
-        sessionId: target, mode: 'queue', content: [{ type: 'text', text: prompt }],
-        clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      })
-      if (!accepted.result.ok) throw new Error(accepted.result.error.message)
-    } catch (error) {
-      setEvents(current => [...current, `ERROR ${String(error)}`])
+      if (activeSessionId !== undefined) await window.dshDesktop.closeSession(activeSessionId)
+      const sessionId = await window.dshDesktop.createSession()
+      setActiveSessionId(sessionId)
+      setSelectedSessionId(sessionId)
+      setEvents([`[session ${sessionId}]`])
+      await refreshSessions()
+    } catch (error: unknown) {
+      appendEvent(`ERROR ${errorText(error)}`)
     } finally {
       setBusy(false)
     }
   }
 
-  const cancel = async (): Promise<void> => {
+  const loadSession = async (): Promise<void> => {
+    if (selectedSessionId.length === 0) return
+    setBusy(true)
+    try {
+      if (activeSessionId !== undefined && activeSessionId !== selectedSessionId) {
+        await window.dshDesktop.closeSession(activeSessionId)
+      }
+      setEvents([])
+      await window.dshDesktop.loadSession(selectedSessionId)
+      setActiveSessionId(selectedSessionId)
+      appendEvent(`[session ${selectedSessionId}]`)
+    } catch (error: unknown) {
+      appendEvent(`ERROR ${errorText(error)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const closeSession = async (): Promise<void> => {
+    const sessionId = activeSessionId
     if (sessionId === undefined) return
-    const result = await api.sessions.cancel({ sessionId })
-    const outcome = result.result
-    if (!outcome.ok) setEvents(current => [...current, `ERROR ${outcome.error.message}`])
+    setBusy(true)
+    try {
+      await window.dshDesktop.closeSession(sessionId)
+      setActiveSessionId(undefined)
+      appendEvent(`[closed ${sessionId}; durable history retained]`)
+      await refreshSessions()
+    } catch (error: unknown) {
+      appendEvent(`ERROR ${errorText(error)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendPrompt = async (): Promise<void> => {
+    const text = prompt.trim()
+    if (text.length === 0) return
+    setBusy(true)
+    try {
+      let sessionId = activeSessionId
+      if (sessionId === undefined) {
+        sessionId = await window.dshDesktop.createSession()
+        setActiveSessionId(sessionId)
+        setSelectedSessionId(sessionId)
+        appendEvent(`[session ${sessionId}]`)
+      }
+      const result = await window.dshDesktop.prompt(sessionId, text)
+      appendEvent(`[stop ${result.stopReason}]`)
+      await refreshSessions()
+    } catch (error: unknown) {
+      appendEvent(`ERROR ${errorText(error)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restartRuntime = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      setActiveSessionId(undefined)
+      await window.dshDesktop.restartRuntime()
+      await refreshSessions()
+    } catch (error: unknown) {
+      appendEvent(`ERROR ${errorText(error)}`)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return <main>
     <header>
       <div>
-        <p className="eyebrow">macOS technical preview</p>
+        <p className="eyebrow">ACP product client</p>
         <h1>DeepSeek Harness Desktop</h1>
       </div>
-      <span className={`status ${hostStatus}`}>{hostStatus}</span>
+      <span className={`status ${runtimeStatus}`}>{runtimeStatus}</span>
     </header>
+
     <section className="host">
-      <span>Independent Agent Host</span>
-      <code>{host}</code>
-      {hostStatus === 'failed' && <button onClick={() => { void window.dshDesktop.restartHost() }}>Restart Host</button>}
+      <span>Standalone Runtime</span>
+      <code>{runtimeMessage}</code>
+      {runtimeStatus === 'failed'
+        ? <button disabled={busy} onClick={() => { void restartRuntime() }}>Restart Runtime</button>
+        : <code className="workspace" title={workspace}>{workspace || 'Resolving workspace…'}</code>}
     </section>
-    <section className="composer">
-      <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} aria-label="Prompt" />
-      <div className="actions">
-        <button disabled={busy || hostStatus === 'failed'} onClick={() => { void sendPrompt() }}>
-          {busy ? 'Sending…' : 'Send to Agent'}
-        </button>
-        <button className="secondary" disabled={sessionId === undefined} onClick={() => { void cancel() }}>Cancel turn</button>
+
+    <section className="sessions">
+      <div className="sessionPicker">
+        <label htmlFor="session-select">Durable sessions</label>
+        <select
+          id="session-select"
+          value={selectedSessionId}
+          disabled={busy || sessions.length === 0}
+          onChange={(event) => { setSelectedSessionId(event.target.value) }}
+        >
+          {sessions.length === 0 && <option value="">No sessions yet</option>}
+          {sessions.map(session => <option key={session.sessionId} value={session.sessionId}>
+            {session.title === undefined ? session.sessionId : `${session.title} · ${session.sessionId}`}
+          </option>)}
+        </select>
+      </div>
+      <div className="sessionActions">
+        <button className="secondary" disabled={busy} onClick={() => { void refreshSessions() }}>Refresh</button>
+        <button className="secondary" disabled={busy || selectedSessionId.length === 0} onClick={() => { void loadSession() }}>Load</button>
+        <button disabled={busy || runtimeStatus === 'failed'} onClick={() => { void createSession() }}>New Session</button>
+        <button className="secondary" disabled={busy || activeSessionId === undefined} onClick={() => { void closeSession() }}>Close Live Session</button>
       </div>
     </section>
+
+    <section className="composer">
+      <div className="activeSession">
+        <span>Active Session</span>
+        <code>{activeSessionId ?? 'none — sending will create one'}</code>
+      </div>
+      <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} aria-label="Prompt" />
+      <div className="actions">
+        <button disabled={busy || runtimeStatus === 'failed' || prompt.trim().length === 0} onClick={() => { void sendPrompt() }}>
+          {busy ? 'Working…' : 'Send via ACP'}
+        </button>
+        <button
+          className="secondary"
+          disabled={activeSessionId === undefined}
+          onClick={() => { if (activeSessionId !== undefined) window.dshDesktop.cancel(activeSessionId) }}
+        >Cancel turn</button>
+      </div>
+    </section>
+
     <section className="events">
-      <div className="eventsTitle"><strong>Live mux stream</strong><span>{events.length} frames</span></div>
-      <pre>{events.length === 0 ? 'Waiting for session events…' : events.join('\n')}</pre>
+      <div className="eventsTitle"><strong>ACP presentation stream</strong><span>{events.length} updates</span></div>
+      <pre>{events.length === 0 ? 'Load or prompt a Session to receive replay/live updates…' : events.join('\n')}</pre>
     </section>
   </main>
 }
