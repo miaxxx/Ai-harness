@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * dsh — command-line entry. Dynamic imports per mode keep unrelated modes out
- * of each dispatch path; the adapter prints and exits for
- * `--help`/`--version`/a parse error, so only a valid mode reaches the switch.
+ * dsh — command-line entry.
+ *
+ * Product ACP modes and Runtime/profile bootstrap are deliberately loaded from
+ * disjoint dynamic-import branches. Invoking `dsh run` or `dsh sessions` does
+ * not load the Cordis/Agent composition path into the client process.
  * @module @deepseek-ai/dsh/bin
  */
 
@@ -10,13 +12,8 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
 
-// Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
-// one directory under apps/cli, so the checked-in manifest resolves with the
-// same relative hop from either artifact.
-/** This app's version, read from its checked-in package.json. */
 function readVersion(): string {
   const manifest = JSON.parse(
     readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
@@ -27,8 +24,21 @@ function readVersion(): string {
 const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
+  case 'acp-run': {
+    const { runAcpPrompt } = await import('./client/commands.ts')
+    await runAcpPrompt(invocation)
+    break
+  }
+  case 'acp-sessions': {
+    const { listAcpSessions } = await import('./client/commands.ts')
+    await listAcpSessions(invocation)
+    break
+  }
   case 'profile': {
-    const { runProfile } = await import('./profile-boot.ts')
+    const [{ runProfile }, { loadLayeredEnv }] = await Promise.all([
+      import('./profile-boot.ts'),
+      import('@deepseek-ai/dsh-app-boot'),
+    ])
     await runProfile({
       environment: loadLayeredEnv('dsh'),
       profile: invocation.profile,
