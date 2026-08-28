@@ -1,30 +1,49 @@
-import type { StdioFetchRequestFrame, StdioFetchServerFrame } from '@deepseek-ai/dsh-host-apiproxy/stdio-protocol'
-
-/** Metadata required to construct a Renderer-side WHATWG Response. */
-export interface DesktopFetchResponse {
-  status: number
-  statusText: string
-  headers: [string, string][]
+/** Durable Session metadata safe to expose to the sandboxed Renderer. */
+export interface DesktopSessionSummary {
+  sessionId: string
+  cwd: string
+  title?: string
 }
 
-/** Low-authority API exposed by the sandboxed preload. */
+/** Result of one ACP prompt turn. */
+export interface DesktopPromptResult {
+  stopReason: string
+}
+
+/** Low-authority API exposed by the context-isolated preload. */
 export interface DesktopBridge {
-  /** Start one API request after the Agent Host handshake. */
-  start(request: StdioFetchRequestFrame): Promise<DesktopFetchResponse>
-  /** Allow buffered response-body frames to enter the Renderer. */
-  resume(id: string): void
-  /** Cancel one request without affecting either event stream. */
-  cancel(id: string): void
-  /** Subscribe to response-body, completion, error, and Host lifecycle frames. */
+  /** Workspace whose durable ACP Sessions the Desktop Runtime owns. */
+  workspace(): Promise<string>
+  /** List durable Sessions for the Desktop workspace. */
+  listSessions(): Promise<DesktopSessionSummary[]>
+  /** Create one fresh durable Session. */
+  createSession(): Promise<string>
+  /** Restore one durable Session and replay its presentation updates. */
+  loadSession(sessionId: string): Promise<void>
+  /** Prompt one live Session through ACP. */
+  prompt(sessionId: string, text: string): Promise<DesktopPromptResult>
+  /** Cancel the current turn for one live Session. */
+  cancel(sessionId: string): void
+  /** Release one live Session while retaining durable history. */
+  closeSession(sessionId: string): Promise<void>
+  /** Subscribe to Runtime lifecycle and ACP presentation updates. */
   subscribe(listener: (frame: DesktopRendererFrame) => void): () => void
-  /** Restart the supervised Agent Host after a startup or runtime failure. */
-  restartHost(): Promise<void>
+  /** Restart the supervised ACP Runtime process. */
+  restartRuntime(): Promise<void>
 }
 
-/** Frames the main process may push into the Renderer. */
+/** Frames the Electron Main process may push into the Renderer. */
 export type DesktopRendererFrame =
-  | Extract<StdioFetchServerFrame, { type: 'data' | 'end' | 'error' }>
-  | { type: 'host-status'; status: 'starting' | 'ready' | 'stopped' | 'failed'; message?: string }
+  | {
+    type: 'runtime-status'
+    status: 'starting' | 'ready' | 'stopped' | 'failed'
+    message?: string
+  }
+  | {
+    type: 'session-update'
+    sessionId: string
+    text: string
+  }
 
 declare global {
   interface Window {
