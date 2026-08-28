@@ -5,7 +5,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import { assistantBlockToAcp } from './content.ts'
 import { type AcpProjection, parseToolArguments } from './projection.ts'
 
-/** Materialize one pure semantic projection, including attachment IO at the protocol boundary. */
+/**
+ * Materialize one pure semantic projection, including attachment IO at the protocol boundary.
+ *
+ * @param ctx Cordis context used to resolve attachment content.
+ * @param projection Semantic projection to convert.
+ * @returns ACP session updates for the projection.
+ */
 export async function projectionToAcpUpdates(
   ctx: Context,
   projection: AcpProjection,

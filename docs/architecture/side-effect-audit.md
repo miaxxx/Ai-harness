@@ -1,5 +1,7 @@
 # Agent side-effect governance audit
 
+English | [中文](side-effect-audit.zh.md)
+
 The governed boundary is **Agent-originated external side effects**, not every write performed by the Harness process. Session persistence, telemetry, caches, logs, and internal indexes remain runtime infrastructure.
 
 ## Required path

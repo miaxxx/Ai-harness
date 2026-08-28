@@ -19,10 +19,10 @@ function persistence(headers: SessionHeader[]): SessionPersistenceCapability {
 
 describe('ACP persisted session lifecycle', () => {
   it('validates the current workspace feature boundary', () => {
-    expect(() => validatePersistentWorkspace('/tmp/work', [], [])).not.toThrow()
-    expect(() => validatePersistentWorkspace('relative', [], [])).toThrow(/absolute/)
-    expect(() => validatePersistentWorkspace('/tmp/work', ['/tmp/extra'], [])).toThrow(/additionalDirectories/)
-    expect(() => validatePersistentWorkspace('/tmp/work', [], [{}])).toThrow(/mcpServers/)
+    expect(() => { validatePersistentWorkspace('/tmp/work', [], []) }).not.toThrow()
+    expect(() => { validatePersistentWorkspace('relative', [], []) }).toThrow(/absolute/)
+    expect(() => { validatePersistentWorkspace('/tmp/work', ['/tmp/extra'], []) }).toThrow(/additionalDirectories/)
+    expect(() => { validatePersistentWorkspace('/tmp/work', [], [{}]) }).toThrow(/mcpServers/)
   })
 
   it('lists top-level inactive sessions with opaque cursor pagination', async () => {
@@ -35,6 +35,7 @@ describe('ACP persisted session lifecycle', () => {
     const first = await listPersistedSessions(store, { cwd: '/tmp/work' }, new Set(), 1)
     expect(first.sessions).toEqual([{ sessionId: 'a', cwd: '/tmp/work' }])
     expect(first.nextCursor).toEqual(expect.any(String))
+    if (first.nextCursor === undefined) throw new Error('expected a continuation cursor')
     const second = await listPersistedSessions(store, { cwd: '/tmp/work', cursor: first.nextCursor }, new Set(), 1)
     expect(second).toEqual({ sessions: [{ sessionId: 'b', cwd: '/tmp/work' }] })
   })

@@ -15,6 +15,7 @@ export interface SessionPersistenceCapability {
   list(signal?: AbortSignal): Promise<SessionHeader[]>
 }
 
+/** Default number of persisted sessions returned by one ACP list page. */
 export const DEFAULT_SESSION_LIST_PAGE_SIZE = 100
 
 interface Cursor {
@@ -22,7 +23,13 @@ interface Cursor {
   sessionId: string
 }
 
-/** Ensure a lifecycle request stays inside the currently supported workspace contract. */
+/**
+ * Ensure a lifecycle request stays inside the currently supported workspace contract.
+ *
+ * @param cwd Requested primary workspace directory.
+ * @param additionalDirectories Additional workspace directories requested by the client.
+ * @param mcpServers MCP servers requested by the client.
+ */
 export function validatePersistentWorkspace(
   cwd: string,
   additionalDirectories: readonly string[] | undefined,
@@ -35,7 +42,14 @@ export function validatePersistentWorkspace(
   if (mcpServers !== undefined && mcpServers.length > 0) throw new Error('mcpServers is not supported')
 }
 
-/** Find one top-level persisted session and validate the workspace takeover. */
+/**
+ * Find one top-level persisted session and validate the workspace takeover.
+ *
+ * @param persistence Persistence reader used to locate the session.
+ * @param sessionId Durable session identifier to resume.
+ * @param cwd Workspace directory asserted by the client.
+ * @returns The validated persisted session header.
+ */
 export async function resumableHeader(
   persistence: SessionPersistenceCapability,
   sessionId: SessionId,
@@ -49,7 +63,14 @@ export async function resumableHeader(
   return header
 }
 
-/** Resume through the existing AgentRegistry; this is not a second Resume Engine. */
+/**
+ * Resume through the existing AgentRegistry; this is not a second Resume Engine.
+ *
+ * @param agents Registry that owns Agent activation.
+ * @param persistence Persistence reader used to validate the session.
+ * @param options Durable session identity and Agent startup options.
+ * @returns The active Agent handle.
+ */
 export async function activatePersistedSession(
   agents: AgentRegistry,
   persistence: SessionPersistenceCapability,
@@ -66,7 +87,15 @@ export async function activatePersistedSession(
   })
 }
 
-/** Boundary-only cursor pagination over the persistence seam's lightweight list. */
+/**
+ * Apply ACP cursor pagination to the persistence seam's lightweight session list.
+ *
+ * @param persistence Persistence reader that supplies session headers.
+ * @param params ACP list filters and cursor.
+ * @param active Session identifiers already active on this connection.
+ * @param pageSize Maximum number of sessions returned in one page.
+ * @returns The filtered ACP session page and an opaque continuation cursor when needed.
+ */
 export async function listPersistedSessions(
   persistence: SessionPersistenceCapability,
   params: ListSessionsRequest,
@@ -78,7 +107,7 @@ export async function listPersistedSessions(
   }
   const cursor = decodeCursor(params.cursor)
   const entries = (await persistence.list())
-    .filter(header => (
+    .filter((header): header is SessionHeader & { cwd: string } => (
       !active.has(header.id)
       && header.origin !== 'subagent'
       && header.parentSession === undefined
@@ -86,7 +115,7 @@ export async function listPersistedSessions(
       && isAbsolute(header.cwd)
       && (params.cwd === undefined || params.cwd === null || header.cwd === params.cwd)
     ))
-    .map(header => ({ sessionId: header.id, cwd: header.cwd!, createdAt: header.createdAt }))
+    .map(header => ({ sessionId: header.id, cwd: header.cwd, createdAt: header.createdAt }))
     .sort((left, right) => right.createdAt - left.createdAt || left.sessionId.localeCompare(right.sessionId))
     .filter(entry => cursor === undefined || afterCursor(entry, cursor))
 

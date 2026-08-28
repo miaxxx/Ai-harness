@@ -1,5 +1,7 @@
 # Standalone Runtime implementation status
 
+English | [中文](runtime-implementation-status.zh.md)
+
 This branch implements the Standalone Agent Runtime plan as a sequence of small commits on one integration branch.
 
 ## Phase A — Persistent ACP

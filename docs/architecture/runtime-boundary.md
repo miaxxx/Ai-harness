@@ -1,5 +1,7 @@
 # Standalone Runtime Boundary
 
+English | [中文](runtime-boundary.zh.md)
+
 Ai-harness is a **standalone, event-sourced, tool-governed, sandbox-aware Agent Runtime**. Product surfaces such as Desktop, CLI, and IDE are clients of that runtime; they must not become alternate owners of agent logic.
 
 ## Architecture invariants

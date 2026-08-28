@@ -34,6 +34,9 @@ export type AcpProjection =
  * Surface replacements are model-facing state rewrites, not new human-visible
  * transcript entries. Only append-origin user/assistant/tool-result events are
  * emitted. Non-surface tool calls and whole-list todo state remain visible.
+ *
+ * @param event Durable Session event to project.
+ * @returns Zero or more client-visible semantic projections.
  */
 export function eventToAcpProjections(event: SessionEvent): AcpProjection[] {
   switch (event.type) {
@@ -74,7 +77,12 @@ export function eventToAcpProjections(event: SessionEvent): AcpProjection[] {
   }
 }
 
-/** Preserve malformed model JSON as opaque input instead of dropping a tool call. */
+/**
+ * Preserve malformed model JSON as opaque input instead of dropping a tool call.
+ *
+ * @param value Model-produced tool arguments.
+ * @returns Parsed JSON or the original string when parsing fails.
+ */
 export function parseToolArguments(value: string): unknown {
   try {
     return JSON.parse(value) as unknown

@@ -71,10 +71,15 @@ function internalError(detail: string): RequestError {
   return RequestError.internalError(undefined, detail)
 }
 
+/** Configures ACP defaults and its protocol stream. */
 export interface AcpConfig {
+  /** Default registered LLM provider for new sessions. */
   provider?: string
+  /** Default provider model for new sessions. */
   model?: string
+  /** Maximum number of persisted sessions returned by one list page. */
   sessionListPageSize?: number
+  /** Protocol stream; omitted to use JSON-RPC over process stdin and stdout. */
   stream?: Stream
 }
 
