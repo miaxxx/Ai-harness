@@ -1,85 +1,86 @@
 /**
  * Commander adapter for the `dsh` command line.
  *
- * The launcher parses only what it owns — which profile to boot, which extra
- * patch overlays to apply, and the config dumps — and hands **everything after
- * its own flags** to the booted tree verbatim, where injected app plugins parse
- * their own flag families and print their own `--help` (see
- * `@deepseek-ai/dsh-cmdline`). Launcher flags therefore come first: the first
- * token this parser does not recognize starts the inner arguments, so
- * `dsh --profile tui --resume abc` boots the tui profile with `--resume abc`,
- * and `dsh --profile web -h` prints the web app's help, not this one's.
- *
- * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
- * plugin dependencies by forwarding to pnpm.
+ * The legacy/default path still boots a named Harness profile. Product-facing
+ * `run` and `sessions` commands are different: they are ACP clients and never
+ * call Agent/Session/Tool internals directly.
  * @module @deepseek-ai/dsh/args
  */
 
 import { Command, CommanderError } from 'commander'
 
-/** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
   mode: 'profile'
   profile: string
-  /** Extra patch-list overlays applied after the profile's own layer, in argv order. */
   patches: string[]
-  /** Everything after the launcher's own flags, verbatim, for injected app plugins. */
   args: string[]
 }
 
-/** Print a composed profile tree and exit without booting. */
 interface DumpConfigInvocation {
   mode: 'dump-config'
   profile: string
-  /** Omit the profile's user layer and --patch overlays; print bundle layers only. */
   defaultOnly: boolean
   patches: string[]
 }
 
-/** Manage a profile's plugins: forward `args` to pnpm inside the profile directory. */
 interface PluginInvocation {
   mode: 'plugin'
   profile: string
-  /** Raw pnpm arguments, verbatim. */
   args: string[]
 }
 
-/** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+export interface AcpRuntimeInvocation {
+  runtimeCommand: string
+  runtimeArgs: string[]
+  cwd: string
+  json: boolean
+}
 
-/** Launcher flags shared by the default command and the `web` alias. */
+export interface AcpRunInvocation extends AcpRuntimeInvocation {
+  mode: 'acp-run'
+  prompt: string
+  sessionId?: string
+  /** Restore without replay. Requires sessionId. */
+  resume: boolean
+}
+
+export interface AcpSessionsInvocation extends AcpRuntimeInvocation {
+  mode: 'acp-sessions'
+  cursor?: string
+}
+
+export type DshInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | PluginInvocation
+  | AcpRunInvocation
+  | AcpSessionsInvocation
+
 interface BootOptions {
   patch?: string[]
   dumpConfig?: boolean
   dumpDefaultConfig?: boolean
 }
 
-/**
- * Repeatable single-value collector: `--patch a.yml --patch b.yml`. Never
- * variadic — a variadic `--patch` would swallow the inner arguments.
- */
+interface AcpRuntimeOptions {
+  runtimeCommand: string
+  runtimeArg?: string[]
+  cwd: string
+  json?: boolean
+}
+
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
 
-/** The launcher's own help text; each app prints its own. */
 const HELP_EXAMPLES = `
 Examples:
+  dsh run --runtime-command dsh-acp-runtime "fix the tests"
+  dsh run --runtime-command dsh-acp-runtime --session <id> "continue"
+  dsh sessions --runtime-command dsh-acp-runtime
   dsh --profile web                          boot the web profile (same as: dsh web)
-  dsh --profile headless "run the tests"     answer one task, print the result, and exit
-  dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
-  dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
-  dsh --profile web --help                   the web app's own flags and help
-  dsh plugin --profile tui add <package>     install a plugin into the tui profile
+  dsh --profile tui --patch ./extra.yml      boot a custom Runtime profile
+  dsh plugin --profile tui add <package>     install a plugin into the profile
 `
 
-/**
- * Resolve a boot or dump invocation from the launcher flags and the leftover
- * inner arguments.
- * @param program - the command whose options were parsed (the root, or the `web` alias).
- * @param profile - the profile these flags boot.
- * @param options - the launcher flags commander collected.
- * @param args - the leftover arguments, in argv order.
- * @returns the resolved invocation.
- */
 function resolveBoot(program: Command, profile: string, options: BootOptions, args: string[]): DshInvocation {
   const patches = options.patch ?? []
   if (patches.includes('')) program.error('error: --patch needs a path')
@@ -89,9 +90,6 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   if (options.dumpConfig === true && options.dumpDefaultConfig === true) {
     program.error('error: --dump-config and --dump-default-config are mutually exclusive')
   }
-  // The dump is boot-free: it never runs app command-line providers, so it
-  // cannot show what those flags would decide, and printing a tree that differs
-  // from the same invocation's boot would mislead.
   if (args.length > 0) {
     program.error(`error: config dumps take no app arguments, got ${args.map(argument => JSON.stringify(argument)).join(' ')}`)
   }
@@ -102,49 +100,45 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   return { mode: 'dump-config', profile, defaultOnly, patches }
 }
 
-/**
- * Resolve argv into one invocation, or print and exit for help, version, or an
- * error.
- * @param argv - arguments after the Node binary and script.
- * @param version - version string printed by `--version`.
- * @returns the resolved invocation.
- */
+function runtimeFields(command: Command, options: AcpRuntimeOptions): AcpRuntimeInvocation {
+  if (options.runtimeCommand === '') command.error('error: --runtime-command needs an executable')
+  if (options.cwd === '') command.error('error: --cwd needs a workspace path')
+  return {
+    runtimeCommand: options.runtimeCommand,
+    runtimeArgs: options.runtimeArg ?? [],
+    cwd: options.cwd,
+    json: options.json === true,
+  }
+}
+
 export function parseDshArgs(argv: readonly string[], version: string): DshInvocation {
   let resolved: DshInvocation | undefined
-  // Annotated, not inferred: the actions below call back into `program`, and an
-  // inferred type would be circular through its own chain.
   const program: Command = new Command()
   program
     .name('dsh')
     .version(version, '-V, --version', 'output the version number')
-    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
+    .description('dsh: ACP product client plus profile-based Harness Runtime bootstrap.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
-    // The launcher's flags come first and end at the first token it does not
-    // know; everything from there on belongs to the booted app, including
-    // its -h. `dsh -h` with no profile still prints this help, below.
     .helpOption(false)
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
-    .argument('[args...]', 'arguments for the booted profile\'s app (see: dsh --profile <name> --help)')
+    .argument('[args...]', 'arguments for the booted profile app')
     .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
     .option('--dump-config', 'print the composed profile tree and exit')
     .option('--dump-default-config', 'print the profile tree without its user layer or --patch overlays and exit')
     .action((args: string[], options: BootOptions & { profile?: string }) => {
-      // With the app owning -h, the launcher's own help is what a bare
-      // `dsh -h` (no profile to hand it to) must print.
       if (options.profile === undefined) {
         if (args.some(argument => argument === '-h' || argument === '--help')) program.help()
-        program.error('error: --profile <name> is required')
+        program.error('error: --profile <name> is required, or use dsh run / dsh sessions for ACP')
       }
       const profile = options.profile
       if (profile === '') program.error('error: --profile needs a name')
       resolved = resolveBoot(program, profile, options, args)
     })
 
-  /** Reject parent options supplied before a subcommand. */
   const rejectParentOptions = (command: string): void => {
     const parent = program.opts<BootOptions & { profile?: string }>()
     if (parent.profile !== undefined || parent.patch !== undefined
@@ -153,26 +147,67 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     }
   }
 
+  const run = program.command('run').description('run one task through a standalone ACP Runtime')
+  run
+    .requiredOption('--runtime-command <command>', 'ACP Runtime executable to spawn')
+    .option('--runtime-arg <arg>', 'argument passed to the Runtime executable (repeatable; use --runtime-arg=--flag for flag-shaped values)', collect)
+    .option('--cwd <path>', 'workspace used for the Runtime process and ACP session', process.cwd())
+    .option('--session <id>', 'load an existing durable ACP session before prompting')
+    .option('--resume', 'restore --session without replaying historical presentation updates')
+    .option('--json', 'emit one machine-readable JSON result')
+    .argument('<prompt...>', 'task to send through session/prompt')
+    .action((prompt: string[], options: AcpRuntimeOptions & { session?: string, resume?: boolean }) => {
+      rejectParentOptions('run')
+      if (options.resume === true && options.session === undefined) run.error('error: --resume requires --session <id>')
+      if (options.session === '') run.error('error: --session needs an id')
+      const text = prompt.join(' ').trim()
+      if (text.length === 0) run.error('error: run needs a non-empty prompt')
+      resolved = {
+        mode: 'acp-run',
+        ...runtimeFields(run, options),
+        prompt: text,
+        sessionId: options.session,
+        resume: options.resume === true,
+      }
+    })
+
+  const sessions = program.command('sessions').description('list durable sessions through ACP session/list')
+  sessions
+    .requiredOption('--runtime-command <command>', 'ACP Runtime executable to spawn')
+    .option('--runtime-arg <arg>', 'argument passed to the Runtime executable (repeatable)', collect)
+    .option('--cwd <path>', 'filter sessions to this workspace', process.cwd())
+    .option('--cursor <cursor>', 'opaque cursor returned by a previous session/list')
+    .option('--json', 'emit the ACP list response as JSON')
+    .action((options: AcpRuntimeOptions & { cursor?: string }) => {
+      rejectParentOptions('sessions')
+      if (options.cursor === '') sessions.error('error: --cursor needs a value')
+      resolved = {
+        mode: 'acp-sessions',
+        ...runtimeFields(sessions, options),
+        cursor: options.cursor,
+      }
+    })
+
   const web = program.command('web').description('boot the web profile (alias of --profile web); the web app\'s own flags follow')
   web
     .helpOption(false)
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
-    .argument('[args...]', 'arguments for the web app (see: dsh web --help)')
+    .argument('[args...]', 'arguments for the web app')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
-    .option('--dump-config', 'print the composed web-profile tree (with the user layer and any --patch) and exit')
-    .option('--dump-default-config', 'print the web profile\'s bundle layers (no user layer) and exit')
+    .option('--dump-config', 'print the composed web-profile tree and exit')
+    .option('--dump-default-config', 'print the web profile\'s bundle layers and exit')
     .action((args: string[], options: BootOptions) => {
       rejectParentOptions('web')
       resolved = resolveBoot(web, 'web', options, args)
     })
 
-  const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding the remaining arguments to pnpm in the profile directory')
+  const plugin = program.command('plugin').description('manage a profile\'s plugins by forwarding arguments to pnpm')
   plugin
-    .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)')
+    .requiredOption('--profile <name>', 'the profile whose plugins to manage')
     .allowUnknownOption()
-    .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')
+    .argument('[args...]', 'pnpm arguments, forwarded verbatim')
     .action((args: string[], options: { profile: string }) => {
       rejectParentOptions('plugin')
       if (options.profile === '') program.error('error: --profile needs a name')
