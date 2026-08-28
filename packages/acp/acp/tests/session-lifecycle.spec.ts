@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import {
   activatePersistedSession,
   listPersistedSessions,
   resumableHeader,
+  type SessionPersistenceCapability,
   validatePersistentWorkspace,
 } from '../src/session-lifecycle.ts'
 
@@ -13,8 +13,8 @@ function header(id: string, cwd: string, createdAt: number): SessionHeader {
   return { version: 0, id: SessionId(id), cwd, createdAt }
 }
 
-function persistence(headers: SessionHeader[]): SessionPersistence {
-  return { list: vi.fn().mockResolvedValue(headers) } as unknown as SessionPersistence
+function persistence(headers: SessionHeader[]): SessionPersistenceCapability {
+  return { list: vi.fn().mockResolvedValue(headers) }
 }
 
 describe('ACP persisted session lifecycle', () => {
