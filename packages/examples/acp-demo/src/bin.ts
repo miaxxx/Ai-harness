@@ -4,9 +4,10 @@
  * `dsh-acp-demo [--config path]`, defaulting to `./cordis.yml`. Shared env
  * loading, Loader guards, snapshot config selection, and settled-tree boot live
  * in dsh-app-boot. Replay skips `.env` and selects sibling
- * `cordis.snapshot.yml` so a stray key cannot trigger a model call. EOF disposes
- * and flushes snapshot runs; the calling automation owns process lifetime. Stdout is
- * reserved for JSON-RPC, so diagnostics go only to stderr.
+ * `cordis.snapshot.yml` so a stray key cannot trigger a model call. EOF owns
+ * process teardown in every mode: the ACP client closes stdin, then the Runtime
+ * disposes its Cordis tree and flushes durable sessions before exiting. Stdout
+ * is reserved for JSON-RPC, so diagnostics go only to stderr.
  * @module @deepseek-ai/dsh-acp-demo/bin
  */
 
@@ -27,9 +28,15 @@ const { values } = parseArgs({
   strict: true,
 })
 const ctx = await boot(NAME, resolveConfigPath(values.config ?? './cordis.yml', snapshotMode))
-if (snapshotMode !== undefined) {
-  process.stdin.on('end', () => {
-    void ctx.fiber.dispose().then(() => { process.exit(0) })
-  })
+
+let closing = false
+const closeOnEof = (): void => {
+  if (closing) return
+  closing = true
+  void ctx.fiber.dispose().then(() => { process.exit(0) })
 }
+// EOF can race a slow boot (for example a caller that closes stdin
+// immediately). Handle the already-ended state as well as the ordinary event.
+if (process.stdin.readableEnded) closeOnEof()
+else process.stdin.once('end', closeOnEof)
 /* v8 ignore stop */
