@@ -64,6 +64,8 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 `AbstractApiClient` 持有全部协议不变量：签发 rpcId、包装／解包信封、Zod 解析、SSE 帧解码、一元请求超时，以及按微任务批处理的信封观测（`subscribeEnvelopes`）；平台子类只提供 `doFetch` 传输环节。`InProcessApiClient` 以 `toFetchHandler(api)` 为基础，仍是同构接点：它运行完整的协议序列化与校验路径而不经过网络，供需要该路径的调用方和载体测试使用。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
 
+`serveStdioFetch` 是供受监督本地子进程使用的第二种 Fetch 载体。带版本的 NDJSON 帧通过专用 stdin/stdout 流复用并发请求、base64 响应体分片与取消；请求体仍是载体不解释的 API 信封。`./stdio-plugin` Cordis 适配器把该载体绑定到 `ctx.apiProxy`，并将 stdout 专用于协议帧。版本不匹配时连接会快速失败，不尝试兼容恢复。
+
 ## 模型体验
 
 无。该包定义客户端与宿主间的 wire 约定和载体，其中没有任何内容会进入模型请求。
