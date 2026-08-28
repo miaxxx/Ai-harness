@@ -21,6 +21,68 @@ function exitCode(argv: string[]): number {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('parseDshArgs', () => {
+  it('routes ACP product run commands without entering profile boot', () => {
+    expect(parse(['run', '--runtime-command', 'runtime', 'fix', 'tests'])).toEqual({
+      mode: 'acp-run',
+      runtimeCommand: 'runtime',
+      runtimeArgs: [],
+      cwd: process.cwd(),
+      json: false,
+      prompt: 'fix tests',
+      sessionId: undefined,
+      resume: false,
+    })
+
+    expect(parse([
+      'run',
+      '--runtime-command', 'runtime',
+      '--runtime-arg=--config',
+      '--runtime-arg', 'agent.yml',
+      '--cwd', '/tmp/work',
+      '--session', 'session-1',
+      '--resume',
+      '--json',
+      'continue', 'work',
+    ])).toEqual({
+      mode: 'acp-run',
+      runtimeCommand: 'runtime',
+      runtimeArgs: ['--config', 'agent.yml'],
+      cwd: '/tmp/work',
+      json: true,
+      prompt: 'continue work',
+      sessionId: 'session-1',
+      resume: true,
+    })
+  })
+
+  it('routes durable session listing through ACP', () => {
+    expect(parse(['sessions', '--runtime-command', 'runtime'])).toEqual({
+      mode: 'acp-sessions',
+      runtimeCommand: 'runtime',
+      runtimeArgs: [],
+      cwd: process.cwd(),
+      json: false,
+      cursor: undefined,
+    })
+
+    expect(parse([
+      'sessions',
+      '--runtime-command', 'runtime',
+      '--runtime-arg=--profile',
+      '--runtime-arg', 'acp',
+      '--cwd', '/tmp/work',
+      '--cursor', 'cursor-2',
+      '--json',
+    ])).toEqual({
+      mode: 'acp-sessions',
+      runtimeCommand: 'runtime',
+      runtimeArgs: ['--profile', 'acp'],
+      cwd: '/tmp/work',
+      json: true,
+      cursor: 'cursor-2',
+    })
+  })
+
   it('routes profile boots and the web alias, handing the rest to the app', () => {
     expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
@@ -70,12 +132,23 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
   })
 
-  it('rejects missing profile, removed flags, and contradictory inputs', () => {
+  it('rejects invalid ACP product invocations', () => {
+    expect(exitCode(['run', 'task'])).toBe(1) // Runtime executable is explicit and replaceable.
+    expect(exitCode(['run', '--runtime-command', 'runtime', '--resume', 'task'])).toBe(1)
+    expect(exitCode(['run', '--runtime-command', '', 'task'])).toBe(1)
+    expect(exitCode(['run', '--runtime-command', 'runtime', '   '])).toBe(1)
+    expect(exitCode(['sessions'])).toBe(1)
+    expect(exitCode(['sessions', '--runtime-command', ''])).toBe(1)
+    expect(exitCode(['sessions', '--runtime-command', 'runtime', '--cursor', ''])).toBe(1)
+    expect(exitCode(['--profile', 'x', 'run', '--runtime-command', 'runtime', 'task'])).toBe(1)
+    expect(exitCode(['--profile', 'x', 'sessions', '--runtime-command', 'runtime'])).toBe(1)
+  })
+
+  it('rejects missing profile, removed flags, and contradictory profile inputs', () => {
     expect(exitCode([])).toBe(1)
     expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
     expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
     expect(exitCode(['-p', 'task'])).toBe(1) // removed
-    expect(exitCode(['run', 'task'])).toBe(1) // app-owned task replaced the launcher subcommand
     expect(exitCode(['--profile', ''])).toBe(1)
     expect(exitCode(['--profile', 'x', '--patch='])).toBe(1)
     expect(exitCode(['--dump-config'])).toBe(1)
