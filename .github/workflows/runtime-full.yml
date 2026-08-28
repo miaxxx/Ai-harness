@@ -19,16 +19,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test persistent ACP runtime
         run: pnpm exec vitest run packages/acp/acp/tests tests/runtime-portability.e2e.ts
-      # Keep correctness and packaging as separate gates. The host project graph
-      # is the authoritative TypeScript boundary. The Phase-B acceptance only
-      # needs two release-shaped binaries, so do not make it depend on unrelated
-      # workspace packaging (for example packages/api/sdk declaration bundling).
-      - name: Typecheck host project graph
-        run: pnpm exec tsc -b tsconfig.host.json --pretty false
+      # Binary acceptance must exercise release-shaped runtime modules rather
+      # than source imports. `build:lib:host` is the repository-owned host
+      # dependency graph: it typechecks project references and emits the JS
+      # package closure that the ACP Runtime bin resolves under plain Node.
+      # The CLI remains an app-level artifact, so it is built separately below.
+      - name: Build host runtime closure
+        run: pnpm run build:lib:host
       - name: Build CLI acceptance binary
         run: pnpm --dir apps/cli exec tsdown
-      - name: Build ACP Runtime acceptance binary
-        run: pnpm --dir packages/examples/acp-demo exec tsdown
       - name: Test CLI to persistent ACP Runtime binaries
         run: pnpm exec vitest run apps/cli/tests/acp-binary.spec.ts
       - name: Verify client/runtime boundary
