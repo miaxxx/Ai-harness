@@ -10,7 +10,7 @@ import type { AcpRunInvocation, AcpSessionsInvocation } from '../args.ts'
 import { connectAcpRuntime } from './transport.ts'
 
 export interface AcpCliIo {
-  stdout: Pick<NodeJS.WriteStream, 'write' | 'isTTY'>
+  stdout: NodeJS.WriteStream
   stderr: Pick<NodeJS.WriteStream, 'write'>
   stdin: NodeJS.ReadStream
 }
