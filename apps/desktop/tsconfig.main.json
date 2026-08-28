@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types/main",
+    "types": ["node"]
+  },
+  "include": ["src/main.ts", "src/preload.ts", "src/shared.ts"],
+  "references": [
+    { "path": "../../packages/host/apiproxy" }
+  ]
+}

@@ -35,6 +35,18 @@
     "./client": {
       "types": "./lib/types/fetch/client.d.ts",
       "default": "./lib/types/fetch/client.js"
+    },
+    "./stdio": {
+      "types": "./lib/types/fetch/stdio.d.ts",
+      "default": "./lib/types/fetch/stdio.js"
+    },
+    "./stdio-protocol": {
+      "types": "./lib/types/fetch/stdio-protocol.d.ts",
+      "default": "./lib/types/fetch/stdio-protocol.js"
+    },
+    "./stdio-plugin": {
+      "types": "./lib/types/stdio-plugin.d.ts",
+      "default": "./lib/types/stdio-plugin.js"
     }
   },
   "files": [

@@ -64,6 +64,8 @@ The `settings.*`, `credentials.*`, and `llm.*` domains are the configuration-pag
 
 `AbstractApiClient` holds every protocol invariant — rpcId minting, envelope wrap/unwrap, zod parsing, SSE frame decoding, unary timeout, microtask-batched envelope observation (`subscribeEnvelopes`) — while platform subclasses supply only the `doFetch` transport aspect. `InProcessApiClient` over `toFetchHandler(api)` remains the isomorphic point for callers and carrier tests that need the full wire serialization/validation path without a network. Product `dsh --profile headless` is a direct core entry point and does not mount this package.
 
+`serveStdioFetch` is a second Fetch carrier for a supervised local child process. Versioned NDJSON frames multiplex concurrent requests, base64 response-body chunks, and cancellation over dedicated stdin/stdout streams; request bodies remain opaque API envelopes. The `./stdio-plugin` Cordis adapter binds this carrier to `ctx.apiProxy` and reserves stdout for frames. A version mismatch fails the connection closed rather than attempting compatibility recovery.
+
 ## Model Experience
 
 None, as the package defines the client↔host wire contract and carriers; nothing here reaches a model request.

@@ -27,6 +27,18 @@ export { RpcId } from './api/rpc.ts'
 export { toFetchHandler } from './fetch/handler.ts'
 export { AbstractApiClient, InProcessApiClient } from './fetch/client.ts'
 export type { IApiClient } from './fetch/client.ts'
+export { serveStdioFetch } from './fetch/stdio.ts'
+export type { StdioFetchServer, StdioFetchServerOptions } from './fetch/stdio.ts'
+export {
+  parseStdioFetchClientFrame,
+  parseStdioFetchServerFrame,
+  STDIO_FETCH_PROTOCOL_VERSION,
+} from './fetch/stdio-protocol.ts'
+export type {
+  StdioFetchClientFrame,
+  StdioFetchRequestFrame,
+  StdioFetchServerFrame,
+} from './fetch/stdio-protocol.ts'
 export { createApiProxy } from './api-proxy.ts'
 export type { ApiProxyDefaults } from './api-proxy.ts'
 
