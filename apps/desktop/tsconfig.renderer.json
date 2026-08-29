@@ -4,8 +4,29 @@
     "rootDir": "src",
     "outDir": "lib/types/renderer"
   },
-  "include": ["src/renderer.tsx", "src/shared.ts", "src/renderer.css.d.ts"],
+  "include": [
+    "src/renderer.tsx",
+    "src/product-runtime.ts",
+    "src/shared.ts",
+    "src/renderer.css.d.ts"
+  ],
   "references": [
-    { "path": "../../packages/host/apiproxy" }
+    { "path": "../../vendor/cordis" },
+    { "path": "../../packages/host/apiproxy" },
+    { "path": "../../packages/client/connection/tsconfig.client.json" },
+    { "path": "../../packages/client/runtime" },
+    { "path": "../../packages/client/ui-slots" },
+    { "path": "../../packages/client/ui-settings" },
+    { "path": "../../packages/client/locale" },
+    { "path": "../../packages/client/ui-theme" },
+    { "path": "../../packages/client/ui-layout" },
+    { "path": "../../packages/client/ui-sidebar" },
+    { "path": "../../packages/client/ui-conversation" },
+    { "path": "../../packages/client/ui-workspace" },
+    { "path": "../../packages/client/ui-settings-general" },
+    { "path": "../../packages/client/ui-brand-official" },
+    { "path": "../../packages/client/ui-renderer" },
+    { "path": "../../packages/core/session" },
+    { "path": "../../packages/typert/protocol" }
   ]
 }
