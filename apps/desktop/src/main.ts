@@ -39,7 +39,6 @@ function desktopWorkspace(): string {
 }
 
 type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
-type SessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item): item is string => typeof item === 'string')
@@ -92,40 +91,6 @@ function permissionLabel(kind: PermissionRequest['options'][number]['kind']): st
     case 'reject_once': return 'Reject'
     case 'reject_always': return 'Always reject'
     default: return kind
-  }
-}
-
-function renderSessionUpdate(notification: SessionNotification): DesktopRendererFrame | undefined {
-  const update = notification.update
-  switch (update.sessionUpdate) {
-    case 'user_message_chunk':
-      return update.content.type === 'text'
-        ? { type: 'session-update', sessionId: notification.sessionId, text: `user> ${update.content.text}` }
-        : undefined
-    case 'agent_message_chunk':
-      return update.content.type === 'text'
-        ? { type: 'session-update', sessionId: notification.sessionId, text: `assistant> ${update.content.text}` }
-        : undefined
-    case 'tool_call':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: `[tool ${update.toolCallId}] ${update.title} — ${update.status}`,
-      }
-    case 'tool_call_update':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: `[tool ${update.toolCallId}] ${update.status}`,
-      }
-    case 'plan':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: update.entries.map(entry => `[plan:${entry.status}] ${entry.content}`).join('\n'),
-      }
-    default:
-      return undefined
   }
 }
 
@@ -186,8 +151,11 @@ class AcpRuntimeSupervisor {
     this.publishStatus('starting')
     const pending = connectAcpRuntime(desktopRuntimeSpec(), {
       onSessionUpdate: (notification) => {
-        const frame = renderSessionUpdate(notification)
-        if (frame !== undefined) this.publish(frame)
+        this.publish({
+          type: 'session-update',
+          sessionId: notification.sessionId,
+          notification,
+        })
       },
       onPermissionRequest: request => this.requestPermission(request),
       onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) },
