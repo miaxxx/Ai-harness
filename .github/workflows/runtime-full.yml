@@ -26,6 +26,8 @@ jobs:
       # Product app bundles remain separate release artifacts below.
       - name: Build host runtime closure
         run: pnpm run build:lib:host
+      - name: Build Desktop product client
+        run: pnpm --dir apps/desktop run build
       - name: Test VS Code ACP session controller
         run: pnpm exec vitest run apps/vscode/tests/acp-client.spec.ts
       - name: Build VS Code extension

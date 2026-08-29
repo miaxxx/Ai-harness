@@ -3,11 +3,11 @@
  * and lifecycle supervision for one standalone ACP Runtime subprocess.
  */
 
-import { readFile } from 'node:fs/promises'
-import { extname, join, resolve, sep } from 'node:path'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
+import { extname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, protocol,
+  app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell,
 } from 'electron'
 import {
   connectAcpRuntime,
@@ -16,6 +16,8 @@ import {
   type AcpRuntimeSpec,
 } from '@deepseek-ai/dsh-acp-client'
 import type {
+  DesktopDirectoryCrumb,
+  DesktopDirectoryListing,
   DesktopPromptResult,
   DesktopRendererFrame,
   DesktopSessionSummary,
@@ -29,6 +31,7 @@ protocol.registerSchemesAsPrivileged([{
 const APP_ORIGIN = 'dsh-app://app'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
+const DIRECTORY_LIST_LIMIT = 500
 
 function packagedRuntimePath(...parts: string[]): string {
   return join(process.resourcesPath, 'runtime', ...parts)
@@ -38,8 +41,14 @@ function desktopWorkspace(): string {
   return resolve(process.env.DSH_DESKTOP_WORKSPACE ?? (app.isPackaged ? app.getPath('home') : REPOSITORY_ROOT))
 }
 
+function workspacePath(value: unknown): string {
+  if (value === undefined || value === null || value === '') return desktopWorkspace()
+  const raw = nonEmptyString(value, 'cwd')
+  if (!isAbsolute(raw)) throw new Error('cwd must be an absolute path')
+  return resolve(raw)
+}
+
 type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
-type SessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item): item is string => typeof item === 'string')
@@ -95,38 +104,55 @@ function permissionLabel(kind: PermissionRequest['options'][number]['kind']): st
   }
 }
 
-function renderSessionUpdate(notification: SessionNotification): DesktopRendererFrame | undefined {
-  const update = notification.update
-  switch (update.sessionUpdate) {
-    case 'user_message_chunk':
-      return update.content.type === 'text'
-        ? { type: 'session-update', sessionId: notification.sessionId, text: `user> ${update.content.text}` }
-        : undefined
-    case 'agent_message_chunk':
-      return update.content.type === 'text'
-        ? { type: 'session-update', sessionId: notification.sessionId, text: `assistant> ${update.content.text}` }
-        : undefined
-    case 'tool_call':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: `[tool ${update.toolCallId}] ${update.title} — ${update.status}`,
-      }
-    case 'tool_call_update':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: `[tool ${update.toolCallId}] ${update.status}`,
-      }
-    case 'plan':
-      return {
-        type: 'session-update',
-        sessionId: notification.sessionId,
-        text: update.entries.map(entry => `[plan:${entry.status}] ${entry.content}`).join('\n'),
-      }
-    default:
-      return undefined
+function directoryCrumbs(path: string): DesktopDirectoryCrumb[] {
+  const parsed = parse(path)
+  const crumbs: DesktopDirectoryCrumb[] = []
+  let current = parsed.root
+  if (current !== '') {
+    crumbs.push({ name: parsed.root, path: parsed.root, hidden: false })
   }
+  const relative = path.slice(parsed.root.length)
+  for (const segment of relative.split(sep).filter(Boolean)) {
+    current = current === '' ? segment : join(current, segment)
+    crumbs.push({ name: segment, path: current, hidden: segment.startsWith('.') })
+  }
+  return crumbs
+}
+
+async function listDirectory(value: unknown): Promise<DesktopDirectoryListing> {
+  const home = app.getPath('home')
+  const path = value === undefined || value === null || value === ''
+    ? home
+    : workspacePath(value)
+  const children = await readdir(path, { withFileTypes: true })
+  const visible = children
+    .filter(entry => entry.isDirectory() || entry.isFile())
+    .sort((left, right) => {
+      if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1
+      return left.name.localeCompare(right.name)
+    })
+  const truncated = visible.length > DIRECTORY_LIST_LIMIT
+  return {
+    path,
+    home,
+    crumbs: directoryCrumbs(path),
+    entries: visible.slice(0, DIRECTORY_LIST_LIMIT).map(entry => ({
+      name: entry.name,
+      path: join(path, entry.name),
+      kind: entry.isDirectory() ? 'directory' : 'file',
+      hidden: entry.name.startsWith('.'),
+    })),
+    truncated,
+  }
+}
+
+function childDirectory(parentValue: unknown, nameValue: unknown): string {
+  const parent = workspacePath(parentValue)
+  const name = nonEmptyString(nameValue, 'directory name').trim()
+  if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+    throw new Error('directory name must be one path segment')
+  }
+  return join(parent, name)
 }
 
 class AcpRuntimeSupervisor {
@@ -157,7 +183,9 @@ class AcpRuntimeSupervisor {
     })
   }
 
-  private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> {
+  private async requestPermission(
+    request: PermissionRequest,
+  ): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> {
     const window = this.window
     if (window === undefined || request.options.length === 0) {
       return { outcome: { outcome: 'cancelled' } }
@@ -186,8 +214,11 @@ class AcpRuntimeSupervisor {
     this.publishStatus('starting')
     const pending = connectAcpRuntime(desktopRuntimeSpec(), {
       onSessionUpdate: (notification) => {
-        const frame = renderSessionUpdate(notification)
-        if (frame !== undefined) this.publish(frame)
+        this.publish({
+          type: 'session-update',
+          sessionId: notification.sessionId,
+          notification,
+        })
       },
       onPermissionRequest: request => this.requestPermission(request),
       onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) },
@@ -240,9 +271,9 @@ class AcpRuntimeSupervisor {
     return desktopWorkspace()
   }
 
-  async listSessions(): Promise<DesktopSessionSummary[]> {
+  async listSessions(cwd = desktopWorkspace()): Promise<DesktopSessionSummary[]> {
     const runtime = await this.runtime()
-    const result = await runtime.client.listSessions({ cwd: desktopWorkspace() })
+    const result = await runtime.client.listSessions({ cwd })
     return result.sessions.map(session => ({
       sessionId: session.sessionId,
       cwd: session.cwd,
@@ -250,15 +281,15 @@ class AcpRuntimeSupervisor {
     }))
   }
 
-  async createSession(): Promise<string> {
+  async createSession(cwd = desktopWorkspace()): Promise<string> {
     const runtime = await this.runtime()
-    const created = await runtime.client.newSession({ cwd: desktopWorkspace(), mcpServers: [] })
+    const created = await runtime.client.newSession({ cwd, mcpServers: [] })
     return created.sessionId
   }
 
-  async loadSession(sessionId: string): Promise<void> {
+  async loadSession(sessionId: string, cwd = desktopWorkspace()): Promise<void> {
     const runtime = await this.runtime()
-    await runtime.client.loadSession({ sessionId, cwd: desktopWorkspace(), mcpServers: [] })
+    await runtime.client.loadSession({ sessionId, cwd, mcpServers: [] })
   }
 
   async prompt(sessionId: string, text: string): Promise<DesktopPromptResult> {
@@ -291,7 +322,9 @@ function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEven
 }
 
 function nonEmptyString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${label} must be a non-empty string`)
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string`)
+  }
   return value
 }
 
@@ -300,17 +333,17 @@ function installIpc(): void {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     return supervisor.workspace()
   })
-  ipcMain.handle('dsh:session-list', async (event) => {
+  ipcMain.handle('dsh:session-list', async (event, rawCwd: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return supervisor.listSessions()
+    return supervisor.listSessions(workspacePath(rawCwd))
   })
-  ipcMain.handle('dsh:session-create', async (event) => {
+  ipcMain.handle('dsh:session-create', async (event, rawCwd: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return supervisor.createSession()
+    return supervisor.createSession(workspacePath(rawCwd))
   })
-  ipcMain.handle('dsh:session-load', async (event, value: unknown) => {
+  ipcMain.handle('dsh:session-load', async (event, rawSessionId: unknown, rawCwd: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    await supervisor.loadSession(nonEmptyString(value, 'sessionId'))
+    await supervisor.loadSession(nonEmptyString(rawSessionId, 'sessionId'), workspacePath(rawCwd))
   })
   ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawText: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
@@ -326,6 +359,34 @@ function installIpc(): void {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     await supervisor.closeSession(nonEmptyString(value, 'sessionId'))
   })
+  ipcMain.handle('dsh:directory-pick', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      defaultPath: desktopWorkspace(),
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    const result = window === null
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options)
+    return result.canceled ? null : result.filePaths[0] ?? null
+  })
+  ipcMain.handle('dsh:directory-list', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return listDirectory(value)
+  })
+  ipcMain.handle('dsh:directory-create', async (event, rawParent: unknown, rawName: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const path = childDirectory(rawParent, rawName)
+    await mkdir(path)
+    return path
+  })
+  ipcMain.handle('dsh:path-open', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const path = workspacePath(value)
+    const error = await shell.openPath(path)
+    if (error !== '') throw new Error(error)
+  })
   ipcMain.handle('dsh:runtime-restart', async (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     await supervisor.restart()
@@ -335,6 +396,7 @@ function installIpc(): void {
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
 }
 
 function installResourceProtocol(): void {
@@ -343,13 +405,15 @@ function installResourceProtocol(): void {
     if (url.host !== 'app' || request.method !== 'GET') return new Response('not found', { status: 404 })
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html'
     const path = resolve(RENDERER_ROOT, relative)
-    if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) return new Response('forbidden', { status: 403 })
+    if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) {
+      return new Response('forbidden', { status: 403 })
+    }
     try {
       const body = await readFile(path)
       return new Response(body, {
         headers: {
           'content-type': MIME[extname(path)] ?? 'application/octet-stream',
-          'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'",
+          'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'",
         },
       })
     } catch {
@@ -360,11 +424,11 @@ function installResourceProtocol(): void {
 
 async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
-    width: 1080,
-    height: 760,
-    minWidth: 760,
-    minHeight: 520,
-    title: 'DeepSeek Harness Desktop Preview',
+    width: 1280,
+    height: 820,
+    minWidth: 860,
+    minHeight: 560,
+    title: 'DeepSeek Harness',
     webPreferences: {
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
       nodeIntegration: false,
