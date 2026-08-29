@@ -1,4 +1,4 @@
-import { mountDesktopProduct } from './product-runtime.ts'
+import { mountDesktopProduct } from './product-runtime-v2.ts'
 import './renderer.css'
 
 function renderBootFailure(root: HTMLElement, error: unknown): void {
