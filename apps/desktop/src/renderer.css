@@ -1,30 +1,46 @@
-:root {
-  color: #e9edf8;
-  background: #0b0d12;
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color-scheme: dark;
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 720px; min-height: 100vh; }
-button, textarea { font: inherit; }
-button { border: 0; border-radius: 9px; background: #5f78ff; color: white; padding: 10px 15px; cursor: pointer; }
-button:disabled { cursor: default; opacity: .45; }
-button.secondary { background: #242936; }
-main { width: min(980px, calc(100vw - 56px)); margin: 0 auto; padding: 48px 0; }
-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
-h1 { margin: 3px 0 0; font-size: 31px; letter-spacing: -.03em; }
-.eyebrow { color: #8d9ac0; margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
-.status { padding: 7px 10px; border-radius: 99px; background: #222733; color: #9eaccd; font-size: 12px; text-transform: uppercase; }
-.status.ready { background: #153b2e; color: #77e1ad; }
-.status.failed { background: #461f27; color: #ff9da9; }
-section { border: 1px solid #282d39; background: #13161d; border-radius: 14px; }
-.host { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; padding: 14px 16px; color: #9ba6bf; }
-.host code { overflow: hidden; color: #d5daea; text-overflow: ellipsis; white-space: nowrap; }
-.composer { margin-top: 18px; padding: 16px; }
-textarea { width: 100%; min-height: 110px; resize: vertical; border: 0; outline: 0; color: #edf0fa; background: transparent; line-height: 1.55; }
-.actions { display: flex; gap: 9px; justify-content: flex-end; border-top: 1px solid #272c37; padding-top: 13px; }
-.events { overflow: hidden; margin-top: 18px; }
-.eventsTitle { display: flex; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #282d39; color: #aab3c9; }
-.eventsTitle span { font-size: 12px; }
-pre { min-height: 240px; max-height: 390px; overflow: auto; margin: 0; padding: 16px; color: #b8c2dc; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+html,
+body {
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.desktop-boot-error {
+  width: min(760px, calc(100vw - 64px));
+  margin: 64px auto;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.desktop-boot-error p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .65;
+}
+
+.desktop-boot-error h1 {
+  margin: 0 0 24px;
+  font-size: 28px;
+}
+
+.desktop-boot-error pre {
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(127, 127, 127, .24);
+  border-radius: 10px;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
