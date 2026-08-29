@@ -1,10 +1,33 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { DesktopRendererFrame, DesktopSessionSummary } from './shared.ts'
+import type {
+  DesktopRendererFrame,
+  DesktopSessionNotification,
+  DesktopSessionSummary,
+} from './shared.ts'
 import './renderer.css'
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Technical-preview projection only; product adapters consume the structured notification itself. */
+function notificationText(notification: DesktopSessionNotification): string | undefined {
+  const update = notification.update
+  switch (update.sessionUpdate) {
+    case 'user_message_chunk':
+      return update.content.type === 'text' ? `user> ${update.content.text}` : undefined
+    case 'agent_message_chunk':
+      return update.content.type === 'text' ? `assistant> ${update.content.text}` : undefined
+    case 'tool_call':
+      return `[tool ${update.toolCallId}] ${update.title} — ${update.status}`
+    case 'tool_call_update':
+      return `[tool ${update.toolCallId}] ${update.status}`
+    case 'plan':
+      return update.entries.map(entry => `[plan:${entry.status}] ${entry.content}`).join('\n')
+    default:
+      return undefined
+  }
 }
 
 function App(): React.JSX.Element {
@@ -40,10 +63,12 @@ function App(): React.JSX.Element {
       else if (frame.status === 'stopped') setRuntimeMessage('ACP Runtime stopped')
       return
     }
-    // Replay and live presentation use the same ACP Session update path. Keep
-    // the event log scoped to the active UI Session once one has been chosen.
+    // Replay and live presentation now keep their ACP wire shape across IPC.
+    // This text log is intentionally only a preview projection; the product
+    // client adapter can consume frame.notification without information loss.
     if (activeSessionId === undefined || frame.sessionId === activeSessionId) {
-      appendEvent(frame.text)
+      const text = notificationText(frame.notification)
+      if (text !== undefined) appendEvent(text)
     }
   }), [activeSessionId, appendEvent])
 
