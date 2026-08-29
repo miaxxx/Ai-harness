@@ -23,6 +23,7 @@
     { "path": "../../packages/client/ui-sidebar" },
     { "path": "../../packages/client/ui-conversation" },
     { "path": "../../packages/client/ui-workspace" },
+    { "path": "../../packages/client/ui-directory-picker-native" },
     { "path": "../../packages/client/ui-settings-general" },
     { "path": "../../packages/client/ui-brand-official" },
     { "path": "../../packages/client/ui-renderer" },
