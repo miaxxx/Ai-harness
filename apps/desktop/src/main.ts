@@ -4,9 +4,7 @@
  */
 
 import { mkdir, readFile, readdir } from 'node:fs/promises'
-import {
-  basename, dirname, extname, isAbsolute, join, parse, resolve, sep,
-} from 'node:path'
+import { extname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell,
@@ -148,13 +146,13 @@ async function listDirectory(value: unknown): Promise<DesktopDirectoryListing> {
   }
 }
 
-function childDirectory(parentValue: unknown, nameValue: unknown): { parent: string; name: string; path: string } {
+function childDirectory(parentValue: unknown, nameValue: unknown): string {
   const parent = workspacePath(parentValue)
   const name = nonEmptyString(nameValue, 'directory name').trim()
   if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
     throw new Error('directory name must be one path segment')
   }
-  return { parent, name, path: join(parent, name) }
+  return join(parent, name)
 }
 
 class AcpRuntimeSupervisor {
@@ -185,7 +183,9 @@ class AcpRuntimeSupervisor {
     })
   }
 
-  private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> {
+  private async requestPermission(
+    request: PermissionRequest,
+  ): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> {
     const window = this.window
     if (window === undefined || request.options.length === 0) {
       return { outcome: { outcome: 'cancelled' } }
@@ -322,7 +322,9 @@ function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEven
 }
 
 function nonEmptyString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${label} must be a non-empty string`)
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string`)
+  }
   return value
 }
 
@@ -360,10 +362,13 @@ function installIpc(): void {
   ipcMain.handle('dsh:directory-pick', async (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     const window = BrowserWindow.fromWebContents(event.sender)
-    const result = await dialog.showOpenDialog(window ?? undefined, {
+    const options: Electron.OpenDialogOptions = {
       defaultPath: desktopWorkspace(),
       properties: ['openDirectory', 'createDirectory'],
-    })
+    }
+    const result = window === null
+      ? await dialog.showOpenDialog(options)
+      : await dialog.showOpenDialog(window, options)
     return result.canceled ? null : result.filePaths[0] ?? null
   })
   ipcMain.handle('dsh:directory-list', async (event, value: unknown) => {
@@ -372,9 +377,9 @@ function installIpc(): void {
   })
   ipcMain.handle('dsh:directory-create', async (event, rawParent: unknown, rawName: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    const child = childDirectory(rawParent, rawName)
-    await mkdir(child.path)
-    return child.path
+    const path = childDirectory(rawParent, rawName)
+    await mkdir(path)
+    return path
   })
   ipcMain.handle('dsh:path-open', async (event, value: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
@@ -400,7 +405,9 @@ function installResourceProtocol(): void {
     if (url.host !== 'app' || request.method !== 'GET') return new Response('not found', { status: 404 })
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html'
     const path = resolve(RENDERER_ROOT, relative)
-    if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) return new Response('forbidden', { status: 403 })
+    if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) {
+      return new Response('forbidden', { status: 403 })
+    }
     try {
       const body = await readFile(path)
       return new Response(body, {
