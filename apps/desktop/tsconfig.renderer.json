@@ -6,7 +6,7 @@
   },
   "include": [
     "src/renderer.tsx",
-    "src/product-runtime.ts",
+    "src/product-runtime-v2.ts",
     "src/shared.ts",
     "src/renderer.css.d.ts"
   ],
