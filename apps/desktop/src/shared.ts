@@ -1,3 +1,5 @@
+import type { AcpClientHandlers } from '@deepseek-ai/dsh-acp-client'
+
 /** Durable Session metadata safe to expose to the sandboxed Renderer. */
 export interface DesktopSessionSummary {
   sessionId: string
@@ -9,6 +11,9 @@ export interface DesktopSessionSummary {
 export interface DesktopPromptResult {
   stopReason: string
 }
+
+/** Structured ACP Session notification forwarded without presentation loss. */
+export type DesktopSessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
 
 /** Low-authority API exposed by the context-isolated preload. */
 export interface DesktopBridge {
@@ -26,7 +31,7 @@ export interface DesktopBridge {
   cancel(sessionId: string): void
   /** Release one live Session while retaining durable history. */
   closeSession(sessionId: string): Promise<void>
-  /** Subscribe to Runtime lifecycle and ACP presentation updates. */
+  /** Subscribe to Runtime lifecycle and structured ACP presentation updates. */
   subscribe(listener: (frame: DesktopRendererFrame) => void): () => void
   /** Restart the supervised ACP Runtime process. */
   restartRuntime(): Promise<void>
@@ -42,7 +47,8 @@ export type DesktopRendererFrame =
   | {
     type: 'session-update'
     sessionId: string
-    text: string
+    /** Preserve ACP semantics for the product client adapter; presentation belongs in Renderer code. */
+    notification: DesktopSessionNotification
   }
 
 declare global {
