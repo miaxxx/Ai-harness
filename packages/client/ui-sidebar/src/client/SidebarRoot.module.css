@@ -11,7 +11,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 6px var(--dsh-sidebar-inline-padding);
+  padding: calc(6px + var(--dsh-window-controls-top-inset, 0px)) var(--dsh-sidebar-inline-padding) 6px;
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
@@ -26,7 +26,7 @@
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
    the whale's box (24px to the 24-wide whale glyph itself). */
 .root.collapsed {
-  padding: 18px 10px 6px;
+  padding: calc(18px + var(--dsh-window-controls-top-inset, 0px)) 10px 6px;
 }
 
 /* Scrollbars in the column are a pointer affordance: the shell adds this

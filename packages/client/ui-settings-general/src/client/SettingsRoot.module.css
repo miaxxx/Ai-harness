@@ -60,7 +60,7 @@
 .mask {
   position: absolute;
   inset: 0;
-  background: var(--dsw-alias-bg-mask-1);
+  background: rgba(15, 17, 21, 0.18);
   backdrop-filter: var(--dsw-mask-blur);
 }
 
@@ -79,7 +79,7 @@
   max-width: calc(100vw - 48px);
   border-radius: 24px;
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2);
+  background: #fff;
   box-shadow: var(--dsw-shadow-lv3);
   /* Elevated surface: the scrollbar thumb takes the l2 elevation tokens.
      Declared on the panel rather than the scrolling `.options` child so the
@@ -100,6 +100,7 @@
   width: 188px;
   padding: 22px 12px 0;
   box-sizing: border-box;
+  background: #f5f5f5;
 }
 
 /* Title row (figma 501:29959): 16/500 lh24, 12px side padding. */
@@ -165,6 +166,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  background: #fff;
 }
 
 /* Header (figma .Header 501:29981): h54, pad (10,20,14,8), close right. */

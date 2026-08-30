@@ -13,6 +13,7 @@ import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, 
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
 import { memoryAuth } from './auth-double.ts'
@@ -807,6 +808,14 @@ describe('provider profile lifecycle', () => {
     expect(() => resolveProfiles([{ provider: 'openai' }] as never)).toThrow(/dict keyed by provider/)
     expect(() => resolveProfiles({ openai: { provider: 'openai' } as never })).toThrow(/moved to the providers dict key/)
     expect(() => resolveProfiles({ openai: { baseURL: '' } })).toThrow(/empty baseURL/)
+    expect(() => resolveProfiles(
+      { openai: { baseURL: 'https://fallback.test', baseURLEnv: 'OPENAI_BASE_URL' } },
+      createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]),
+    )).toThrow(/endpoint reference OPENAI_BASE_URL is not set/)
+    expect(resolveProfiles(
+      { openai: { baseURL: 'https://fallback.test', baseURLEnv: 'OPENAI_BASE_URL' } },
+      createLaunchEnvironmentSnapshot([{ source: 'process', values: { OPENAI_BASE_URL: 'https://gateway.test' } }]),
+    ).get('openai')?.baseURL).toBe('https://gateway.test')
     expect(() => resolveProfiles({ openai: { apiKeyEnv: 'not-a-var!' } })).toThrow(/must match/)
     expect(() => resolveProfiles({ openai: { maxRequestImageBytes: 0 } })).toThrow(/maxRequestImageBytes/)
     expect(resolveProfiles({ openai: {} }).get('openai')?.maxRequestImageBytes)

@@ -6,6 +6,7 @@ export type AgentPresetSettingsKey =
   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
   | 'presetStandardName' | 'presetStandardDescription'
   | 'presetCodeName' | 'presetCodeDescription'
+  | 'presetWorkName' | 'presetWorkDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
@@ -37,9 +38,12 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetStandardName: 'Standard mode',
   presetStandardDescription:
     'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
-  presetCodeName: 'PTC mode',
+  presetCodeName: 'Code mode',
   presetCodeDescription:
-    'All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.',
+    'For development work, with shell, files, code search, on-demand skills, and multi-step operations through the Code Mode SDK. LSP is used when the host configures a language server.',
+  presetWorkName: 'Work mode',
+  presetWorkDescription:
+    'For research and office work, with web search, document and spreadsheet workflows, shell, files, and on-demand skills.',
   presetMinimalName: 'Minimal mode',
   presetMinimalDescription:
     'Two-tool coding agent with persistent bash and str_replace_editor.',
@@ -100,8 +104,10 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   view: '查看',
   presetStandardName: '标准模式',
   presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
-  presetCodeName: 'PTC 模式',
-  presetCodeDescription: '具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
+  presetCodeName: 'Code 模式',
+  presetCodeDescription: '面向开发任务，提供 Shell、文件操作、代码检索、按需 Skills，并通过 Code Mode SDK 组合多步操作；LSP 在宿主配置语言服务器后可用。',
+  presetWorkName: 'Work 模式',
+  presetWorkDescription: '面向研究与办公任务，提供网页检索、文档和表格处理、Shell、文件操作与按需 Skills。',
   presetMinimalName: '极简模式',
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
@@ -169,6 +175,7 @@ interface PresetLocaleKeys {
 const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> = {
   standard: { name: 'presetStandardName', description: 'presetStandardDescription' },
   code: { name: 'presetCodeName', description: 'presetCodeDescription' },
+  work: { name: 'presetWorkName', description: 'presetWorkDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
 }

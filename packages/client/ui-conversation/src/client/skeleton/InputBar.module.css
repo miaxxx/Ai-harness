@@ -41,6 +41,7 @@
 .card {
   box-sizing: border-box;
   position: relative; /* overlay anchor positioning context */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   /* figma Input 75:8208: 12px between the text area and the button row; 10px
@@ -54,7 +55,10 @@
      l2-darkmode-thin pair. Fill: the input surface token (elevated in dark). */
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 22px;
-  background: var(--dsw-specific-input-major);
+  /* Desktop hosts may mount before the theme stylesheet has published its
+     token values. Keep this surface opaque during that handoff so transcript
+     text never shows through the composer. */
+  background: var(--dsw-specific-input-major, #fff);
   box-shadow: var(--dsw-shadow-lv2);
   font-size: 16px;
   line-height: 24px;
@@ -124,8 +128,11 @@
    frames late and the words visibly trail the caret. The 14-line cap lives here
    because this is the box the cap describes. */
 .scroll {
+  position: relative;
+  z-index: 1;
   max-height: var(--dsh-composer-text-max-height);
   overflow-y: auto;
+  background: var(--dsw-specific-input-major, #fff);
 }
 
 /* Mirror-div auto-grow stack: the hidden mirror is in normal flow and sets the FULL draft
@@ -142,6 +149,7 @@
 .backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   pointer-events: none;
@@ -176,6 +184,28 @@
   animation: input-pending 1s ease-in-out infinite alternate;
 }
 
+/* Live transport feedback stays inside the opaque card: it is visible before
+   the first model token arrives and changes to the active tool's name while a
+   call is running. */
+.activity {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  margin: -4px 16px -2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.activityDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary, #2563eb);
+  animation: input-pending 1s ease-in-out infinite alternate;
+}
+
 @keyframes input-pending {
   from { opacity: 0.35; }
   to { opacity: 1; }
@@ -184,6 +214,7 @@
 .input {
   position: absolute;
   inset: 0;
+  z-index: 1;
   width: 100%;
   height: 100%;
   resize: none;
@@ -196,9 +227,15 @@
   outline: none;
   background: transparent;
   color: transparent;
-  -webkit-text-fill-color: transparent;
   /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
-  caret-color: var(--dsw-alias-state-business-primary);
+  caret-color: var(--dsw-alias-state-business-primary, #2563eb);
+}
+
+/* Chromium on macOS can lose a transparent textarea's insertion marker when
+   its stacking order is implicit. This explicit focus state keeps the native
+   caret above the decoration layer without adding a second focus outline. */
+.input:focus {
+  caret-color: var(--dsw-alias-state-business-primary, #2563eb);
 }
 
 .input,
@@ -244,7 +281,6 @@
    its marker glyphs cannot cover the reference icons beneath it. */
 .input:disabled {
   color: transparent;
-  -webkit-text-fill-color: transparent;
   cursor: not-allowed;
 }
 
@@ -444,9 +480,14 @@
    geometry come from the browser's native glyph metrics. The leading marker
    reserves the icon's advance while the backdrop paints the domain glyph. */
 .chip {
+  --dsh-reference-chip-fill: color-mix(in srgb, currentColor 8%, transparent);
   position: relative;
-  color: var(--dsw-alias-state-business-primary);
-  background: transparent;
+  border-radius: 7px;
+  background: var(--dsh-reference-chip-fill);
+  box-shadow:
+    -4px 0 0 var(--dsh-reference-chip-fill),
+    4px 0 0 var(--dsh-reference-chip-fill);
+  color: var(--dsw-alias-label-secondary);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -463,7 +504,9 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  /* The hidden marker keeps native caret geometry. Pull the wider 16px icon
+     into the capsule's leading overhang so it cannot crowd the label. */
+  transform: translate(calc(-50% - 4px), -50%);
 }
 
 .chipInvalid {

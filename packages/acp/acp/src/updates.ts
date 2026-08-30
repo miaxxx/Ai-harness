@@ -32,6 +32,12 @@ export async function projectionToAcpUpdates(
       }
       return updates
     }
+    case 'agent-stream':
+      return [{
+        sessionUpdate: projection.channel === 'thought' ? 'agent_thought_chunk' : 'agent_message_chunk',
+        messageId: projection.messageId,
+        content: { type: 'text', text: projection.text },
+      }]
     case 'tool-call':
       return [{
         sessionUpdate: 'tool_call',

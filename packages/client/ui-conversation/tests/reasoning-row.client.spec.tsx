@@ -50,6 +50,10 @@ describe('ReasoningRow', () => {
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent)
+      .toContain('Newest reasoning tokens')
+    fireEvent.click(view.getByText('Think'))
     const summary = view.getByText('Newest reasoning tokens')
     Object.defineProperties(summary, {
       scrollWidth: { configurable: true, value: 300 },

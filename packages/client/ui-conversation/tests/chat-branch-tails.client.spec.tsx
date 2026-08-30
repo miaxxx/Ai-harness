@@ -142,6 +142,21 @@ describe('MessageItem arms', () => {
     expect(view.container.textContent).toContain('README.md, please.')
   })
 
+  it('preserves a sent Skill invocation as a labeled Skill capsule', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'text', text: '请使用 /document-work 整理附件' }] as never,
+        source: null,
+      }} />,
+    )
+    const skill = view.container.querySelector('[data-ref-chip="skill"]')
+    expect(skill?.textContent).toBe('document-work')
+    expect(skill?.querySelector('svg')).not.toBeNull()
+  })
+
   it('user bubbles expose clock / copy and neither branch nor edit; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {

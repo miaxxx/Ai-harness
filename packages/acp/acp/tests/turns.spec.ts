@@ -144,12 +144,12 @@ describe('ACP prompt lifecycle', () => {
     }))
   })
 
-  it('rejects a failed turn and never publishes its partial chunks', async () => {
+  it('keeps the visible streamed prefix when a turn later fails', async () => {
     harness = await makeBridgeHarness({ script: [errorResponse('provider boom')] })
     const sessionId = await newSession(harness)
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] }))
       .rejects.toThrow(/turn failed: provider boom/)
-    expect(messageText(harness)).toBe('')
+    expect(messageText(harness)).toBe('partial')
   })
 
   it('rejects an ordinary plugin failure through the same prompt boundary', async () => {
@@ -491,7 +491,7 @@ describe('ACP prompt lifecycle', () => {
     const sessionId = await newSession(harness)
     const result = await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
     expect(result.stopReason).toBe('end_turn')
-    await vi.waitFor(() => { expect(messageText(harness!)).toBe('recovered') })
+    await vi.waitFor(() => { expect(messageText(harness!)).toBe('partialrecovered') })
   })
 
   it('a failed turn with no retry still rejects', async () => {

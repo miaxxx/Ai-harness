@@ -10,6 +10,8 @@ flowchart LR
   cfg["examples/acp-agent<br/>cordis.yml"]
   plugin_acp_llm_deepseek["llm-deepseek<br/>@deepseek-ai/dsh-llm-deepseek"]
   cfg --> plugin_acp_llm_deepseek
+  plugin_acp_llm_desktop_primary["llm-desktop-primary<br/>@deepseek-ai/dsh-llm-pi-ai"]
+  cfg --> plugin_acp_llm_desktop_primary
   plugin_acp_sandbox["sandbox<br/>@deepseek-ai/dsh-sandbox-local"]
   cfg --> plugin_acp_sandbox
   plugin_acp_sandbox_policy["sandbox-policy<br/>@deepseek-ai/dsh-sandbox-policy"]
@@ -67,6 +69,18 @@ flowchart LR
   cfg --> plugin_acp_fs_observation_policy
   plugin_acp_tool_fs["tool-fs<br/>@deepseek-ai/dsh-tool-fs"]
   cfg --> plugin_acp_tool_fs
+  plugin_acp_skill["skill<br/>@deepseek-ai/dsh-skill"]
+  cfg --> plugin_acp_skill
+  plugin_acp_skill_filesystem["skill-filesystem<br/>@deepseek-ai/dsh-skill-filesystem"]
+  cfg --> plugin_acp_skill_filesystem
+  plugin_acp_tool_skill["tool-skill<br/>@deepseek-ai/dsh-tool-skill"]
+  cfg --> plugin_acp_tool_skill
+  plugin_acp_web["web<br/>@deepseek-ai/dsh-web"]
+  cfg --> plugin_acp_web
+  plugin_acp_web_search_deepseek["web-search-deepseek<br/>@deepseek-ai/dsh-web-search-deepseek"]
+  cfg --> plugin_acp_web_search_deepseek
+  plugin_acp_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
+  cfg --> plugin_acp_tool_web
   plugin_acp_hooks_claude_code["hooks-claude-code<br/>@deepseek-ai/dsh-hooks-claude-code"]
   cfg --> plugin_acp_hooks_claude_code
   plugin_acp_hooks_codex["hooks-codex<br/>@deepseek-ai/dsh-hooks-codex"]
@@ -76,6 +90,7 @@ flowchart LR
 | Plugin id | Package / module |
 | --- | --- |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |
+| `llm-desktop-primary` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `sandbox` | `@deepseek-ai/dsh-sandbox-local` |
 | `sandbox-policy` | `@deepseek-ai/dsh-sandbox-policy` |
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` |
@@ -101,6 +116,12 @@ flowchart LR
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `fs-observation-policy` | `@deepseek-ai/dsh-fs-observation-policy` |
 | `tool-fs` | `@deepseek-ai/dsh-tool-fs` |
+| `skill` | `@deepseek-ai/dsh-skill` |
+| `skill-filesystem` | `@deepseek-ai/dsh-skill-filesystem` |
+| `tool-skill` | `@deepseek-ai/dsh-tool-skill` |
+| `web` | `@deepseek-ai/dsh-web` |
+| `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
+| `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `hooks-claude-code` | `@deepseek-ai/dsh-hooks-claude-code` |
 | `hooks-codex` | `@deepseek-ai/dsh-hooks-codex` |
 

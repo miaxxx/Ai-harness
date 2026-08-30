@@ -273,14 +273,17 @@
   }
 }
 
-/* Inline references use domain glyphs and business-color text without another
-   container inside the user bubble. */
+/* Sent references preserve the compact neutral capsule used by the composer. */
 .refChip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  gap: 3px;
   margin: 0 2px;
-  color: var(--dsw-alias-state-business-primary);
+  padding: 1px 7px 1px 5px;
+  border-radius: 7px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
   font-weight: 500;
   white-space: nowrap;
   vertical-align: baseline;

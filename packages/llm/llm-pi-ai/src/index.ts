@@ -156,7 +156,7 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers)
+    const next = resolveProfiles(raw.providers, launchEnvironmentOf(ctx))
     lastRaw = raw
     memoized = next
     return next

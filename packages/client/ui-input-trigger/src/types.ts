@@ -34,6 +34,8 @@ export interface InputTriggerCandidate {
   readonly name: string
   readonly description?: string
   readonly icon?: string
+  /** Optional hover submenu label. Adjacent candidates with the same label share one launcher row. */
+  readonly submenu?: string
   readonly hint?: string
   /** Optional visual heading shared by adjacent candidates; sectioned groups omit their source-title row. */
   readonly section?: string
@@ -92,7 +94,7 @@ export interface ReferenceInsert {
   /** Inline display label (fallback-cached on the occurrence). */
   readonly label: string
   /** Optional domain glyph shown beside the label. */
-  readonly appearance?: 'session' | 'file' | 'folder'
+  readonly appearance?: 'session' | 'file' | 'folder' | 'skill'
   /** Clipboard / persistence projection, e.g. `/name` (never the model form). */
   readonly clipboardText: string
 }

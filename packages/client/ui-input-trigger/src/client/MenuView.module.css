@@ -27,8 +27,15 @@
   flex-direction: column;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
-  box-shadow: var(--dsw-shadow-lv3);
+  background-color: #fff;
+  background-color: var(--dsw-specific-menu, #fff);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.10),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.menu:has(.submenu) {
+  overflow: visible;
 }
 
 .viewport {
@@ -84,6 +91,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.itemIcon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .itemName {
   flex: none;
   max-width: 40%;
@@ -99,6 +111,59 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.submenuTrigger .itemName {
+  max-width: none;
+}
+
+.chevron {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 20px;
+  line-height: 16px;
+}
+
+.submenu {
+  position: absolute;
+  bottom: 0;
+  /* One-pixel overlap keeps the pointer inside the menu tree while moving
+     from the launcher row into the independently elevated child panel. */
+  left: calc(100% - 1px);
+  z-index: 1;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 12px;
+  background-color: #fff;
+  background-color: var(--dsw-specific-menu, #fff);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.10),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.submenuItem {
+  align-items: flex-start;
+}
+
+.submenuCopy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.submenuCopy .itemName {
+  max-width: 100%;
+}
+
+.submenuCopy .itemDescription {
+  width: 100%;
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 /* Heading row above a source group: non-interactive small grey text,

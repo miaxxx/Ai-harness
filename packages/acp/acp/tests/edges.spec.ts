@@ -22,7 +22,7 @@ describe('ACP product output boundary', () => {
     harness = undefined
   })
 
-  it('emits committed transcript and semantic tool lifecycle without exposing raw reasoning/trace events', async () => {
+  it('emits semantic tool lifecycle and streams visible assistant text', async () => {
     harness = await makeBridgeHarness({ script: [toolCallResponse(), textResponse('done')] })
     harness.ctx.tools.register(defineContentToolFixture({
       name: 'echo',
@@ -34,12 +34,12 @@ describe('ACP product output boundary', () => {
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
     await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
 
-    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(4) })
+    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(7) })
     expect(harness.updates.map(update => update.sessionUpdate)).toEqual([
       'user_message_chunk',
       'tool_call',
       'tool_call_update',
-      'agent_message_chunk',
+      'agent_message_chunk', 'agent_message_chunk', 'agent_message_chunk', 'agent_message_chunk',
     ])
     expect(harness.updates[1]).toEqual(expect.objectContaining({
       sessionUpdate: 'tool_call',
@@ -52,10 +52,9 @@ describe('ACP product output boundary', () => {
       toolCallId: 'call-1',
       status: 'completed',
     }))
-    expect(harness.updates[3]).toEqual(expect.objectContaining({
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'done' },
-    }))
+    expect(harness.updates.slice(3).flatMap(update => (
+      update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []
+    )).join('')).toBe('done')
     expect(harness.updates.some(update => update.sessionUpdate === 'agent_thought_chunk')).toBe(false)
   })
 
@@ -72,7 +71,7 @@ describe('ACP product output boundary', () => {
     expect(harness.updates).toHaveLength(0)
   })
 
-  it('delivers committed transcript from a bridge-owned session driven by another in-process producer', async () => {
+  it('hides plugin-authored context while delivering model output from an in-process producer', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('external')] })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
@@ -80,19 +79,14 @@ describe('ACP product output boundary', () => {
 
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'plugin', plugin: 'test' } }))
     await agent.whenIdle()
-    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(2) })
+    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(8) })
 
-    expect(harness.updates.map(update => update.sessionUpdate)).toEqual([
-      'user_message_chunk',
-      'agent_message_chunk',
-    ])
-    expect(harness.updates[1]).toEqual(expect.objectContaining({
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'external' },
-    }))
+    expect(harness.updates.flatMap(update => (
+      update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []
+    )).join('')).toBe('external')
   })
 
-  it('contains output conversion failure outside an ACP prompt while preserving already committed user history', async () => {
+  it('contains output conversion failure outside an ACP prompt without exposing plugin context', async () => {
     harness = await makeBridgeHarness({ script: [[
       { type: 'block-start', index: 0, blockType: 'image' },
       {
@@ -119,11 +113,7 @@ describe('ACP product output boundary', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'plugin', plugin: 'test' } }))
     await agent.whenIdle()
     await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith(expect.stringContaining('session projection delivery failed')) })
-    expect(harness.updates).toHaveLength(1)
-    expect(harness.updates[0]).toEqual(expect.objectContaining({
-      sessionUpdate: 'user_message_chunk',
-      content: { type: 'text', text: 'go' },
-    }))
+    expect(harness.updates).toHaveLength(0)
   })
 
   // `session/update` is a JSON-RPC notification, so a client-side handler

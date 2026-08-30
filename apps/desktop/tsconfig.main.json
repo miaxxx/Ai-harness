@@ -5,7 +5,7 @@
     "outDir": "lib/types/main",
     "types": ["node"]
   },
-  "include": ["src/main.ts", "src/preload.ts", "src/shared.ts"],
+  "include": ["src/main.ts", "src/preload.ts", "src/shared.ts", "src/desktop-content.ts"],
   "references": [
     { "path": "../../packages/acp/acp-client" }
   ]

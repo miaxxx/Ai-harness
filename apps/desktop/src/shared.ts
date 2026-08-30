@@ -1,4 +1,4 @@
-import type { AcpClientHandlers } from '@deepseek-ai/dsh-acp-client'
+import type { SessionNotification } from '@agentclientprotocol/sdk'
 
 /** Durable Session metadata safe to expose to the sandboxed Renderer. */
 export interface DesktopSessionSummary {
@@ -34,10 +34,59 @@ export interface DesktopDirectoryListing {
 /** Result of one ACP prompt turn. */
 export interface DesktopPromptResult {
   stopReason: string
+  /** Files created or changed during this turn and copied into the Session artifact directory. */
+  artifacts: DesktopArtifact[]
+}
+
+/** One effective Skill visible to the Desktop Runtime. */
+export interface DesktopSkillSummary {
+  name: string
+  description: string
+  source: 'user' | 'project' | 'bundled'
+  removable: boolean
+}
+
+/** One file staged for the next prompt inside the Session artifact directory. */
+export interface DesktopAttachment {
+  id: string
+  name: string
+  path: string
+  mediaType: string
+  kind: 'image' | 'file'
+  size: number
+}
+
+/** One ordinary file captured as a durable output of a Session turn. */
+export interface DesktopArtifact {
+  name: string
+  path: string
+  relativePath: string
+  mediaType: string
+  size: number
+}
+
+/** OpenAI-compatible wire protocol selected for the Desktop primary model. */
+export type DesktopModelProtocol = 'openai-completions' | 'openai-responses'
+
+/** Redacted primary-model configuration safe to expose to the Renderer. */
+export interface DesktopModelSettings {
+  configured: boolean
+  baseURL: string
+  model: string
+  protocol: DesktopModelProtocol
+  apiKeyConfigured: boolean
+}
+
+/** Writable primary-model fields; an empty API key preserves the stored secret. */
+export interface DesktopModelSettingsUpdate {
+  baseURL: string
+  model: string
+  protocol: DesktopModelProtocol
+  apiKey: string
 }
 
 /** Structured ACP Session notification forwarded without presentation loss. */
-export type DesktopSessionNotification = Parameters<AcpClientHandlers['onSessionUpdate']>[0]
+export type DesktopSessionNotification = SessionNotification
 
 /** Low-authority API exposed by the context-isolated preload. */
 export interface DesktopBridge {
@@ -50,7 +99,7 @@ export interface DesktopBridge {
   /** Restore one durable Session and replay its presentation updates. */
   loadSession(sessionId: string, cwd?: string): Promise<void>
   /** Prompt one live Session through ACP. */
-  prompt(sessionId: string, text: string): Promise<DesktopPromptResult>
+  prompt(sessionId: string, text: string, attachmentIds?: readonly string[]): Promise<DesktopPromptResult>
   /** Cancel the current turn for one live Session. */
   cancel(sessionId: string): void
   /** Release one live Session while retaining durable history. */
@@ -63,6 +112,24 @@ export interface DesktopBridge {
   createDirectory(path: string, name: string): Promise<string>
   /** Ask the host OS to open one filesystem path with its default application. */
   openPath(path: string): Promise<void>
+  /** List effective bundled, project, and user Skills for a Workspace. */
+  listSkills(cwd: string): Promise<DesktopSkillSummary[]>
+  /** Import a Skill folder or SKILL.md through the native picker. */
+  importSkill(): Promise<DesktopSkillSummary | null>
+  /** Remove one user-owned Skill. */
+  removeSkill(name: string): Promise<void>
+  /** Pick and stage image or ordinary-file attachments for one Session. */
+  pickAttachments(sessionId: string, cwd: string): Promise<DesktopAttachment[]>
+  /** Remove a staged attachment before submission. */
+  removeAttachment(sessionId: string, attachmentId: string): Promise<void>
+  /** Copy one captured artifact to a user-selected destination. */
+  saveArtifact(sessionId: string, path: string): Promise<string | null>
+  /** Export every captured artifact in the Session as one ZIP archive. */
+  exportArtifacts(sessionId: string): Promise<string | null>
+  /** Read the redacted OpenAI-compatible primary-model configuration. */
+  modelSettings(): Promise<DesktopModelSettings>
+  /** Save the primary model, securely retain its key, and restart the ACP Runtime. */
+  saveModelSettings(update: DesktopModelSettingsUpdate): Promise<DesktopModelSettings>
   /** Subscribe to Runtime lifecycle and structured ACP presentation updates. */
   subscribe(listener: (frame: DesktopRendererFrame) => void): () => void
   /** Restart the supervised ACP Runtime process. */

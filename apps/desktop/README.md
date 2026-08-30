@@ -6,9 +6,11 @@ This application is the macOS Electron technical preview. Its main process start
 
 ## Process ownership
 
-The Electron main process owns the window, the `dsh-app://` resource protocol, IPC admission, and ACP Runtime supervision. Its Renderer is sandboxed with context isolation and no Node integration. The preload exposes workspace lookup, Session list/create/load/close, prompt/cancel, frame subscription, and Runtime restart; it does not expose generic IPC, filesystem, shell, or process primitives.
+The Electron main process owns the window, the `dsh-app://` resource protocol, IPC admission, and ACP Runtime supervision. Its Renderer is sandboxed with context isolation and no Node integration. The preload exposes fixed workspace, Session, Skill import, attachment staging, artifact export, model settings, and Runtime operations; it does not expose generic IPC, filesystem, shell, or process primitives.
 
 In source mode, the main process uses `@deepseek-ai/dsh-acp-client` to launch the built ACP example Runtime. `DSH_DESKTOP_ACP_COMMAND` and `DSH_DESKTOP_ACP_ARGS_JSON` replace that command when a different Runtime is required. In a packaged application it instead resolves the bundled Node executable, ACP entry, and configuration below `process.resourcesPath`. It maps ACP Session updates into display frames and presents ACP permission choices; the Runtime still owns permission policy and sandbox enforcement.
+
+Desktop runs Code and Work as one automatic task surface: the Runtime infers the request type and loads only the relevant bundled development, web-research, document, or spreadsheet Skill. Shell and filesystem capabilities are shared. Web search uses the DeepSeek search provider and therefore still needs `DEEPSEEK_API_KEY` even when the primary chat model is configured through another OpenAI-compatible endpoint. LSP and binary office formats are used only when a deployment supplies the corresponding provider or tool.
 
 ## Run the preview
 
@@ -36,6 +38,9 @@ The build downloads the pinned official Node 24.18.1 archive for the host archit
 - The main process supervises one independent ACP Runtime and terminates it before quitting.
 - Session list and load use the Runtime's durable ACP operations; loading replays presentation updates.
 - Session close releases the live handle without deleting durable history.
-- The technical Renderer can create and load Sessions, submit a prompt, cancel the active turn, answer permission requests, and display ACP update frames.
+- The technical Renderer can create and load Sessions, submit a prompt, cancel the active turn, answer permission requests, and display streamed text, expanded live reasoning, and tool ACP updates. A configured OpenAI-compatible primary model runs with high reasoning enabled.
+- Routine prompts run directly. A substantial Desktop task creates one persisted same-session goal, publishes a three-to-seven-item task list, and continues across Goal Rounds until the Runtime records completion or a concrete blocker. The task strip follows ACP plan updates and clears when the next human turn begins.
+- The composer add menu exposes attachment upload and a hover-opened Skills catalog. A selected Skill remains a neutral capsule before and after submission; ordinary ACP resource links render as file capsules without exposing their local URI. The picker stages PNG/JPEG/WebP/GIF images and ordinary text/code/Markdown/HTML/JSON/CSV files. Imported user Skills live below `~/.dsh/skills` and are removable from Settings; project and bundled Skills are read-only there.
+- Each turn copies created or changed ordinary files into `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`, writes a Session manifest, and displays the resulting files after the final response. A user can open a file, save one copy elsewhere, or export all Session artifacts as ZIP. Binary office-format generation remains outside this scope.
 
 The generated `.app` contains Node, the ACP Runtime, its configuration, JavaScript dependencies, and macOS native helpers. It is deliberately unsigned: macOS may require an explicit user override, and the application is not suitable for public distribution. Code signing, notarization, DMG generation, universal binaries, automatic updates, crash recovery, a first-run flow, and the full product interface remain later work.

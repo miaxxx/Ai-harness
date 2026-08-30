@@ -342,6 +342,7 @@
   width: calc(100% * 1051 / 776);
   aspect-ratio: 1051 / 468;
   transform: translate(-50%, 50%);
+  opacity: var(--dsh-hero-glow-opacity, 1);
   pointer-events: none;
 }
 

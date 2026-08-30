@@ -90,6 +90,7 @@ export function InputBar({
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
+  const runningTool = useSession(s => s.runningCalls[0] ?? null)
   const subagent = useSession(s => s.subagent) ?? null
   const removed = useSession(s => s.removed) ?? false
   // Plan mode swaps the textarea placeholder (the projection is the folded
@@ -563,6 +564,11 @@ export function InputBar({
   const primaryStops = running && subagent === null
   const interruptible = running && continuable
   const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
+  const activityLabel = !running
+    ? null
+    : runningTool == null
+      ? t('input.thinking')
+      : t('input.usingTool', { tool: runningTool.name })
   const onPrimary = (): void => {
     if (primaryStops) {
       stop?.()
@@ -767,6 +773,12 @@ export function InputBar({
             <div ref={mirrorRef} aria-hidden className={css.mirror} data-input-mirror>{`${draft}\n`}</div>
           </div>
         </div>
+        {activityLabel !== null && (
+          <div className={css.activity} role="status" aria-live="polite">
+            <span className={css.activityDot} aria-hidden />
+            {activityLabel}
+          </div>
+        )}
         <div className={css.row}>
           <div className={css.tools}>
             <Tooltip label={t('input.commands')} side="top" delayMs={500}>
@@ -798,6 +810,7 @@ export function InputBar({
                 <button
                   type="button"
                   className={css.primary}
+                  data-composer-primary
                   aria-label={t('input.stop')}
                   disabled={stop === undefined}
                   onMouseDown={keepFocus}
@@ -813,6 +826,7 @@ export function InputBar({
               <button
                 type="button"
                 className={css.primary}
+                data-composer-primary
                 aria-label={primaryLabel}
                 disabled={primaryStops ? stop === undefined : empty || disabled || machineBusy}
                 onMouseDown={keepFocus}

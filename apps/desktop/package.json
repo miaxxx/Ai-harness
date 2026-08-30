@@ -22,6 +22,7 @@
     "start": "electron ."
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "0.25.1",
     "@deepseek-ai/dsh-acp-client": "workspace:^",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",

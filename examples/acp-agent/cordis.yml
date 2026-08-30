@@ -8,6 +8,7 @@
 # request; exact-model resolution materializes request defaults before logging.
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: !!js process.env.DSH_DESKTOP_MODEL_ENABLED === 'true'
   config:
     thinking: enabled
     reasoningEffort: max
@@ -16,6 +17,26 @@
       - id: deepseek-v4-pro
       - id: deepseek-v4-flash-vision-exp
         inputModalities: [text, image]
+
+# Desktop can replace the official route with one encrypted, user-configured
+# OpenAI-compatible primary model. Other ACP runs leave this row disabled.
+- id: llm-desktop-primary
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  disabled: !!js process.env.DSH_DESKTOP_MODEL_ENABLED !== 'true'
+  config:
+    providers:
+      desktop-primary:
+        displayName: Desktop Primary Model
+        apiKeyEnv: DSH_DESKTOP_MODEL_API_KEY
+        api: !!js process.env.DSH_DESKTOP_MODEL_API ?? 'openai-completions'
+        baseURL: https://api.openai.com/v1
+        baseURLEnv: DSH_DESKTOP_MODEL_BASE_URL
+        reasoning: high
+        models:
+          - id: !!js process.env.DSH_DESKTOP_MODEL_ID
+            reasoningEfforts:
+              off:
+              high: high
 
 # The default composition confines bash AND the filesystem tools to the
 # workspace and asks before a wider retry. Snapshot runs select
@@ -53,18 +74,18 @@
 - id: acp-agent
   name: '@deepseek-ai/dsh-acp-demo'
   config:
-    provider: deepseek-official
-    model: deepseek-v4-pro
+    provider: !!js "process.env.DSH_DESKTOP_MODEL_ENABLED === 'true' ? 'desktop-primary' : 'deepseek-official'"
+    model: !!js process.env.DSH_DESKTOP_MODEL_ID ?? 'deepseek-v4-pro'
     persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
     persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
     workspaceContext:
       maxBytes: 65536
     # Keep the persona to identity and behavior; tool plugins own tool guidance.
     # The loop resolves {{model}} and each ACP session's client-supplied {{cwd}}.
-    persona: |
-      You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug.
-
-      Verify your work by running the code or tests. Keep answers brief and factual.
+    persona: !!js >-
+      process.env.DSH_DESKTOP_CODE_WORK_ENABLED === 'true'
+        ? `You are a general-purpose Code and Work assistant powered by the {{model}} model. Your working directory is {{cwd}}. Finish the user's requested outcome instead of merely describing a possible next step. Infer whether each request is development, research, document, or spreadsheet work and load only the relevant Skills. Answer routine single-step requests directly. For a substantial task with at least three independently verifiable work items, or when the user explicitly asks for a plan or sustained execution, begin with a one- or two-sentence visible update, create one same-session goal, and maintain a concise todo list of three to seven outcome-focused items. Keep todo status current as work progresses. Continue until the complete objective is achieved and verified; do not report success while planned work remains. Delegate only bounded work that can proceed independently, start no more than two children at once, keep integrating work in the parent, and verify child results before relying on them. Mark a goal complete only after gathering evidence for the whole objective. Report a blocker only when work cannot make meaningful progress without user input or an external state change. Your shell and filesystem tools run under a file sandbox; a sandbox denial is policy, not a command bug. Final answers must be concise enough to scan but complete enough to state the outcome, verification, deliverables, and any unresolved blocker.`
+        : 'You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug. Verify your work by running the code or tests. Keep answers brief and factual.'
 
 # Replay-aware request pressure; the routed adapter supplies model capacity.
 - id: token-meter
@@ -85,6 +106,21 @@
 # fail loud without the capability.
 - id: session-projection
   name: '@deepseek-ai/dsh-session-projection'
+
+# Desktop complex tasks use the persisted same-session goal domain. The model
+# decides whether direct human intent warrants a goal; ordinary ACP and snapshot
+# compositions retain their existing prompt and tool catalog.
+- id: desktop-goal
+  name: '@deepseek-ai/dsh-goal'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+- id: desktop-goal-round-driver
+  name: '@deepseek-ai/dsh-goal-round-driver'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+- id: desktop-tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
 
 # Expose fresh-child `spawn` and completed-prefix `fork` through separate tool
 # names so multi-child scenarios exercise both transports. These leaves follow
@@ -175,6 +211,44 @@
 
 - id: tool-fs
   name: '@deepseek-ai/dsh-tool-fs'
+
+# Desktop mounts one bundled catalog for both Code and Work requests. Snapshot
+# and generic ACP compositions keep their existing tool catalog unless the
+# Desktop host explicitly enables this product surface.
+- id: skill
+  name: '@deepseek-ai/dsh-skill'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+# Work requests get the same DeepSeek-backed search capability as the Web
+# product. The credential resolves on the request, so a deployment without a
+# DeepSeek search key receives an explicit provider error rather than a hidden
+# fallback to an unrelated service.
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  config:
+    searchProvider: deepseek-official
+
+- id: web-search-deepseek
+  name: '@deepseek-ai/dsh-web-search-deepseek'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
 
 # `configPath` is read once at load and resolves from the server launch cwd, not
 # `session/new.cwd`; one `hooks.json` therefore applies to every session and a

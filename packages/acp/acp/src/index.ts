@@ -94,6 +94,8 @@ interface SessionRecord {
   agent: Agent
   dispose: () => Promise<void>
   outputTail: Promise<void>
+  /** Text blocks already delivered as ACP deltas, keyed by agent turn and step. */
+  streamedTextBlocks: Map<string, Set<number>>
   inflight: {
     resolve: (reason: StopReason) => void
     reject: (error: Error) => void
@@ -160,11 +162,23 @@ export function apply(ctx: Context, config: AcpConfig): void {
 
   /** Live and replay delivery share exactly this materialization path. */
   const deliverEvent = async (sessionId: SessionId, event: SessionEvent): Promise<void> => {
-    for (const projection of eventToAcpProjections(event)) {
+    const record = sessions.get(sessionId)
+    const streamKey = event.type === 'assistant/chunk' || event.type === 'assistant/message'
+      ? `${event.data.turn}:${event.data.step}`
+      : undefined
+    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'text-delta') {
+      const key = `${event.data.turn}:${event.data.step}`
+      const blocks = record?.streamedTextBlocks.get(key) ?? new Set<number>()
+      blocks.add(event.data.chunk.index)
+      record?.streamedTextBlocks.set(key, blocks)
+    }
+    const streamed = streamKey === undefined ? undefined : record?.streamedTextBlocks.get(streamKey)
+    for (const projection of eventToAcpProjections(event, streamed)) {
       for (const update of await projectionToAcpUpdates(ctx, projection)) {
         await notify({ sessionId, update })
       }
     }
+    if (event.type === 'assistant/message' && streamKey !== undefined) record?.streamedTextBlocks.delete(streamKey)
   }
 
   const rejectFromError = (
@@ -222,7 +236,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   /** Queue one committed event after all earlier output for this live session. */
   const enqueueLiveEvent = (record: SessionRecord, event: SessionEvent): void => {
     const inflight = (
-      (event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
+      (event.type === 'assistant/chunk' || event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
       && record.inflight?.turn === event.data.turn
     ) ? record.inflight : undefined
     const delivery = record.outputTail.then(() => deliverEvent(record.agent.session.id, event))
@@ -280,6 +294,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
     agent: handle.agent,
     dispose: () => handle.dispose(),
     outputTail: Promise.resolve(),
+    streamedTextBlocks: new Map(),
     inflight: undefined,
   })
 

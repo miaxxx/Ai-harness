@@ -18,6 +18,7 @@ import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provid
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
@@ -98,6 +99,8 @@ export interface PiAiProviderProfile {
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
+  /** Environment-variable reference whose launch-snapshot value overrides `baseURL`. */
+  baseURLEnv?: string
   /**
    * This route's model catalog. Omission serves the installed catalog for the
    * route unchanged; an explicit list replaces it, each entry defaulting its
@@ -177,7 +180,7 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'baseURLEnv' | 'retryPolicy' | 'models' | 'displayName'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
@@ -309,6 +312,7 @@ const profile = z.object({
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
+  baseURLEnv: z.string(),
   models: z.array(modelProfile),
   modelOverrides: z.dict(modelOverride),
   compat: compatProfile,
@@ -374,10 +378,12 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
  * resolves to the empty (dormant) route set here rather than through a hidden
  * fallback, and each route's models and pi-ai provider are materialized once.
  * @param providers - configured provider profiles keyed by route.
+ * @param environment - launch snapshot used by endpoint references.
  * @returns validated profiles in configuration order.
  */
 export function resolveProfiles(
   providers: Readonly<Record<string, PiAiProviderProfile>> | undefined,
+  environment?: LaunchEnvironmentSnapshot,
 ): Map<string, ResolvedPiAiProviderProfile> {
   if (Array.isArray(providers)) {
     throw new Error('llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles')
@@ -387,7 +393,13 @@ export function resolveProfiles(
   for (const [provider, source] of entries) {
     rejectRemovedFields(provider, source)
     if (provider.length === 0) throw new Error('llm-pi-ai: provider names must be non-empty')
-    if (source.baseURL !== undefined && source.baseURL.length === 0) {
+    const baseURLEnv = source.baseURLEnv === undefined ? undefined : credentialRef(source.baseURLEnv)
+    const referencedBaseURL = baseURLEnv === undefined ? undefined : environment?.get(baseURLEnv)?.value
+    if (environment !== undefined && baseURLEnv !== undefined && referencedBaseURL === undefined) {
+      throw new Error(`llm-pi-ai: provider "${provider}" endpoint reference ${baseURLEnv} is not set`)
+    }
+    const baseURL = referencedBaseURL ?? source.baseURL
+    if (baseURL !== undefined && baseURL.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty baseURL`)
     }
     if (source.displayName !== undefined && source.displayName.length === 0) {
@@ -429,7 +441,7 @@ export function resolveProfiles(
     const catalog = resolveRouteModels({
       provider,
       ...source.api === undefined ? {} : { api: source.api },
-      ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
+      ...baseURL === undefined ? {} : { baseURL },
       ...source.models === undefined ? {} : { models: source.models },
       ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
       ...source.compat === undefined ? {} : { compat: source.compat },
@@ -437,12 +449,21 @@ export function resolveProfiles(
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const {
+      apiKeyEnv,
+      baseURL: _baseURL,
+      baseURLEnv: _baseURLEnv,
+      retryPolicy,
+      models: _models,
+      displayName: _displayName,
+      ...rest
+    } = source
     resolved.set(provider, {
       ...rest,
       provider,
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+      ...baseURL === undefined ? {} : { baseURL },
       streamIdleTimeoutMs,
       maxRequestImageBytes,
       requestImagePixelBudget,
@@ -455,7 +476,7 @@ export function resolveProfiles(
         provider,
         displayName,
         ...source.api === undefined ? {} : { api: source.api },
-        ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
+        ...baseURL === undefined ? {} : { baseURL },
         models: catalog.models,
         namesCredential: apiKeyEnv !== undefined,
       }),

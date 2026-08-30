@@ -102,7 +102,7 @@ async function bootWeb(
     {
       id: 'agent-presets',
       config: {
-        default: 'standard',
+        default: 'code',
         roots: [{ path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' }],
         includeUserRoot: false,
       },
@@ -216,12 +216,27 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies the shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard', 'work'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
-    expect(ctx.agentPresets.defaultId).toBe('standard')
+    expect(ctx.agentPresets.defaultId).toBe('code')
+  })
+
+  it.each(['code', 'work'] as const)('shares bundled task skills with the %s preset', async (presetId) => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-bundled-skills-${presetId}-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, presetId).then(() => undefined),
+    })
+    try {
+      const names = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
+      expect(names).toEqual(expect.arrayContaining([
+        'code-development', 'document-work', 'spreadsheet-work', 'web-research',
+      ]))
+    } finally {
+      await handle.dispose()
+    }
   })
 
   it('composes the full agent from `standard`', async () => {
@@ -848,7 +863,7 @@ describe('authoring a preset on the shipped composition', () => {
  */
 describe('the default preset as a user setting', () => {
   it('composes an unnamed session from the stored default, not the composed one', async () => {
-    expect(ctx.agentPresets.defaultId).toBe('standard')
+    expect(ctx.agentPresets.defaultId).toBe('code')
 
     await ctx.settings.update(settingsNamespace(SETTINGS_NAMESPACE), { default: 'minimal' })
     try {
@@ -872,7 +887,7 @@ describe('the default preset as a user setting', () => {
       await ctx.settings.replace(settingsNamespace(SETTINGS_NAMESPACE), {})
     }
 
-    expect(ctx.agentPresets.defaultId).toBe('standard')
+    expect(ctx.agentPresets.defaultId).toBe('code')
   })
 })
 

@@ -11,6 +11,8 @@
 
 部署交付哪些 preset，看 [`apps/cli/config/agent-presets/`](../../apps/cli/config/agent-presets)——一个 preset 一个目录，那份目录列表就是清单。在这里再列一遍只会多出一份需要同步的名单，而且总是它先过时。
 
+面向产品的 Code 与 Work preset 共用 [`apps/cli/config/skills/`](../../apps/cli/config/skills) 下随产品交付的任务 Skills。Skill 描述根据用户请求选择相关工作流，不另设一层路由服务。Code 保留 Code Mode 工具呈现，Work 则为研究和文档任务保留原生工具。
+
 本组假定的组装划分是：注册表与跨会话设施是进程单例，留在宿主组装中；preset 只承载单个 agent 对它们的贡献。若 preset 中某一行发布了进程级全局服务，挂载时即被拒绝，而不是留到与下一个会话相撞。
 
 设计详见 [按会话组装 agent preset 的 Agent Note](../../.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.zh.md)。

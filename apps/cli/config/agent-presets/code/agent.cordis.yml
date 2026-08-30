@@ -89,6 +89,8 @@
 # carries whatever the deployment registered globally (repository plugins).
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    bundledSkillDir: !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../../skills/', baseUrl))"
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'

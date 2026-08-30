@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import type { Fiber } from '@deepseek-ai/cordis'
+import type { Fiber, Plugin } from '@deepseek-ai/cordis'
 import type {
   ContentBlock, DirectoryListing, RpcResult, SessionEvent, SessionId, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-connection/client'
@@ -39,9 +39,14 @@ import * as themePlugin from '@deepseek-ai/dsh-client-ui-theme/client'
 import * as layoutPlugin from '@deepseek-ai/dsh-client-ui-layout/client'
 import * as sidebarPlugin from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import * as conversationPlugin from '@deepseek-ai/dsh-client-ui-conversation/client'
+import * as inputTriggerPlugin from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import * as deliverablesPlugin from '@deepseek-ai/dsh-client-ui-deliverables/client'
 import * as workspacePlugin from '@deepseek-ai/dsh-client-ui-workspace/client'
 import * as nativeDirectoryPickerPlugin from '@deepseek-ai/dsh-client-ui-directory-picker-native/client'
 import * as settingsGeneralPlugin from '@deepseek-ai/dsh-client-ui-settings-general/client'
+import * as desktopModelSettingsPlugin from './desktop-model-settings.tsx'
+import { clearPendingAttachments, desktopContentPlugin, pendingAttachmentIds } from './desktop-content-ui.tsx'
+import { projectDesktopAssistant, projectDesktopUserText } from './desktop-message-projection.ts'
 import * as officialBrandPlugin from '@deepseek-ai/dsh-client-ui-brand-official/client'
 import * as rendererPlugin from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {
@@ -50,6 +55,7 @@ import type {
 
 const SEARCH_RESULT_LIMIT = 50
 const SETTINGS_PREFIX = 'dsh.desktop.settings.'
+const THEME_SETTINGS_NAMESPACE = 'ui-theme'
 const WORKSPACES_KEY = 'dsh.desktop.workspaces.v2'
 const ARCHIVED_KEY = 'dsh.desktop.archived-sessions.v1'
 
@@ -71,9 +77,14 @@ interface AcpToolEntry {
   rawInput: string
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
   output: ContentBlock[]
+  locations?: readonly string[]
 }
 
 type AcpTranscriptEntry = AcpMessageEntry | AcpToolEntry
+
+type SyntheticSessionEvent = SessionEvent extends infer Event
+  ? Event extends SessionEvent ? Omit<Event, 'seq' | 'time'> : never
+  : never
 
 interface StoredWorkspace {
   workspaceId: WorkspaceId
@@ -94,6 +105,14 @@ interface SessionRecord {
 
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+function messageId(value: string): SessionEvent<'user/message'>['data']['id'] {
+  return value as SessionEvent<'user/message'>['data']['id']
+}
+
+function callId(value: string): SessionEvent<'tool/call'>['data']['callId'] {
+  return value as SessionEvent<'tool/call'>['data']['callId']
 }
 
 function basename(path: string): string {
@@ -123,6 +142,35 @@ function textContent(value: unknown): ContentBlock[] {
     : []
 }
 
+function userTextContent(value: unknown): ContentBlock[] {
+  const blocks = textContent(value)
+  return blocks.map((block) => {
+    if (block.type !== 'text') return block
+    return { type: 'text', text: projectDesktopUserText(block.text) }
+  })
+}
+
+function reasoningContent(value: unknown): ContentBlock[] {
+  if (typeof value !== 'object' || value === null) return []
+  const candidate = value as { type?: unknown; text?: unknown }
+  return candidate.type === 'text' && typeof candidate.text === 'string'
+    ? [{ type: 'reasoning', text: candidate.text }]
+    : []
+}
+
+function appendMessageBlocks(target: ContentBlock[], blocks: readonly ContentBlock[]): void {
+  for (const block of blocks) {
+    const previous = target.at(-1)
+    if (block.type === 'text' && previous?.type === 'text') {
+      previous.text += block.text
+    } else if (block.type === 'reasoning' && previous?.type === 'reasoning') {
+      previous.text += block.text
+    } else {
+      target.push(block)
+    }
+  }
+}
+
 function toolOutput(update: unknown): ContentBlock[] {
   if (typeof update !== 'object' || update === null) return []
   const content = (update as { content?: unknown }).content
@@ -139,7 +187,7 @@ function safeJson(value: unknown): string {
   try {
     return JSON.stringify(value)
   } catch {
-    return String(value)
+    return '{"error":"ACP raw input is not JSON-serializable"}'
   }
 }
 
@@ -226,7 +274,7 @@ class DesktopSession {
   }
 
   asFace(): SessionFace {
-    return this as unknown as SessionFace
+    return this
   }
 
   getSnapshot(): ConversationSnapshot {
@@ -274,13 +322,16 @@ class DesktopSession {
     const update = notification.update
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        this.acceptMessage('user', update.messageId, update.content)
+        this.acceptMessage('user', update.messageId, userTextContent(update.content))
         break
       case 'agent_message_chunk':
-        this.acceptMessage('assistant', update.messageId, update.content)
+        this.acceptMessage('assistant', update.messageId, textContent(update.content))
+        break
+      case 'agent_thought_chunk':
+        this.acceptMessage('assistant', update.messageId, reasoningContent(update.content))
         break
       case 'tool_call': {
-        const id = String(update.toolCallId)
+        const id = update.toolCallId
         const status = update.status ?? 'in_progress'
         let entry = this.tools.get(id)
         if (entry === undefined) {
@@ -297,7 +348,7 @@ class DesktopSession {
         break
       }
       case 'tool_call_update': {
-        const id = String(update.toolCallId)
+        const id = update.toolCallId
         let entry = this.tools.get(id)
         if (entry === undefined) {
           entry = {
@@ -305,7 +356,7 @@ class DesktopSession {
           }
           this.tools.set(id, entry)
           this.entries.push(entry)
-        } else if (update.status !== undefined) {
+        } else if (update.status != null) {
           entry.status = update.status
         }
         const output = toolOutput(update)
@@ -313,7 +364,7 @@ class DesktopSession {
         break
       }
       case 'plan':
-        this.plan = update.entries.map(entry => ({ content: entry.content, status: entry.status }))
+        this.setPlan(update.entries)
         break
       default:
         return
@@ -324,17 +375,39 @@ class DesktopSession {
     this.onChanged(this)
   }
 
-  private acceptMessage(role: 'user' | 'assistant', rawId: unknown, rawContent: unknown): void {
+  private acceptArtifacts(artifacts: readonly { path: string }[]): void {
+    if (artifacts.length === 0) return
+    const id = `desktop-artifacts-${Date.now()}`
+    const entry: AcpToolEntry = {
+      kind: 'tool', id, title: '本轮产物', rawInput: '{}', status: 'completed', output: [],
+      locations: artifacts.map(item => item.path),
+    }
+    this.tools.set(id, entry)
+    let insertion = this.entries.length
+    while (insertion > 0) {
+      const previous = this.entries[insertion - 1]
+      if (previous?.kind !== 'message' || previous.role !== 'assistant') break
+      insertion -= 1
+    }
+    this.entries.splice(insertion, 0, entry)
+  }
+
+  private acceptMessage(role: 'user' | 'assistant', rawId: unknown, blocks: readonly ContentBlock[]): void {
     const id = typeof rawId === 'string' && rawId !== '' ? rawId : `${role}-${this.entries.length}`
-    const blocks = textContent(rawContent)
     if (blocks.length === 0) return
     let entry = this.messages.get(id)
     if (entry === undefined) {
+      if (role === 'user') this.setPlan([])
       entry = { kind: 'message', role, id, blocks: [] }
       this.messages.set(id, entry)
       this.entries.push(entry)
     }
-    entry.blocks.push(...blocks)
+    appendMessageBlocks(entry.blocks, blocks)
+  }
+
+  private setPlan(entries: readonly { content: string; status: 'pending' | 'in_progress' | 'completed' }[]): void {
+    this.plan = entries.map(entry => ({ ...entry }))
+    this.projections.set('todos', this.plan.length === 0 ? null : this.plan)
   }
 
   private syntheticEvents(): SessionEvent[] {
@@ -345,33 +418,34 @@ class DesktopSession {
     let step = 0
     let turnOpen = false
     let stepOpen = false
-    const append = (event: Omit<SessionEvent, 'seq' | 'time'>): void => {
-      events.push({ ...event, seq, time: baseTime + seq } as SessionEvent)
+    let assistantBlocks: ContentBlock[] = []
+    const append = (event: SyntheticSessionEvent): void => {
+      events.push({ ...event, seq, time: baseTime + seq })
       seq += 1
     }
     const openTurn = (): void => {
       if (turnOpen) return
       turn += 1
       step = 0
-      append({ type: 'turn/start', data: { turn } } as Omit<SessionEvent, 'seq' | 'time'>)
+      append({ type: 'turn/start', data: { turn } })
       turnOpen = true
     }
     const openStep = (): void => {
       openTurn()
       if (stepOpen) return
       step += 1
-      append({ type: 'step/start', data: { turn, step } } as Omit<SessionEvent, 'seq' | 'time'>)
+      append({ type: 'step/start', data: { turn, step } })
       stepOpen = true
     }
     const closeStep = (): void => {
       if (!stepOpen) return
-      append({ type: 'step/end', data: { turn, step } } as Omit<SessionEvent, 'seq' | 'time'>)
+      append({ type: 'step/end', data: { turn, step } })
       stepOpen = false
     }
     const closeTurn = (): void => {
       closeStep()
       if (!turnOpen) return
-      append({ type: 'turn/end', data: { turn, reason: { kind: 'completed' } } } as Omit<SessionEvent, 'seq' | 'time'>)
+      append({ type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
       turnOpen = false
     }
 
@@ -379,35 +453,26 @@ class DesktopSession {
       if (entry.kind === 'message' && entry.role === 'user') {
         closeTurn()
         openTurn()
+        assistantBlocks = []
         append({
           type: 'user/message',
-          data: { id: entry.id, role: 'user', content: entry.blocks, source: { kind: 'user' } },
+          data: { id: messageId(entry.id), role: 'user', content: entry.blocks, source: { kind: 'user' } },
           surfaceOp: 'append',
-        } as Omit<SessionEvent, 'seq' | 'time'>)
+        })
         continue
       }
       openStep()
       if (entry.kind === 'message') {
-        append({
-          type: 'assistant/message',
-          data: {
-            turn,
-            step,
-            message: {
-              id: entry.id,
-              role: 'assistant',
-              content: entry.blocks,
-              source: { kind: 'model', provider: 'acp', model: 'runtime' },
-            },
-          },
-          surfaceOp: 'append',
-        } as Omit<SessionEvent, 'seq' | 'time'>)
+        appendMessageBlocks(assistantBlocks, entry.blocks)
+        for (const event of projectDesktopAssistant(
+          assistantBlocks, this.running, turn, step, messageId(entry.id),
+        )) append(event)
         continue
       }
       append({
         type: 'tool/call',
-        data: { turn, step, callId: entry.id, name: entry.title, arguments: entry.rawInput },
-      } as Omit<SessionEvent, 'seq' | 'time'>)
+        data: { turn, step, callId: callId(entry.id), name: entry.title, arguments: entry.rawInput },
+      })
       if (entry.status === 'completed' || entry.status === 'failed') {
         append({
           type: 'tool/result',
@@ -415,33 +480,50 @@ class DesktopSession {
             turn,
             step,
             message: {
-              id: `result-${entry.id}`,
+              id: messageId(`result-${entry.id}`),
               role: 'user',
-              source: { kind: 'tool', callId: entry.id },
+              source: { kind: 'tool', callId: callId(entry.id) },
               content: [{
                 type: 'tool-result',
-                toolCallId: entry.id,
+                toolCallId: callId(entry.id),
                 content: entry.output,
                 isError: entry.status === 'failed',
               }],
             },
           },
           surfaceOp: 'append',
-        } as Omit<SessionEvent, 'seq' | 'time'>)
+        })
       }
     }
     if (this.plan.length > 0) {
-      append({ type: 'todo/write', data: { todos: this.plan } } as Omit<SessionEvent, 'seq' | 'time'>)
+      append({ type: 'todo/write', data: { todos: this.plan } })
     }
-    closeTurn()
+    if (!this.running) closeTurn()
     return events
   }
 
   private publish(): void {
-    const inputs = this.syntheticEvents().map(event => ({ event }))
+    const inputs = this.syntheticEvents().map((event) => {
+      if (event.type !== 'tool/call') return { event, view: undefined }
+      const entry = this.tools.get(String(event.data.callId))
+      if (entry?.locations === undefined) return { event, view: undefined }
+      return {
+        event,
+        view: {
+          for: 'call' as const,
+          view: {
+            card: 'generic' as const,
+            title: entry.title,
+            kind: 'edit' as const,
+            locations: entry.locations.map(path => ({ path })),
+          },
+        },
+      }
+    })
     this.assembler.replaceWindow(inputs, false)
     this.assembler.flush()
-    const chat = this.assembler.get('chat') ?? EMPTY_CHAT_SNAPSHOT
+    const chat = this.assembler.snapshot('chat') as ConversationSnapshot['chat'] | undefined
+      ?? EMPTY_CHAT_SNAPSHOT
     const legacy = chat.legacy
     this.store.update((draft) => {
       draft.views = this.assembler
@@ -465,12 +547,16 @@ class DesktopSession {
       .join('\n')
     if (text.trim() === '') return rpcFailure('Desktop ACP currently accepts text prompts only.')
     this.promptAttempted = true
+    this.setPlan([])
     this.running = true
     this.publish()
     this.onChanged(this)
     try {
       await this.ensureLoaded()
-      await window.dshDesktop.prompt(this.sessionId, text)
+      const attachmentIds = pendingAttachmentIds(this.sessionId)
+      const result = await window.dshDesktop.prompt(this.sessionId, text, attachmentIds)
+      clearPendingAttachments(this.sessionId)
+      this.acceptArtifacts(result.artifacts)
       this.blank = false
       return { ok: true, value: { accepted: true } }
     } catch (error: unknown) {
@@ -540,7 +626,7 @@ class DesktopSessions {
   }
 
   asService(): ISessions {
-    return this as unknown as ISessions
+    return this
   }
 
   async refresh(paths: readonly string[]): Promise<void> {
@@ -555,9 +641,9 @@ class DesktopSessions {
       draft.ids = [...found.keys()].sort((left, right) =>
         (draft.byId[right]?.updatedAt ?? 0) - (draft.byId[left]?.updatedAt ?? 0))
       const live = new Set(draft.ids)
-      for (const id of Object.keys(draft.byId) as SessionId[]) {
-        if (!live.has(id)) delete draft.byId[id]
-      }
+      draft.byId = Object.fromEntries(
+        Object.entries(draft.byId).filter(([id]) => live.has(id as SessionId)),
+      )
       if (draft.current !== undefined && !live.has(draft.current)) draft.current = undefined
       draft.phase = 'ready'
     })
@@ -575,6 +661,22 @@ class DesktopSessions {
 
   accept(frame: Extract<DesktopRendererFrame, { type: 'session-update' }>): void {
     this.records.get(frame.sessionId as SessionId)?.session.accept(frame.notification)
+  }
+
+  cwd(sessionId: SessionId): string | undefined {
+    return this.records.get(sessionId)?.summary.cwd
+  }
+
+  currentCwd(): string {
+    const current = this.list.getSnapshot().current
+    return current === undefined ? '' : this.cwd(current) ?? ''
+  }
+
+  input(sessionId: SessionId): { state: { draft: string }; actions: { setDraft(text: string): void } } | undefined {
+    const info = this.provideInfo(sessionId)
+    const state = info?.hooks.input?.getSnapshot() as { draft: string } | undefined
+    const actions = info?.props.inputActions as { setDraft(text: string): void } | undefined
+    return state === undefined || actions === undefined ? undefined : { state, actions }
   }
 
   runtimeDetached(): void {
@@ -602,7 +704,7 @@ class DesktopSessions {
         id,
         row.cwd,
         this.conversation,
-        changed => this.noteChanged(changed),
+        (changed) => { this.noteChanged(changed) },
         { loaded: options?.loaded ?? false, blank: options?.blank ?? false },
       )
       record = {
@@ -758,7 +860,7 @@ class DesktopWorkspaces {
   constructor(private readonly sessions: DesktopSessions) {}
 
   asService(): IWorkspaces {
-    return this as unknown as IWorkspaces
+    return this
   }
 
   async initialize(initialPath: string): Promise<void> {
@@ -839,7 +941,7 @@ class DesktopWorkspaces {
       this.sessions.clear()
       return
     }
-    void this.connectWorkspace(target).then(id => { this.sessions.open(id) }).catch((error: unknown) => {
+    void this.connectWorkspace(target).then((id) => { this.sessions.open(id) }).catch((error: unknown) => {
       console.error('[desktop-product] failed to start session:', error)
     })
   }
@@ -882,7 +984,7 @@ class DesktopWorkspaces {
     return window.dshDesktop.openPath(path)
   }
 
-  async rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView> {
+  rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView> {
     const row = this.rows.find(item => item.workspaceId === workspaceId)
     if (row === undefined) throw new Error(`desktop workspaces: unknown workspace ${workspaceId}`)
     row.title = title.trim() || row.title
@@ -891,29 +993,31 @@ class DesktopWorkspaces {
     this.project()
     const view = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
     if (view === undefined) throw new Error('desktop workspace projection failed after rename')
-    return view
+    return Promise.resolve(view)
   }
 
-  async delete(workspaceId: WorkspaceId): Promise<void> {
+  delete(workspaceId: WorkspaceId): Promise<void> {
     this.rows = this.rows.filter(row => row.workspaceId !== workspaceId)
     this.persist()
     this.project()
+    return Promise.resolve()
   }
 
-  async insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void> {
+  insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void> {
     const index = this.rows.findIndex(row => row.workspaceId === workspaceId)
-    if (index < 0) return
+    if (index < 0) return Promise.resolve()
     const [row] = this.rows.splice(index, 1)
-    if (row === undefined) return
+    if (row === undefined) return Promise.resolve()
     row.updatedAt = nowIso()
     const before = beforeWorkspaceId === undefined ? -1 : this.rows.findIndex(item => item.workspaceId === beforeWorkspaceId)
     if (before < 0) this.rows.push(row)
     else this.rows.splice(before, 0, row)
     this.persist()
     this.project()
+    return Promise.resolve()
   }
 
-  async insertSessionBefore(
+  insertSessionBefore(
     workspaceId: WorkspaceId,
     sessionId: SessionId,
     beforeSessionId?: SessionId,
@@ -930,10 +1034,10 @@ class DesktopWorkspaces {
     this.project()
     const view = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
     if (view === undefined) throw new Error('desktop workspace projection failed after session reorder')
-    return view
+    return Promise.resolve(view)
   }
 
-  async archiveSession(sessionId: SessionId): Promise<void> {
+  archiveSession(sessionId: SessionId): Promise<void> {
     this.list.update((draft) => {
       if (!draft.archivedSessionIds.includes(sessionId)) {
         draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
@@ -941,6 +1045,7 @@ class DesktopWorkspaces {
     })
     this.persistArchived(this.list.getSnapshot().archivedSessionIds)
     if (this.sessions.list.getSnapshot().current === sessionId) this.sessions.clear()
+    return Promise.resolve()
   }
 }
 
@@ -952,9 +1057,13 @@ class LocalSettingsScope<T extends Record<string, unknown>> implements SettingsS
   constructor(private readonly namespace: string) {
     try {
       const raw = localStorage.getItem(`${SETTINGS_PREFIX}${namespace}`)
-      this.value = raw === null ? undefined : JSON.parse(raw) as T
+      this.value = raw === null
+        ? namespace === THEME_SETTINGS_NAMESPACE ? { preference: 'light' } as unknown as T : undefined
+        : JSON.parse(raw) as T
     } catch {
-      this.value = undefined
+      this.value = namespace === THEME_SETTINGS_NAMESPACE
+        ? { preference: 'light' } as unknown as T
+        : undefined
     }
   }
 
@@ -975,17 +1084,19 @@ class LocalSettingsScope<T extends Record<string, unknown>> implements SettingsS
     return () => { this.listeners.delete(listener) }
   }
 
-  async set(field: string, value: unknown): Promise<void> {
+  set(field: string, value: unknown): Promise<void> {
     this.value = { ...(this.value ?? {}), [field]: value } as T
     this.commit()
+    return Promise.resolve()
   }
 
-  async unset(field: string): Promise<void> {
-    if (this.value === undefined) return
+  unset(field: string): Promise<void> {
+    if (this.value === undefined) return Promise.resolve()
     const next = { ...this.value }
-    delete next[field]
-    this.value = next as T
+    Reflect.deleteProperty(next, field)
+    this.value = next
     this.commit()
+    return Promise.resolve()
   }
 
   private commit(): void {
@@ -1036,7 +1147,7 @@ function remoteStub(): object {
   return methods
 }
 
-async function mountPlugin(ctx: Context, plugin: object): Promise<void> {
+async function mountPlugin(ctx: Context, plugin: Plugin): Promise<void> {
   await ctx.plugin(plugin).await()
 }
 
@@ -1063,10 +1174,14 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, themePlugin)
   await mountPlugin(ctx, layoutPlugin)
   await mountPlugin(ctx, sidebarPlugin)
+  await mountPlugin(ctx, inputTriggerPlugin)
   await mountPlugin(ctx, conversationPlugin)
   await mountPlugin(ctx, workspacePlugin)
   await mountPlugin(ctx, nativeDirectoryPickerPlugin)
   await mountPlugin(ctx, settingsGeneralPlugin)
+  await mountPlugin(ctx, desktopModelSettingsPlugin)
+  await mountPlugin(ctx, deliverablesPlugin)
+  await mountPlugin(ctx, desktopContentPlugin(sessions))
   await mountPlugin(ctx, officialBrandPlugin)
   await mountPlugin(ctx, rendererPlugin)
   sessions.rebuildConversationRegistries()
@@ -1087,8 +1202,12 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   const initialWorkspace = await window.dshDesktop.workspace()
   await workspaces.initialize(initialWorkspace)
   workspaces.syncSessions()
+  const firstWorkspace = workspaces.list.getSnapshot().items.find(item => item.path === initialWorkspace)
+    ?? workspaces.list.getSnapshot().items[0]
+  if (firstWorkspace === undefined) throw new Error('Desktop requires at least one Workspace')
   const initial = sessions.list.getSnapshot().ids[0]
-  if (initial !== undefined) sessions.open(initial)
+    ?? await workspaces.connectWorkspace(firstWorkspace.workspaceId)
+  sessions.open(initial)
 
   const unsubscribeSessions = sessions.list.subscribe(() => { workspaces.syncSessions() })
   const unmount = ctx.uiRenderer.mount(container)
@@ -1097,6 +1216,6 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
     unsubscribeFrames()
     unsubscribeSessions()
     unmount()
-    void ctx.dispose()
+    void ctx.fiber.dispose()
   }
 }

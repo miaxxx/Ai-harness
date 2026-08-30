@@ -1193,6 +1193,20 @@ describe('decorations', () => {
     expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 3, length: 4 })
   })
 
+  it('renders an inserted Skill as a structured capsule', () => {
+    const { view, shell } = bench()
+    act(() => {
+      shell.setDraft('/document-work')
+      shell.insertReference({
+        source: 'skill', ref: 'document-work', label: 'document-work', appearance: 'skill', clipboardText: '/document-work',
+      }, { start: 0, end: 14, draftRev: shell.snapshot.draftRev })
+    })
+    const chip = view.container.querySelector('[data-decoration="chip"]')
+    expect(chip?.textContent).toBe('@document-work')
+    expect(chip?.getAttribute('data-reference-appearance')).toBe('skill')
+    expect(chip?.querySelector('svg')).not.toBeNull()
+  })
+
   it('keeps the textarea glyph layer transparent when a structured reference becomes disabled', () => {
     const { view, shell, session, textarea } = bench()
     act(() => {

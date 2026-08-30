@@ -135,6 +135,29 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
+  it('groups submenu candidates behind one hover row and preserves their source indexes', () => {
+    const { onPick } = mount(openState({
+      groups: [{
+        source: 'command',
+        showGroupTitle: false,
+        status: 'ready',
+        items: [
+          { name: '上传附件', icon: 'paperclip' },
+          { name: 'document-work', description: '文档工作', icon: 'skill', submenu: 'Skills' },
+          { name: 'web-research', description: '网页研究', icon: 'skill', submenu: 'Skills' },
+        ],
+      }],
+      highlight: { source: 'command', index: 0 },
+    }))
+    expect(screen.getByText('Skills')).toBeTruthy()
+    expect(screen.queryByText('document-work')).toBeNull()
+    fireEvent.mouseEnter(screen.getByText('Skills'))
+    expect(screen.getByText('document-work')).toBeTruthy()
+    expect(screen.getByText('web-research')).toBeTruthy()
+    fireEvent.mouseDown(screen.getByText('web-research'))
+    expect(onPick).toHaveBeenCalledWith('command', 2)
+  })
+
   it('exposes the highlight via aria-activedescendant and aria-selected', () => {
     mount(openState({ highlight: { source: 'command', index: 1 } }))
     const listbox = screen.getByRole('listbox')

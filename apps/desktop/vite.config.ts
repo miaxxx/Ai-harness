@@ -31,10 +31,10 @@ export default defineConfig({
     // Client packages only make build-time process.env reads. Keep the
     // sandboxed Renderer free of a process polyfill while selecting the
     // shipped brand contribution for the Desktop product composition.
-    'process.env.DSH_CLIENT_BUILD_PROFILE': JSON.stringify(
-      process.env.DSH_CLIENT_BUILD_PROFILE ?? 'official',
-    ),
-    'process.env': '{}',
+    'process.env': JSON.stringify({
+      DSH_CLIENT_BUILD_PROFILE: process.env.DSH_CLIENT_BUILD_PROFILE ?? 'official',
+      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+    }),
   },
   build: {
     outDir: fileURLToPath(new URL('./dist/renderer', import.meta.url)),

@@ -146,6 +146,7 @@ async function main(): Promise<void> {
   await restoreLegacyHoists()
   await materializeLinks()
   await copyFile(resolve(root, 'examples/acp-agent/cordis.yml'), join(deployed, 'cordis.yml'))
+  await cp(resolve(root, 'apps/cli/config/skills'), join(deployed, 'skills'), { recursive: true })
   await stageNode()
   const entry = join(deployed, 'node_modules/@deepseek-ai/dsh-acp-demo/lib/bin.js')
   if (!existsSync(entry)) throw new Error(`build-desktop-runtime: ACP entry missing at ${entry}`)

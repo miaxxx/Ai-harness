@@ -3,11 +3,11 @@
  * and lifecycle supervision for one standalone ACP Runtime subprocess.
  */
 
-import { mkdir, readFile, readdir } from 'node:fs/promises'
-import { extname, isAbsolute, join, parse, resolve, sep } from 'node:path'
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { basename, extname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell,
+  app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell,
 } from 'electron'
 import {
   connectAcpRuntime,
@@ -18,10 +18,14 @@ import {
 import type {
   DesktopDirectoryCrumb,
   DesktopDirectoryListing,
+  DesktopModelProtocol,
+  DesktopModelSettings,
+  DesktopModelSettingsUpdate,
   DesktopPromptResult,
   DesktopRendererFrame,
   DesktopSessionSummary,
 } from './shared.ts'
+import { DesktopContentStore } from './desktop-content.ts'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'dsh-app',
@@ -32,6 +36,125 @@ const APP_ORIGIN = 'dsh-app://app'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
 const DIRECTORY_LIST_LIMIT = 500
+const MODEL_SETTINGS_VERSION = 1
+const MODEL_PROTOCOLS: readonly DesktopModelProtocol[] = ['openai-completions', 'openai-responses']
+
+interface StoredModelSettings {
+  version: typeof MODEL_SETTINGS_VERSION
+  baseURL: string
+  model: string
+  protocol: DesktopModelProtocol
+  encryptedApiKey: string
+}
+
+function modelSettingsPath(): string {
+  return join(app.getPath('userData'), 'primary-model.json')
+}
+
+function defaultModelSettings(): DesktopModelSettings {
+  return {
+    configured: false,
+    baseURL: 'https://api.openai.com/v1',
+    model: '',
+    protocol: 'openai-completions',
+    apiKeyConfigured: false,
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+function parseStoredModelSettings(value: unknown): StoredModelSettings {
+  if (typeof value !== 'object' || value === null) throw new Error('Desktop model settings are malformed')
+  const row = value as Partial<Record<keyof StoredModelSettings, unknown>>
+  if (
+    row.version !== MODEL_SETTINGS_VERSION
+    || typeof row.baseURL !== 'string'
+    || typeof row.model !== 'string'
+    || !MODEL_PROTOCOLS.includes(row.protocol as DesktopModelProtocol)
+    || typeof row.encryptedApiKey !== 'string'
+  ) {
+    throw new Error('Desktop model settings are malformed')
+  }
+  return row as unknown as StoredModelSettings
+}
+
+async function readStoredModelSettings(): Promise<StoredModelSettings | undefined> {
+  try {
+    return parseStoredModelSettings(JSON.parse(await readFile(modelSettingsPath(), 'utf8')) as unknown)
+  } catch (error: unknown) {
+    if (isMissingFile(error)) return undefined
+    throw error
+  }
+}
+
+function publicModelSettings(stored: StoredModelSettings | undefined): DesktopModelSettings {
+  if (stored === undefined) return defaultModelSettings()
+  return {
+    configured: true,
+    baseURL: stored.baseURL,
+    model: stored.model,
+    protocol: stored.protocol,
+    apiKeyConfigured: stored.encryptedApiKey.length > 0,
+  }
+}
+
+function validateModelUpdate(value: unknown, existing: StoredModelSettings | undefined): StoredModelSettings {
+  if (typeof value !== 'object' || value === null) throw new Error('Model settings must be an object')
+  const row = value as Partial<DesktopModelSettingsUpdate>
+  const baseURL = nonEmptyString(row.baseURL, 'Base URL').trim().replace(/\/$/, '')
+  const parsed = new URL(baseURL)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('Base URL must use HTTP or HTTPS')
+  }
+  const model = nonEmptyString(row.model, 'Model ID').trim()
+  if (!MODEL_PROTOCOLS.includes(row.protocol as DesktopModelProtocol)) {
+    throw new Error('Unsupported OpenAI-compatible protocol')
+  }
+  const apiKey = typeof row.apiKey === 'string' ? row.apiKey.trim() : ''
+  if (apiKey === '' && existing === undefined) throw new Error('API Key is required')
+  if (apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
+    throw new Error('macOS secure storage is unavailable; the API Key was not saved')
+  }
+  return {
+    version: MODEL_SETTINGS_VERSION,
+    baseURL,
+    model,
+    protocol: row.protocol as DesktopModelProtocol,
+    encryptedApiKey: apiKey === ''
+      ? existing?.encryptedApiKey ?? ''
+      : safeStorage.encryptString(apiKey).toString('base64'),
+  }
+}
+
+async function writeStoredModelSettings(stored: StoredModelSettings): Promise<void> {
+  const path = modelSettingsPath()
+  const temporary = `${path}.tmp`
+  await mkdir(app.getPath('userData'), { recursive: true })
+  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 })
+  await rename(temporary, path)
+}
+
+async function modelRuntimeEnv(): Promise<Record<string, string>> {
+  const desktopModeEnv = {
+    DSH_DESKTOP_CODE_WORK_ENABLED: 'true',
+    DSH_BUNDLED_SKILL_DIR: app.isPackaged
+      ? packagedRuntimePath('app', 'skills')
+      : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'),
+  }
+  const stored = await readStoredModelSettings()
+  if (stored === undefined) return desktopModeEnv
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS secure storage is unavailable')
+  return {
+    ...desktopModeEnv,
+    DSH_DESKTOP_MODEL_ENABLED: 'true',
+    DSH_DESKTOP_MODEL_API: stored.protocol,
+    DSH_DESKTOP_MODEL_BASE_URL: stored.baseURL,
+    DSH_DESKTOP_MODEL_ID: stored.model,
+    DSH_DESKTOP_MODEL_API_KEY: safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64')),
+  }
+}
 
 function packagedRuntimePath(...parts: string[]): string {
   return join(process.resourcesPath, 'runtime', ...parts)
@@ -63,13 +186,15 @@ function parseRuntimeArgs(value: string | undefined): string[] {
   return parsed
 }
 
-function desktopRuntimeSpec(): AcpRuntimeSpec {
+async function desktopRuntimeSpec(): Promise<AcpRuntimeSpec> {
+  const env = await modelRuntimeEnv()
   const command = process.env.DSH_DESKTOP_ACP_COMMAND
   if (command !== undefined && command.trim().length > 0) {
     return {
       command,
       args: parseRuntimeArgs(process.env.DSH_DESKTOP_ACP_ARGS_JSON),
       cwd: desktopWorkspace(),
+      env,
     }
   }
   if (app.isPackaged) {
@@ -81,6 +206,7 @@ function desktopRuntimeSpec(): AcpRuntimeSpec {
         packagedRuntimePath('app', 'cordis.yml'),
       ],
       cwd: desktopWorkspace(),
+      env,
     }
   }
   return {
@@ -91,6 +217,7 @@ function desktopRuntimeSpec(): AcpRuntimeSpec {
       resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml'),
     ],
     cwd: desktopWorkspace(),
+    env,
   }
 }
 
@@ -159,6 +286,7 @@ class AcpRuntimeSupervisor {
   private connection: AcpRuntimeConnection | undefined
   private connecting: Promise<AcpRuntimeConnection> | undefined
   private window: BrowserWindow | undefined
+  private readonly sessionWorkspaces = new Map<string, string>()
 
   attachWindow(window: BrowserWindow): void {
     this.window = window
@@ -212,7 +340,7 @@ class AcpRuntimeSupervisor {
       return
     }
     this.publishStatus('starting')
-    const pending = connectAcpRuntime(desktopRuntimeSpec(), {
+    const pending = desktopRuntimeSpec().then(spec => connectAcpRuntime(spec, {
       onSessionUpdate: (notification) => {
         this.publish({
           type: 'session-update',
@@ -222,7 +350,7 @@ class AcpRuntimeSupervisor {
       },
       onPermissionRequest: request => this.requestPermission(request),
       onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) },
-    })
+    }))
     this.connecting = pending
     try {
       const connection = await pending
@@ -284,21 +412,27 @@ class AcpRuntimeSupervisor {
   async createSession(cwd = desktopWorkspace()): Promise<string> {
     const runtime = await this.runtime()
     const created = await runtime.client.newSession({ cwd, mcpServers: [] })
+    this.sessionWorkspaces.set(created.sessionId, cwd)
     return created.sessionId
   }
 
   async loadSession(sessionId: string, cwd = desktopWorkspace()): Promise<void> {
     const runtime = await this.runtime()
     await runtime.client.loadSession({ sessionId, cwd, mcpServers: [] })
+    this.sessionWorkspaces.set(sessionId, cwd)
   }
 
-  async prompt(sessionId: string, text: string): Promise<DesktopPromptResult> {
+  async prompt(sessionId: string, text: string, attachmentIds: readonly string[]): Promise<DesktopPromptResult> {
     const runtime = await this.runtime()
+    const cwd = this.sessionWorkspaces.get(sessionId) ?? desktopWorkspace()
+    const before = await desktopContent().snapshot(cwd)
+    const attachments = await desktopContent().promptBlocks(sessionId, attachmentIds)
     const result = await runtime.client.prompt({
       sessionId,
-      prompt: [{ type: 'text', text }],
+      prompt: [{ type: 'text', text }, ...attachments],
     })
-    return { stopReason: result.stopReason }
+    desktopContent().consumeAttachments(sessionId, attachmentIds)
+    return { stopReason: result.stopReason, artifacts: await desktopContent().captureArtifacts(sessionId, cwd, before) }
   }
 
   cancel(sessionId: string): void {
@@ -316,6 +450,15 @@ class AcpRuntimeSupervisor {
 }
 
 const supervisor = new AcpRuntimeSupervisor()
+let contentStore: DesktopContentStore | undefined
+
+function desktopContent(): DesktopContentStore {
+  contentStore ??= new DesktopContentStore(
+    join(app.getPath('home'), '.dsh', 'skills'),
+    () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'),
+  )
+  return contentStore
+}
 
 function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
   return event.senderFrame?.url.startsWith(`${APP_ORIGIN}/`) === true
@@ -345,11 +488,14 @@ function installIpc(): void {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
     await supervisor.loadSession(nonEmptyString(rawSessionId, 'sessionId'), workspacePath(rawCwd))
   })
-  ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawText: unknown) => {
+  ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawText: unknown, rawAttachmentIds: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const attachmentIds = rawAttachmentIds === undefined ? [] : rawAttachmentIds
+    if (!isStringArray(attachmentIds)) throw new Error('attachmentIds must be an array of strings')
     return supervisor.prompt(
       nonEmptyString(rawSessionId, 'sessionId'),
       nonEmptyString(rawText, 'prompt'),
+      attachmentIds,
     )
   })
   ipcMain.on('dsh:session-cancel', (event, value: unknown) => {
@@ -386,6 +532,78 @@ function installIpc(): void {
     const path = workspacePath(value)
     const error = await shell.openPath(path)
     if (error !== '') throw new Error(error)
+  })
+  ipcMain.handle('dsh:skill-list', async (event, rawCwd: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return desktopContent().listSkills(workspacePath(rawCwd))
+  })
+  ipcMain.handle('dsh:skill-import', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: '导入 Skill',
+      message: '选择包含 SKILL.md 的文件夹，或直接选择 SKILL.md',
+      properties: ['openFile', 'openDirectory'],
+      filters: [{ name: 'Skill', extensions: ['md'] }],
+    }
+    const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options)
+    const path = result.filePaths[0]
+    return result.canceled || path === undefined ? null : desktopContent().importSkill(path)
+  })
+  ipcMain.handle('dsh:skill-remove', async (event, rawName: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    await desktopContent().removeSkill(nonEmptyString(rawName, 'Skill name'))
+  })
+  ipcMain.handle('dsh:attachment-pick', async (event, rawSessionId: unknown, rawCwd: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: '添加图片或文件', properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '支持的图片与普通文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'txt', 'md', 'markdown', 'html', 'json', 'jsonl', 'csv', 'tsv', 'xml', 'yaml', 'yml', 'js', 'jsx', 'ts', 'tsx', 'css', 'py', 'go', 'rs', 'java', 'swift', 'c', 'cpp', 'sh', 'sql', 'toml'] },
+      ],
+    }
+    const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options)
+    if (result.canceled) return []
+    return desktopContent().stageAttachments(
+      nonEmptyString(rawSessionId, 'sessionId'), workspacePath(rawCwd), result.filePaths,
+    )
+  })
+  ipcMain.handle('dsh:attachment-remove', async (event, rawSessionId: unknown, rawId: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    await desktopContent().removeAttachment(nonEmptyString(rawSessionId, 'sessionId'), nonEmptyString(rawId, 'attachmentId'))
+  })
+  ipcMain.handle('dsh:artifact-save', async (event, rawSessionId: unknown, rawPath: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const sessionId = nonEmptyString(rawSessionId, 'sessionId')
+    const path = workspacePath(rawPath)
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.SaveDialogOptions = { title: '另存产物', defaultPath: basename(path) }
+    const result = window === null ? await dialog.showSaveDialog(options) : await dialog.showSaveDialog(window, options)
+    if (result.canceled) return null
+    await desktopContent().copyArtifact(sessionId, path, result.filePath)
+    return result.filePath
+  })
+  ipcMain.handle('dsh:artifact-export', async (event, rawSessionId: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const sessionId = nonEmptyString(rawSessionId, 'sessionId')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.SaveDialogOptions = { title: '导出全部产物', defaultPath: `dsh-artifacts-${sessionId.slice(0, 8)}.zip` }
+    const result = window === null ? await dialog.showSaveDialog(options) : await dialog.showSaveDialog(window, options)
+    if (result.canceled) return null
+    await desktopContent().exportZip(sessionId, result.filePath)
+    return result.filePath
+  })
+  ipcMain.handle('dsh:model-settings', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return publicModelSettings(await readStoredModelSettings())
+  })
+  ipcMain.handle('dsh:model-settings-save', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const stored = validateModelUpdate(value, await readStoredModelSettings())
+    await writeStoredModelSettings(stored)
+    await supervisor.restart()
+    return publicModelSettings(stored)
   })
   ipcMain.handle('dsh:runtime-restart', async (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
@@ -429,6 +647,9 @@ async function createWindow(): Promise<BrowserWindow> {
     minWidth: 860,
     minHeight: 560,
     title: 'DeepSeek Harness',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: '#ffffff',
     webPreferences: {
       preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
       nodeIntegration: false,

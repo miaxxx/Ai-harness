@@ -184,12 +184,14 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
     if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
     const referenceKind = kind === 'session'
       ? 'session'
-      : label.startsWith('@')
-        ? label.endsWith('/') ? 'folder' : 'file'
-        : undefined
+      : label.startsWith('/')
+        ? 'skill'
+        : label.startsWith('@')
+          ? label.endsWith('/') ? 'folder' : 'file'
+          : undefined
     const displayLabel = referenceKind === undefined
       ? label
-      : referenceKind === 'session'
+      : referenceKind === 'session' || referenceKind === 'skill'
         ? label.slice(1)
         : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1)
     parts.push(

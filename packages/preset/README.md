@@ -11,6 +11,8 @@ An **agent preset** is a directory holding one `agent.cordis.yml`. Mounting it u
 
 The presets the deployment ships live in [`apps/cli/config/agent-presets/`](../../apps/cli/config/agent-presets) — one directory each, and that directory listing is the roster. Naming them here too would be a second list to keep in step, and the first one to fall behind.
 
+The product-facing Code and Work presets share the bundled task skills under [`apps/cli/config/skills/`](../../apps/cli/config/skills). Skill descriptions select the relevant workflow from the user's request; the presets do not add a second routing service. Code keeps Code Mode tool presentation, while Work keeps native tools for research and document tasks.
+
 The composition split this group assumes: registries and cross-session facilities are process singletons and stay in the host composition, while a preset carries what one agent contributes to them. A preset that names a row publishing a process-global service is rejected at mount rather than allowed to collide with the next session.
 
 Design: [the per-session agent-preset note](../../.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md).

@@ -28,20 +28,47 @@ export type AcpProjection =
     entries: readonly { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
   }
 
+  /** One model delta surfaced while the request is still active. */
+  | {
+    kind: 'agent-stream'
+    channel: 'message' | 'thought'
+    messageId: string
+    text: string
+  }
+
+function streamMessageId(turn: number, step: number): string {
+  return `dsh-stream-${turn}-${step}`
+}
+
 /**
  * Project one durable Session event into client-visible semantic facts.
  *
- * Surface replacements are model-facing state rewrites, not new human-visible
- * transcript entries. Only append-origin user/assistant/tool-result events are
- * emitted. Non-surface tool calls and whole-list todo state remain visible.
+ * Surface replacements and plugin-authored user-role messages are model-facing
+ * context, not human-visible transcript entries. Only human-authored user
+ * messages and append-origin assistant/tool-result events are emitted.
+ * Non-surface tool calls and whole-list todo state remain visible.
  *
  * @param event Durable Session event to project.
+ * @param streamedTextBlockIndexes Text blocks already projected from stream deltas.
  * @returns Zero or more client-visible semantic projections.
  */
-export function eventToAcpProjections(event: SessionEvent): AcpProjection[] {
+export function eventToAcpProjections(
+  event: SessionEvent,
+  streamedTextBlockIndexes: ReadonlySet<number> = new Set(),
+): AcpProjection[] {
   switch (event.type) {
+    case 'assistant/chunk': {
+      const { chunk, turn, step } = event.data
+      if (chunk.type === 'text-delta' && chunk.text.length > 0) {
+        return [{ kind: 'agent-stream', channel: 'message', messageId: streamMessageId(turn, step), text: chunk.text }]
+      }
+      if (chunk.type === 'reasoning-delta' && chunk.text.length > 0) {
+        return [{ kind: 'agent-stream', channel: 'thought', messageId: streamMessageId(turn, step), text: chunk.text }]
+      }
+      return []
+    }
     case 'user/message':
-      return event.surfaceOp === 'append'
+      return event.surfaceOp === 'append' && event.data.source.kind === 'user'
         ? [{ kind: 'message', role: 'user', messageId: event.data.id, blocks: event.data.content }]
         : []
     case 'assistant/message':
@@ -50,7 +77,12 @@ export function eventToAcpProjections(event: SessionEvent): AcpProjection[] {
           kind: 'message',
           role: 'agent',
           messageId: event.data.message.id,
-          blocks: event.data.message.content,
+          // Text deltas already crossed the wire while the model was running.
+          // Keep blocks without a delta (images and adapters that only emit a
+          // block-end) so ACP remains lossless for every stream dialect.
+          blocks: event.data.message.content.filter((block, index) => (
+            block.type !== 'reasoning' && !(block.type === 'text' && streamedTextBlockIndexes.has(index))
+          )),
         }]
         : []
     case 'tool/call':

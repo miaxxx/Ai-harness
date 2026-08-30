@@ -7,9 +7,11 @@
  * are mousedown-handled and the highlight is exposed via
  * aria-activedescendant on the listbox).
  */
-import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconPaperclipOutline16, IconSkillOutline16, useAnchoredMaxHeight,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -26,6 +28,12 @@ function optionId(source: string, index: number): string {
   return `dsh-slash-option-${source}-${index}`
 }
 
+function CandidateIcon({ icon }: { icon: string }) {
+  if (icon === 'paperclip') return <IconPaperclipOutline16 />
+  if (icon === 'skill') return <IconSkillOutline16 />
+  return <>{icon}</>
+}
+
 /**
  * Render the candidate menu overlay entry.
  * @param props - injected face (the menu store and the pick route); `t` rides the standard locale seat.
@@ -37,11 +45,16 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
     () => menu.getSnapshot(),
   )
   const listRef = useRef<HTMLDivElement>(null)
+  const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null)
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
   // when the composer grows).
   const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state)
   const highlight = state.open ? state.highlight : null
+  const highlightedItem = highlight === null
+    ? undefined
+    : state.groups.find(group => group.source === highlight.source)?.items[highlight.index]
+  const visibleSubmenu = hoveredSubmenu ?? highlightedItem?.submenu ?? null
   // Focus stays in the textarea (combobox pattern), so the browser never
   // scrolls the active option into view on keyboard moves — do it here.
   useEffect(() => {
@@ -72,6 +85,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
       role="listbox"
       aria-label={t('suggestions.aria')}
       aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
+      onMouseLeave={() => { setHoveredSubmenu(null) }}
     >
       <div className={css.viewport}>
         {state.groups.map(group => (group.status === 'ready' && group.items.length === 0)
@@ -87,6 +101,24 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
               {group.status === 'pending'
                 ? <div className={css.loading} data-source={group.source}>{t('loading')}</div>
                 : group.items.map((item, index) => {
+                  if (item.submenu !== undefined) {
+                    if (group.items.slice(0, index).some(previous => previous.submenu === item.submenu)) return null
+                    return (
+                      <button
+                        key={`submenu-${group.source}-${item.submenu}`}
+                        type="button"
+                        className={clsx(css.item, css.submenuTrigger, visibleSubmenu === item.submenu && css.active)}
+                        aria-haspopup="listbox"
+                        aria-expanded={visibleSubmenu === item.submenu}
+                        onMouseEnter={() => { setHoveredSubmenu(item.submenu ?? null) }}
+                        onMouseDown={(ev) => { ev.preventDefault() }}
+                      >
+                        <span className={css.itemIcon} aria-hidden><CandidateIcon icon={item.icon ?? 'skill'} /></span>
+                        <span className={css.itemName}>{item.submenu}</span>
+                        <span className={css.chevron} aria-hidden>›</span>
+                      </button>
+                    )
+                  }
                   const active = highlight !== null && highlight.source === group.source && highlight.index === index
                   return (
                     <Fragment key={optionId(group.source, index)}>
@@ -107,7 +139,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
                           onPick(group.source, index)
                         }}
                       >
-                        {item.icon !== undefined && <span className={css.itemIcon} aria-hidden>{item.icon}</span>}
+                        {item.icon !== undefined && <span className={css.itemIcon} aria-hidden><CandidateIcon icon={item.icon} /></span>}
                         <span className={css.itemName}>{item.name}</span>
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
                       </button>
@@ -117,6 +149,45 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
             </Fragment>
           ))}
       </div>
+      {visibleSubmenu !== null && state.groups.map((group) => {
+        const items = group.status === 'ready'
+          ? group.items.map((item, index) => ({ item, index })).filter(row => row.item.submenu === visibleSubmenu)
+          : []
+        if (items.length === 0) return null
+        return (
+          <div
+            key={`${group.source}-${visibleSubmenu}`}
+            className={css.submenu}
+            role="group"
+            aria-label={visibleSubmenu}
+            onMouseEnter={() => { setHoveredSubmenu(visibleSubmenu) }}
+          >
+            {items.map(({ item, index }) => {
+              const active = highlight !== null && highlight.source === group.source && highlight.index === index
+              return (
+                <button
+                  id={optionId(group.source, index)}
+                  key={optionId(group.source, index)}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={clsx(css.item, css.submenuItem, active && css.active)}
+                  onMouseDown={(ev) => {
+                    ev.preventDefault()
+                    onPick(group.source, index)
+                  }}
+                >
+                  {item.icon !== undefined && <span className={css.itemIcon} aria-hidden><CandidateIcon icon={item.icon} /></span>}
+                  <span className={css.submenuCopy}>
+                    <span className={css.itemName}>{item.name}</span>
+                    {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )
+      })}
     </div>
   )
 }

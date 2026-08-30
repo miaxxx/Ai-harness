@@ -24,7 +24,7 @@ export interface ChipRender {
   readonly text: string
   readonly label: string
   /** Optional domain glyph beside the label. */
-  readonly appearance?: 'session' | 'file' | 'folder'
+  readonly appearance?: 'session' | 'file' | 'folder' | 'skill'
   /** Owner-resolution failure styling bit. */
   readonly invalid: boolean
 }
