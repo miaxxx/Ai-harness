@@ -1,70 +1,74 @@
-/** Replaceable local computer-control service (`ctx.computer`). @module @deepseek-ai/dsh-computer */
+/** Replaceable target-aware computer-control service (`ctx.computer`). @module @deepseek-ai/dsh-computer */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { ComputerAction, ComputerApp, ComputerProvider, ComputerSnapshot } from './types.ts'
+import { computerError } from './types.ts'
+import type { ComputerAction, ComputerObservation, ComputerObservationMode, ComputerProvider, ComputerTarget, ComputerTargetKind } from './types.ts'
 
-export type { ComputerAction, ComputerApp, ComputerElement, ComputerProvider, ComputerSnapshot } from './types.ts'
+export type {
+  ComputerAccessibilityObservation, ComputerAction, ComputerBounds, ComputerElement, ComputerErrorCode,
+  ComputerObservation, ComputerObservationMode, ComputerPoint, ComputerProvider, ComputerTarget, ComputerTargetKind,
+  ComputerVisualObservation,
+} from './types.ts'
+export { ComputerError, computerError } from './types.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { computer: ComputerRuntime } }
 
-/** Provider-selection settings for local computer control. */
-export interface ComputerRuntimeConfig {
-  /** Provider id selected for this composition. Omit only when one usable provider is mounted. */
-  readonly provider?: string
-}
+/** Optional tie-breaker for deployments with two Providers supporting the same target kind. */
+export interface ComputerRuntimeConfig { readonly provider?: string }
 
-/** Registry and execution owner for exactly one configured local computer Provider. */
+/** Registry and deterministic target-aware router. Providers remain stateless across calls. */
 export class ComputerRuntime extends Service {
   static Config: z<ComputerRuntimeConfig> = z.object({ provider: z.string() })
   private readonly providers = new Map<string, ComputerProvider>()
-  private readonly providerId: string | undefined
+  private readonly preferredProvider: string | undefined
+
   constructor(ctx: Context, config: ComputerRuntimeConfig = {}) {
     super(ctx, 'computer')
-    this.providerId = config.provider ?? process.env.DSH_COMPUTER_PROVIDER
+    this.preferredProvider = config.provider ?? process.env.DSH_COMPUTER_PROVIDER
   }
-  /**
-   * Register one local computer Provider.
-   * @param provider - provider implementation identified by its stable id.
-   * @returns disposer that removes the provider.
-   */
+
   register(provider: ComputerProvider): () => void {
     if (this.providers.has(provider.id)) throw new Error(`computer provider "${provider.id}" is already registered`)
     const providers = this.providers
-    const dispose = this.ctx.effect(function* () { providers.set(provider.id, provider); yield () => providers.delete(provider.id) }, 'computer.registerProvider()')
+    const dispose = this.ctx.effect(function* () {
+      providers.set(provider.id, provider)
+      yield () => providers.delete(provider.id)
+    }, 'computer.registerProvider()')
     return () => void dispose()
   }
-  private provider(): ComputerProvider {
-    const usable = [...this.providers.values()].filter(provider => provider.available())
-    const provider = this.providerId === undefined ? (usable.length === 1 ? usable[0] : undefined) : this.providers.get(this.providerId)
-    if (provider === undefined || !provider.available()) throw new Error('No usable local computer provider is configured.')
-    return provider
+
+  private usable(kind?: ComputerTargetKind): ComputerProvider[] {
+    return [...this.providers.values()].filter(provider => provider.available() && (kind === undefined || provider.targetKinds.includes(kind)))
   }
-  /**
-   * List apps exposed by the selected Provider.
-   * @param signal - cancellation signal for provider work.
-   * @returns visible app identifiers and labels.
-   */
-  listApps(signal?: AbortSignal): Promise<readonly ComputerApp[]> { return this.provider().listApps(signal) }
-  /**
-   * Inspect one selected app.
-   * @param app - Provider app id returned by {@link listApps}.
-   * @param includeScreenshot - whether the snapshot includes pixels.
-   * @param signal - cancellation signal for provider work.
-   * @returns a bounded current app snapshot.
-   */
-  inspect(app: string, includeScreenshot: boolean, signal?: AbortSignal): Promise<ComputerSnapshot> {
-    return this.provider().inspect(app, includeScreenshot, signal)
+
+  private providerFor(target: ComputerTarget): ComputerProvider {
+    const candidates = this.usable(target.kind)
+    if (candidates.length === 0) throw computerError('ACTION_UNSUPPORTED', `No available provider supports ${target.kind} targets.`)
+    if (candidates.length === 1) return candidates[0]!
+    const preferred = this.preferredProvider === undefined ? undefined : candidates.find(provider => provider.id === this.preferredProvider)
+    if (preferred !== undefined) return preferred
+    throw computerError('ACTION_UNSUPPORTED', `More than one provider supports ${target.kind}; configure a provider tie-breaker.`)
   }
-  /**
-   * Perform one bounded app action through the selected Provider.
-   * @param app - Provider app id returned by {@link listApps}.
-   * @param action - fixed input operation to perform.
-   * @param signal - cancellation signal for provider work.
-   * @returns the app snapshot after the action.
-   */
-  act(app: string, action: ComputerAction, signal?: AbortSignal): Promise<ComputerSnapshot> {
-    return this.provider().act(app, action, signal)
+
+  /** List all currently visible targets from every usable Provider. */
+  async listTargets(kind?: ComputerTargetKind, signal?: AbortSignal): Promise<readonly ComputerTarget[]> {
+    signal?.throwIfAborted()
+    const providers = this.usable(kind)
+    const groups = await Promise.all(providers.map(provider => provider.listTargets(signal)))
+    return groups.flat().filter(target => kind === undefined || target.kind === kind)
+  }
+
+  /** Observe a named target directly; discovery is not a prerequisite. */
+  observe(target: ComputerTarget, mode: ComputerObservationMode = 'accessibility', signal?: AbortSignal): Promise<ComputerObservation> {
+    signal?.throwIfAborted()
+    return this.providerFor(target).observe(target, mode, signal)
+  }
+
+  /** Perform one bounded action and return fresh provider-produced state. */
+  perform(target: ComputerTarget, action: ComputerAction, signal?: AbortSignal): Promise<ComputerObservation> {
+    signal?.throwIfAborted()
+    return this.providerFor(target).perform(target, action, signal)
   }
 }
 export default ComputerRuntime
