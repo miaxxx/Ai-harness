@@ -45,6 +45,7 @@ import * as workspacePlugin from '@deepseek-ai/dsh-client-ui-workspace/client'
 import * as nativeDirectoryPickerPlugin from '@deepseek-ai/dsh-client-ui-directory-picker-native/client'
 import * as settingsGeneralPlugin from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import * as desktopModelSettingsPlugin from './desktop-model-settings.tsx'
+import * as desktopMcpSettingsPlugin from './desktop-mcp-settings.tsx'
 import { clearPendingAttachments, desktopContentPlugin, pendingAttachmentIds } from './desktop-content-ui.tsx'
 import { projectDesktopAssistant, projectDesktopUserText } from './desktop-message-projection.ts'
 import * as officialBrandPlugin from '@deepseek-ai/dsh-client-ui-brand-official/client'
@@ -672,13 +673,6 @@ class DesktopSessions {
     return current === undefined ? '' : this.cwd(current) ?? ''
   }
 
-  input(sessionId: SessionId): { state: { draft: string }; actions: { setDraft(text: string): void } } | undefined {
-    const info = this.provideInfo(sessionId)
-    const state = info?.hooks.input?.getSnapshot() as { draft: string } | undefined
-    const actions = info?.props.inputActions as { setDraft(text: string): void } | undefined
-    return state === undefined || actions === undefined ? undefined : { state, actions }
-  }
-
   runtimeDetached(): void {
     for (const record of this.records.values()) record.session.markRuntimeDetached()
   }
@@ -1180,6 +1174,7 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, nativeDirectoryPickerPlugin)
   await mountPlugin(ctx, settingsGeneralPlugin)
   await mountPlugin(ctx, desktopModelSettingsPlugin)
+  await mountPlugin(ctx, desktopMcpSettingsPlugin)
   await mountPlugin(ctx, deliverablesPlugin)
   await mountPlugin(ctx, desktopContentPlugin(sessions))
   await mountPlugin(ctx, officialBrandPlugin)

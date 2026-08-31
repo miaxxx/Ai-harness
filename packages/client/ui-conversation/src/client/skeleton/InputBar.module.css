@@ -480,14 +480,15 @@
    geometry come from the browser's native glyph metrics. The leading marker
    reserves the icon's advance while the backdrop paints the domain glyph. */
 .chip {
-  --dsh-reference-chip-fill: color-mix(in srgb, currentColor 8%, transparent);
+  --dsh-reference-chip-fill: color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent);
   position: relative;
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--dsh-reference-chip-fill);
   box-shadow:
-    -4px 0 0 var(--dsh-reference-chip-fill),
-    4px 0 0 var(--dsh-reference-chip-fill);
-  color: var(--dsw-alias-label-secondary);
+    -8px 0 0 var(--dsh-reference-chip-fill),
+    8px 0 0 var(--dsh-reference-chip-fill);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.92em;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -506,7 +507,7 @@
   left: 50%;
   /* The hidden marker keeps native caret geometry. Pull the wider 16px icon
      into the capsule's leading overhang so it cannot crowd the label. */
-  transform: translate(calc(-50% - 4px), -50%);
+  transform: translate(calc(-50% - 7px), -50%);
 }
 
 .chipInvalid {

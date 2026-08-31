@@ -1,0 +1,38 @@
+.root { display: flex; flex-direction: column; gap: 18px; width: 100%; color: var(--dsw-alias-label-primary); }
+.heading { display: flex; align-items: flex-start; gap: 12px; }
+.headingCopy { min-width: 0; flex: 1; }
+.headingIcon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 12px; background: var(--dsw-specific-sidebar-nav-item-active); }
+.headingIcon svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.heading h2 { margin: 0; font-size: 18px; line-height: 26px; }
+.heading p { margin: 4px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.add, .save { flex: none; height: 38px; padding: 0 15px; border: 0; border-radius: 10px; background: #111318; color: #fff; font: 600 13px/20px var(--dsw-font-family); cursor: pointer; }
+.add:hover, .save:hover:not(:disabled) { background: #30343b; }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.empty { padding: 22px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 14px; color: var(--dsw-alias-label-secondary); font-size: 13px; text-align: center; }
+.server { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-1); box-shadow: 0 3px 12px rgba(0, 0, 0, .04); }
+.serverCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
+.serverTitle { display: flex; align-items: center; gap: 8px; }
+.serverTitle strong { font-size: 14px; line-height: 20px; }
+.serverTitle span { padding: 1px 7px; border-radius: 999px; background: var(--dsw-specific-sidebar-nav-item-active); color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 18px; }
+.server code { overflow: hidden; color: var(--dsw-alias-label-secondary); font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.server small { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
+.actions { display: flex; gap: 6px; }
+.actions button, .cancel { height: 34px; padding: 0 11px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; background: #fff; color: var(--dsw-alias-label-primary); font: 500 12px/18px var(--dsw-font-family); cursor: pointer; }
+.actions button:hover:not(:disabled), .cancel:hover:not(:disabled) { background: var(--dsw-specific-sidebar-nav-item-active); }
+.actions .remove { color: var(--dsw-alias-state-error-primary); }
+.editor { display: flex; flex-direction: column; gap: 15px; padding: 18px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-layer-1); box-shadow: 0 6px 22px rgba(0, 0, 0, .06); }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 7px; font-size: 13px; line-height: 20px; font-weight: 600; }
+.field input, .field select, .field textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; outline: none; background: #fff; color: #0f1115; font: 14px/20px var(--dsw-font-family); }
+.field input, .field select { height: 42px; padding: 0 12px; }
+.field textarea { min-height: 78px; padding: 10px 12px; resize: vertical; }
+.field textarea.secret { min-height: 66px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 3px rgba(65, 118, 230, .14); }
+.field input:disabled { color: var(--dsw-alias-label-secondary); background: var(--dsw-specific-sidebar-nav-item-active); }
+.field small { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; font-weight: 400; }
+.editorFooter { display: flex; justify-content: flex-end; gap: 8px; }
+.save:disabled, button:disabled { opacity: .4; cursor: default; }
+.status { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.status[data-kind='success'] { color: #18794e; }
+.status[data-kind='error'] { color: var(--dsw-alias-state-error-primary); }
+@media (max-width: 720px) { .heading { flex-wrap: wrap; } .add { margin-left: 50px; } .grid { grid-template-columns: 1fr; } .server { align-items: flex-start; } }

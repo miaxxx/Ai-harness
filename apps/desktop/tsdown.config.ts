@@ -12,7 +12,7 @@ export default defineConfig([
     dts: false,
     clean: false,
     deps: {
-      alwaysBundle: ['@deepseek-ai/dsh-acp-client', '@agentclientprotocol/sdk', 'zod'],
+      alwaysBundle: ['@deepseek-ai/dsh-acp-client', '@deepseek-ai/dsh-mcp-user-config', '@agentclientprotocol/sdk', 'zod'],
       neverBundle: ['electron'],
     },
   },

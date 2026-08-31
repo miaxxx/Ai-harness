@@ -28,6 +28,7 @@
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 bash 工具；部署组合提供 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 pwsh 工具，持久 bash 工具的 Windows 对应物；部署组合提供 pwsh 方言的 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`、`ctx.fs` | `tool/call`、`fs/observed after view presence/absence, edit absence, or successful mutation`、`tool/result` | - | 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。 |
+| `@deepseek-ai/dsh-tool-computer` | `computer` | `ctx.tools`、`ctx.computer`、`ctx.attachments`、`ctx.approval + an owning Agent for screenshots and mutations` | `tool/call`、`durable attachment for an approved screenshot`、`approved local computer action`、`tool/result` | - | Schema 与 Provider 无关。部署可选择 CDP 或 macOS Provider；缺少一次性用户批准时，截图和变更操作会关闭失败。 |
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (image-tool registration)`、`ctx.llm + an image-capable route (image-tool execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时图片工具不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图片输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
@@ -630,6 +631,68 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
 来源：[`packages/fs/tool-str-replace-editor/src/index.ts`](../packages/fs/tool-str-replace-editor/src/index.ts)
 
 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。
+
+<a id="deepseek-aidsh-tool-computer"></a>
+
+## `@deepseek-ai/dsh-tool-computer`
+
+### `computer`
+
+检查或操作经过批准的本地桌面应用。先使用 list，再将返回的应用 ID 传给 inspect。每次 click、type 或 scroll 前都要重新 inspect，因为元素 ID 会在操作后失效。应用 API、浏览器自动化、Shell 或文件系统工具能够完成任务时，应优先使用它们。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "list",
+        "inspect",
+        "click",
+        "type",
+        "key",
+        "scroll"
+      ]
+    },
+    "app": {
+      "type": "string",
+      "description": "App id from computer list."
+    },
+    "elementId": {
+      "type": "string",
+      "description": "Element id from the latest inspect result."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to enter for type."
+    },
+    "key": {
+      "type": "string",
+      "description": "Named key for key, for example Return or Escape."
+    },
+    "direction": {
+      "type": "string",
+      "description": "Direction for scroll.",
+      "enum": [
+        "up",
+        "down"
+      ]
+    },
+    "screenshot": {
+      "type": "boolean",
+      "description": "Include a screenshot on inspect when accessibility text is insufficient."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+来源：[`packages/computer/tool-computer/src/index.ts`](../packages/computer/tool-computer/src/index.ts)
+
+Schema 与 Provider 无关。部署可选择 CDP 或 macOS Provider；缺少一次性用户批准时，截图和变更操作会关闭失败。
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

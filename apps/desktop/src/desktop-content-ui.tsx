@@ -11,7 +11,6 @@ import css from './desktop-content-ui.module.css'
 export interface DesktopContentSessions {
   currentCwd(): string
   cwd(sessionId: SessionId): string | undefined
-  input(sessionId: SessionId): { state: { draft: string }; actions: { setDraft(text: string): void } } | undefined
 }
 
 const pending = new Map<string, readonly DesktopAttachment[]>()
@@ -207,8 +206,6 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
             if (added.length === 0) return
             pending.set(session.sessionId, [...(pending.get(session.sessionId) ?? []), ...added])
             publish(session.sessionId)
-            const input = sessions.input(session.sessionId)
-            if (input !== undefined && input.state.draft.trim() === '') input.actions.setDraft('请结合附件完成任务')
           })
           return 'handled'
         },

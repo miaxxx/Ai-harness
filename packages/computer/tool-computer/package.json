@@ -1,0 +1,19 @@
+{
+  "name": "@deepseek-ai/dsh-tool-computer",
+  "description": "Model-facing controlled desktop inspection and interaction tools",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/computer/tool-computer"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" } },
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
+  "license": "MIT",
+  "peerDependencies": { "@deepseek-ai/dsh-attachment": "workspace:^", "@deepseek-ai/dsh-computer": "workspace:^", "@deepseek-ai/dsh-invariants": "workspace:^", "@deepseek-ai/dsh-user-approval": "workspace:^", "@deepseek-ai/dsh-tools": "workspace:^", "@deepseek-ai/cordis": "workspace:^" },
+  "devDependencies": { "@deepseek-ai/dsh-attachment": "workspace:^", "@deepseek-ai/dsh-computer": "workspace:^", "@deepseek-ai/dsh-invariants": "workspace:^", "@deepseek-ai/dsh-system-prompt": "workspace:^", "@deepseek-ai/dsh-user-approval": "workspace:^", "@deepseek-ai/dsh-tools": "workspace:^", "@deepseek-ai/cordis": "workspace:^" }
+}

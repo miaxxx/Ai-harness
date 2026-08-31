@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-desktop-skills-attachments-and-artifacts.md
-2026-08-30-desktop-skills-attachments-and-artifacts.md: eb348ec04570e9f6e4bf5d64d1c8f1d070dc301e
-2026-08-30-desktop-skills-attachments-and-artifacts.zh.md: 3faeecc94fefe30338af266840ff2a8991d63c21
+2026-08-30-desktop-skills-attachments-and-artifacts.md: c8e18efc18062cac426eb2bf56cb912a123abb73
+2026-08-30-desktop-skills-attachments-and-artifacts.zh.md: bebf4ddd2df96ed33bd97765a7b449f05152b43a

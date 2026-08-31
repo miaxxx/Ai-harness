@@ -8,11 +8,13 @@
     "src/renderer.tsx",
     "src/product-runtime.ts",
     "src/desktop-model-settings.tsx",
+    "src/desktop-mcp-settings.tsx",
     "src/desktop-content-ui.tsx",
     "src/desktop-message-projection.ts",
     "src/shared.ts",
     "src/renderer.css.d.ts",
     "src/desktop-model-settings.module.css.d.ts",
+    "src/desktop-mcp-settings.module.css.d.ts",
     "src/desktop-content-ui.module.css.d.ts"
   ],
   "references": [

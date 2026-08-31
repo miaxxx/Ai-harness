@@ -37,6 +37,7 @@ export function DesktopModelSettingsSection() {
   const [model, setModel] = useState('')
   const [protocol, setProtocol] = useState<DesktopModelProtocol>('openai-completions')
   const [apiKey, setApiKey] = useState('')
+  const [computerUseEnabled, setComputerUseEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
@@ -48,6 +49,7 @@ export function DesktopModelSettingsSection() {
       setBaseURL(settings.baseURL)
       setModel(settings.model)
       setProtocol(settings.protocol)
+      setComputerUseEnabled(settings.computerUseEnabled)
     }).catch((error: unknown) => {
       if (live) setMessage({ kind: 'error', text: publicError(error) })
     })
@@ -58,7 +60,7 @@ export function DesktopModelSettingsSection() {
     setSaving(true)
     setMessage(null)
     try {
-      const settings = await window.dshDesktop.saveModelSettings({ baseURL, model, protocol, apiKey })
+      const settings = await window.dshDesktop.saveModelSettings({ baseURL, model, protocol, apiKey, computerUseEnabled })
       setLoaded(settings)
       setApiKey('')
       setMessage({ kind: 'success', text: `已将 ${settings.model} 设为主模型，ACP Runtime 已重新连接。` })
@@ -89,6 +91,14 @@ export function DesktopModelSettingsSection() {
             <option value="openai-completions">OpenAI Chat Completions</option>
             <option value="openai-responses">OpenAI Responses</option>
           </select>
+        </label>
+
+        <label className={css.computerUse}>
+          <input type="checkbox" checked={computerUseEnabled} onChange={(event) => { setComputerUseEnabled(event.target.checked) }} />
+          <span>
+            <strong>允许 Computer Use</strong>
+            <small>允许模型检查浏览器或 macOS 应用。每次点击、输入、按键和滚动仍会单独请求批准。</small>
+          </span>
         </label>
 
         <label className={css.field}>

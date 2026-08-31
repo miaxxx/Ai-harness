@@ -35,6 +35,9 @@ const bridge: DesktopBridge = {
   exportArtifacts: sessionId => ipcRenderer.invoke('dsh:artifact-export', sessionId) as ReturnType<DesktopBridge['exportArtifacts']>,
   modelSettings: () => ipcRenderer.invoke('dsh:model-settings') as ReturnType<DesktopBridge['modelSettings']>,
   saveModelSettings: update => ipcRenderer.invoke('dsh:model-settings-save', update) as ReturnType<DesktopBridge['saveModelSettings']>,
+  listMcpServers: () => ipcRenderer.invoke('dsh:mcp-list') as ReturnType<DesktopBridge['listMcpServers']>,
+  saveMcpServer: update => ipcRenderer.invoke('dsh:mcp-save', update) as ReturnType<DesktopBridge['saveMcpServer']>,
+  removeMcpServer: serverName => ipcRenderer.invoke('dsh:mcp-remove', serverName) as ReturnType<DesktopBridge['removeMcpServer']>,
   subscribe(listener) {
     listeners.add(listener)
     if (pendingFrames.length > 0) {

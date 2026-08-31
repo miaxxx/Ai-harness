@@ -71,4 +71,19 @@ describe('Desktop content store', () => {
     expect(listing.stdout).toContain('turn-0001/result.csv')
     expect(listing.stdout).not.toContain('inputs/')
   })
+
+  it('turns a staged image into an ACP image block for a vision model', async () => {
+    const root = await temporary()
+    const workspace = join(root, 'workspace')
+    const source = join(root, 'diagram.png')
+    await mkdir(workspace)
+    await writeFile(source, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    const store = new DesktopContentStore(join(root, 'skills'), () => join(root, 'bundled'))
+
+    const [image] = await store.stageAttachments('session-vision', workspace, [source])
+    expect(image).toMatchObject({ name: 'diagram.png', kind: 'image', mediaType: 'image/png' })
+    await expect(store.promptBlocks('session-vision', [image!.id])).resolves.toEqual([{
+      type: 'image', mimeType: 'image/png', data: 'iVBORw==',
+    }])
+  })
 })

@@ -34,7 +34,7 @@ Status: implemented
 
 `@deepseek-ai/dsh-mcp-client` 成为本 CLI（命令行界面）的运行时依赖,但在任何交付配置里都没有对应的行。该插件每个实例只挂载一台服务器,且 `command` 是必填,因此一个默认值必须点名一台第三方服务器,并在每次启动时把它作为子进程 spawn——不经 `ctx.shell`,因而也在 Web surface 所组合的沙箱策略之外。
 
-真正能让 MCP 成为默认的那一层,恰恰是本仓库尚未拥有的:一个读取用户服务器清单、按条目逐台挂载客户端的桥接,形态与 [`dsh-hooks-claude-code`](../../../../packages/hooks/hooks-claude-code/README.zh.md) 读取 Claude Code 的 `hooks.json` 完全相同。交付这个依赖意味着已安装的 `dsh` 今天就能从 `$DSH_HOME/config.yaml` 挂载服务器;CLI README 里给了那段 YAML。
+CLI 与 Web 仍然只把 MCP 作为依赖交付，而不提供默认配置行：选择第三方服务器仍是用户或部署决策。Desktop 后来通过 [Desktop 用户 MCP 服务器配置](2026-08-31-desktop-mcp-user-config.zh.md)补上了用户清单桥接；它只为用户明确添加的条目逐台挂载客户端，不虚构默认服务器。其他组合仍可从 `$DSH_HOME/config.yaml` 挂载服务器；CLI README 里保留了对应 YAML。
 
 ## 测试
 

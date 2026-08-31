@@ -31,12 +31,30 @@ flowchart LR
   bundle_agent_core --> spine_sessions["ctx.sessions"]
   bundle_agent_core --> spine_tools["ctx.tools + tool-bash"]
   bundle_agent_core --> spine_loop["ctx.agents + ctx.agentLoop"]
+  plugin_acp_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
+  cfg --> plugin_acp_attachment_local
+  plugin_acp_computer["computer<br/>@deepseek-ai/dsh-computer"]
+  cfg --> plugin_acp_computer
+  plugin_acp_computer_browser_cdp["computer-browser-cdp<br/>@deepseek-ai/dsh-computer-browser-cdp"]
+  cfg --> plugin_acp_computer_browser_cdp
+  plugin_acp_computer_macos["computer-macos<br/>@deepseek-ai/dsh-computer-macos"]
+  cfg --> plugin_acp_computer_macos
+  plugin_acp_tool_computer["tool-computer<br/>@deepseek-ai/dsh-tool-computer"]
+  cfg --> plugin_acp_tool_computer
+  plugin_acp_mcp_user_config["mcp-user-config<br/>@deepseek-ai/dsh-mcp-user-config"]
+  cfg --> plugin_acp_mcp_user_config
   plugin_acp_token_meter["token-meter<br/>@deepseek-ai/dsh-token-meter"]
   cfg --> plugin_acp_token_meter
   plugin_acp_compaction_basic["compaction-basic<br/>@deepseek-ai/dsh-compaction-basic"]
   cfg --> plugin_acp_compaction_basic
   plugin_acp_session_projection["session-projection<br/>@deepseek-ai/dsh-session-projection"]
   cfg --> plugin_acp_session_projection
+  plugin_acp_desktop_goal["desktop-goal<br/>@deepseek-ai/dsh-goal"]
+  cfg --> plugin_acp_desktop_goal
+  plugin_acp_desktop_goal_round_driver["desktop-goal-round-driver<br/>@deepseek-ai/dsh-goal-round-driver"]
+  cfg --> plugin_acp_desktop_goal_round_driver
+  plugin_acp_desktop_tool_goal["desktop-tool-goal<br/>@deepseek-ai/dsh-tool-goal"]
+  cfg --> plugin_acp_desktop_tool_goal
   plugin_acp_subagent["subagent<br/>@deepseek-ai/dsh-subagent"]
   cfg --> plugin_acp_subagent
   plugin_acp_subagent_spawn_in_process["subagent-spawn-in-process<br/>@deepseek-ai/dsh-subagent-spawn-in-process"]
@@ -97,9 +115,18 @@ flowchart LR
 | `bash` | `@deepseek-ai/dsh-bash-sandbox` |
 | `approval` | `@deepseek-ai/dsh-user-approval` |
 | `acp-agent` | `@deepseek-ai/dsh-acp-demo` |
+| `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
+| `computer` | `@deepseek-ai/dsh-computer` |
+| `computer-browser-cdp` | `@deepseek-ai/dsh-computer-browser-cdp` |
+| `computer-macos` | `@deepseek-ai/dsh-computer-macos` |
+| `tool-computer` | `@deepseek-ai/dsh-tool-computer` |
+| `mcp-user-config` | `@deepseek-ai/dsh-mcp-user-config` |
 | `token-meter` | `@deepseek-ai/dsh-token-meter` |
 | `compaction-basic` | `@deepseek-ai/dsh-compaction-basic` |
 | `session-projection` | `@deepseek-ai/dsh-session-projection` |
+| `desktop-goal` | `@deepseek-ai/dsh-goal` |
+| `desktop-goal-round-driver` | `@deepseek-ai/dsh-goal-round-driver` |
+| `desktop-tool-goal` | `@deepseek-ai/dsh-tool-goal` |
 | `subagent` | `@deepseek-ai/dsh-subagent` |
 | `subagent-spawn-in-process` | `@deepseek-ai/dsh-subagent-spawn-in-process` |
 | `subagent-fork-in-process` | `@deepseek-ai/dsh-subagent-fork-in-process` |

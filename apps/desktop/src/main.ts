@@ -15,9 +15,19 @@ import {
   type AcpRuntimeConnection,
   type AcpRuntimeSpec,
 } from '@deepseek-ai/dsh-acp-client'
+import {
+  parseUserMcpServer,
+  readUserMcpServers,
+  removeUserMcpServer,
+  summarizeUserMcpServer,
+  upsertUserMcpServer,
+  type UserMcpServer,
+} from '@deepseek-ai/dsh-mcp-user-config'
 import type {
   DesktopDirectoryCrumb,
   DesktopDirectoryListing,
+  DesktopMcpServerSummary,
+  DesktopMcpServerUpdate,
   DesktopModelProtocol,
   DesktopModelSettings,
   DesktopModelSettingsUpdate,
@@ -26,6 +36,11 @@ import type {
   DesktopSessionSummary,
 } from './shared.ts'
 import { DesktopContentStore } from './desktop-content.ts'
+import {
+  MODEL_SETTINGS_VERSION,
+  parseStoredModelSettings,
+  type StoredModelSettings,
+} from './desktop-model-storage.ts'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'dsh-app',
@@ -36,19 +51,14 @@ const APP_ORIGIN = 'dsh-app://app'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
 const DIRECTORY_LIST_LIMIT = 500
-const MODEL_SETTINGS_VERSION = 1
 const MODEL_PROTOCOLS: readonly DesktopModelProtocol[] = ['openai-completions', 'openai-responses']
-
-interface StoredModelSettings {
-  version: typeof MODEL_SETTINGS_VERSION
-  baseURL: string
-  model: string
-  protocol: DesktopModelProtocol
-  encryptedApiKey: string
-}
 
 function modelSettingsPath(): string {
   return join(app.getPath('userData'), 'primary-model.json')
+}
+
+function desktopMcpPath(): string {
+  return join(app.getPath('userData'), 'mcp-servers.json')
 }
 
 function defaultModelSettings(): DesktopModelSettings {
@@ -58,26 +68,12 @@ function defaultModelSettings(): DesktopModelSettings {
     model: '',
     protocol: 'openai-completions',
     apiKeyConfigured: false,
+    computerUseEnabled: false,
   }
 }
 
 function isMissingFile(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
-}
-
-function parseStoredModelSettings(value: unknown): StoredModelSettings {
-  if (typeof value !== 'object' || value === null) throw new Error('Desktop model settings are malformed')
-  const row = value as Partial<Record<keyof StoredModelSettings, unknown>>
-  if (
-    row.version !== MODEL_SETTINGS_VERSION
-    || typeof row.baseURL !== 'string'
-    || typeof row.model !== 'string'
-    || !MODEL_PROTOCOLS.includes(row.protocol as DesktopModelProtocol)
-    || typeof row.encryptedApiKey !== 'string'
-  ) {
-    throw new Error('Desktop model settings are malformed')
-  }
-  return row as unknown as StoredModelSettings
 }
 
 async function readStoredModelSettings(): Promise<StoredModelSettings | undefined> {
@@ -97,6 +93,7 @@ function publicModelSettings(stored: StoredModelSettings | undefined): DesktopMo
     model: stored.model,
     protocol: stored.protocol,
     apiKeyConfigured: stored.encryptedApiKey.length > 0,
+    computerUseEnabled: stored.computerUseEnabled,
   }
 }
 
@@ -112,6 +109,7 @@ function validateModelUpdate(value: unknown, existing: StoredModelSettings | und
   if (!MODEL_PROTOCOLS.includes(row.protocol as DesktopModelProtocol)) {
     throw new Error('Unsupported OpenAI-compatible protocol')
   }
+  if (typeof row.computerUseEnabled !== 'boolean') throw new Error('Computer Use setting must be a boolean')
   const apiKey = typeof row.apiKey === 'string' ? row.apiKey.trim() : ''
   if (apiKey === '' && existing === undefined) throw new Error('API Key is required')
   if (apiKey !== '' && !safeStorage.isEncryptionAvailable()) {
@@ -125,6 +123,7 @@ function validateModelUpdate(value: unknown, existing: StoredModelSettings | und
     encryptedApiKey: apiKey === ''
       ? existing?.encryptedApiKey ?? ''
       : safeStorage.encryptString(apiKey).toString('base64'),
+    computerUseEnabled: row.computerUseEnabled,
   }
 }
 
@@ -139,6 +138,11 @@ async function writeStoredModelSettings(stored: StoredModelSettings): Promise<vo
 async function modelRuntimeEnv(): Promise<Record<string, string>> {
   const desktopModeEnv = {
     DSH_DESKTOP_CODE_WORK_ENABLED: 'true',
+    // Mutating actions remain one-shot approval-gated in the ACP Runtime.
+    DSH_DESKTOP_COMPUTER_USE_ENABLED: 'false',
+    DSH_MCP_CONFIG_PATH: desktopMcpPath(),
+    // A local Chromium DevTools endpoint takes precedence over visual macOS control.
+    DSH_COMPUTER_PROVIDER: process.env.DSH_BROWSER_CDP_URL === undefined ? 'macos-accessibility' : 'browser-cdp',
     DSH_BUNDLED_SKILL_DIR: app.isPackaged
       ? packagedRuntimePath('app', 'skills')
       : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'),
@@ -153,7 +157,55 @@ async function modelRuntimeEnv(): Promise<Record<string, string>> {
     DSH_DESKTOP_MODEL_BASE_URL: stored.baseURL,
     DSH_DESKTOP_MODEL_ID: stored.model,
     DSH_DESKTOP_MODEL_API_KEY: safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64')),
+    DSH_DESKTOP_COMPUTER_USE_ENABLED: String(stored.computerUseEnabled),
   }
+}
+
+function stringRecord(value: unknown, label: string): Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${label} must be an object`)
+  const entries = Object.entries(value)
+  if (!entries.every(([, entry]) => typeof entry === 'string')) throw new Error(`${label} values must be strings`)
+  return Object.fromEntries(entries)
+}
+
+function desktopMcpServer(value: unknown, existing: UserMcpServer | undefined): UserMcpServer {
+  if (typeof value !== 'object' || value === null) throw new Error('MCP server update must be an object')
+  const row = value as Partial<DesktopMcpServerUpdate>
+  const serverName = nonEmptyString(row.serverName, 'MCP server name').trim()
+  let secrets: Record<string, string>
+  if (row.secrets !== undefined) {
+    secrets = stringRecord(row.secrets, 'MCP credentials')
+  } else if (row.transport === 'stdio' && existing?.transport === 'stdio') {
+    secrets = existing.env
+  } else if (row.transport === 'streamable-http' && existing?.transport === 'streamable-http') {
+    secrets = existing.headers
+  } else {
+    secrets = {}
+  }
+  if (row.transport === 'stdio') {
+    if (row.args !== undefined && !isStringArray(row.args)) throw new Error('MCP args must be an array of strings')
+    return parseUserMcpServer({
+      transport: row.transport,
+      serverName,
+      command: nonEmptyString(row.command, 'MCP command'),
+      args: row.args ?? [],
+      cwd: row.cwd ?? '',
+      env: secrets,
+    })
+  }
+  if (row.transport === 'streamable-http') {
+    return parseUserMcpServer({
+      transport: row.transport,
+      serverName,
+      url: nonEmptyString(row.url, 'MCP URL'),
+      headers: secrets,
+    })
+  }
+  throw new Error('Unsupported MCP transport')
+}
+
+async function desktopMcpSummaries(): Promise<DesktopMcpServerSummary[]> {
+  return (await readUserMcpServers(desktopMcpPath())).map(summarizeUserMcpServer)
 }
 
 function packagedRuntimePath(...parts: string[]): string {
@@ -604,6 +656,25 @@ function installIpc(): void {
     await writeStoredModelSettings(stored)
     await supervisor.restart()
     return publicModelSettings(stored)
+  })
+  ipcMain.handle('dsh:mcp-list', async (event) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    return desktopMcpSummaries()
+  })
+  ipcMain.handle('dsh:mcp-save', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const current = await readUserMcpServers(desktopMcpPath())
+    const rawName = typeof value === 'object' && value !== null ? (value as { serverName?: unknown }).serverName : undefined
+    const existing = typeof rawName === 'string' ? current.find(server => server.serverName === rawName) : undefined
+    const servers = await upsertUserMcpServer(desktopMcpPath(), desktopMcpServer(value, existing))
+    await supervisor.restart()
+    return servers.map(summarizeUserMcpServer)
+  })
+  ipcMain.handle('dsh:mcp-remove', async (event, value: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const servers = await removeUserMcpServer(desktopMcpPath(), nonEmptyString(value, 'MCP server name'))
+    await supervisor.restart()
+    return servers.map(summarizeUserMcpServer)
   })
   ipcMain.handle('dsh:runtime-restart', async (event) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')

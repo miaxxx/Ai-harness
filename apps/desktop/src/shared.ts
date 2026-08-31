@@ -75,6 +75,7 @@ export interface DesktopModelSettings {
   model: string
   protocol: DesktopModelProtocol
   apiKeyConfigured: boolean
+  computerUseEnabled: boolean
 }
 
 /** Writable primary-model fields; an empty API key preserves the stored secret. */
@@ -83,6 +84,34 @@ export interface DesktopModelSettingsUpdate {
   model: string
   protocol: DesktopModelProtocol
   apiKey: string
+  computerUseEnabled: boolean
+}
+
+/** Transport selected for one user-owned MCP server. */
+export type DesktopMcpTransport = 'stdio' | 'streamable-http'
+
+/** Redacted MCP configuration safe to show in the sandboxed Renderer. */
+export interface DesktopMcpServerSummary {
+  serverName: string
+  transport: DesktopMcpTransport
+  target: string
+  secretNames: string[]
+  command?: string
+  args?: string[]
+  cwd?: string
+  url?: string
+}
+
+/** One complete MCP server edit submitted by the settings Renderer. */
+export interface DesktopMcpServerUpdate {
+  serverName: string
+  transport: DesktopMcpTransport
+  command?: string
+  args?: string[]
+  cwd?: string
+  url?: string
+  /** Omission preserves the current stdio environment or HTTP headers. */
+  secrets?: Record<string, string>
 }
 
 /** Structured ACP Session notification forwarded without presentation loss. */
@@ -130,6 +159,12 @@ export interface DesktopBridge {
   modelSettings(): Promise<DesktopModelSettings>
   /** Save the primary model, securely retain its key, and restart the ACP Runtime. */
   saveModelSettings(update: DesktopModelSettingsUpdate): Promise<DesktopModelSettings>
+  /** List redacted persistent MCP servers. */
+  listMcpServers(): Promise<DesktopMcpServerSummary[]>
+  /** Save one MCP server and restart the ACP Runtime so its tools become available. */
+  saveMcpServer(update: DesktopMcpServerUpdate): Promise<DesktopMcpServerSummary[]>
+  /** Remove one MCP server and restart the ACP Runtime. */
+  removeMcpServer(serverName: string): Promise<DesktopMcpServerSummary[]>
   /** Subscribe to Runtime lifecycle and structured ACP presentation updates. */
   subscribe(listener: (frame: DesktopRendererFrame) => void): () => void
   /** Restart the supervised ACP Runtime process. */

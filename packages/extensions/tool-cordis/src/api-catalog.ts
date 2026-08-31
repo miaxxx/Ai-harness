@@ -620,6 +620,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'computer',
+    summary: 'Registry and execution owner for exactly one configured local computer Provider.',
+    description: 'Registry and execution owner for exactly one configured local computer Provider.',
+    methods: [
+      {
+        signature: 'register(provider: ComputerProvider): () => void',
+        description: 'Register one local computer Provider.',
+        parameters: [{ name: 'provider', description: 'provider implementation identified by its stable id.' }],
+        returns: 'disposer that removes the provider.',
+      },
+      {
+        signature: 'listApps(signal?: AbortSignal): Promise<readonly ComputerApp[]>',
+        description: 'List apps exposed by the selected Provider.',
+        parameters: [{ name: 'signal', description: 'cancellation signal for provider work.' }],
+        returns: 'visible app identifiers and labels.',
+      },
+      {
+        signature: 'inspect(app: string, includeScreenshot: boolean, signal?: AbortSignal): Promise<ComputerSnapshot>',
+        description: 'Inspect one selected app.',
+        parameters: [{ name: 'app', description: 'Provider app id returned by {@link listApps}.' }, { name: 'includeScreenshot', description: 'whether the snapshot includes pixels.' }, { name: 'signal', description: 'cancellation signal for provider work.' }],
+        returns: 'a bounded current app snapshot.',
+      },
+      {
+        signature: 'act(app: string, action: ComputerAction, signal?: AbortSignal): Promise<ComputerSnapshot>',
+        description: 'Perform one bounded app action through the selected Provider.',
+        parameters: [{ name: 'app', description: 'Provider app id returned by {@link listApps}.' }, { name: 'action', description: 'fixed input operation to perform.' }, { name: 'signal', description: 'cancellation signal for provider work.' }],
+        returns: 'the app snapshot after the action.',
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
@@ -3104,6 +3135,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CompactionTrigger',
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
+  },
+  {
+    name: 'ComputerAction',
+    declaration: 'export type ComputerAction = {\n    readonly kind: \'click\';\n    readonly elementId: string;\n} | {\n    readonly kind: \'type\';\n    readonly elementId: string;\n    readonly text: string;\n} | {\n    readonly kind: \'key\';\n    readonly key: string;\n} | {\n    readonly kind: \'scroll\';\n    readonly elementId: string;\n    readonly direction: \'up\' | \'down\';\n};',
+  },
+  {
+    name: 'ComputerApp',
+    declaration: 'export interface ComputerApp {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'ComputerElement',
+    declaration: 'export interface ComputerElement {\n    readonly id: string;\n    readonly role: string;\n    readonly label: string;\n    readonly enabled: boolean;\n}',
+  },
+  {
+    name: 'ComputerProvider',
+    declaration: 'export interface ComputerProvider {\n    readonly id: string;\n    available(): boolean;\n    listApps(signal?: AbortSignal): Promise<readonly ComputerApp[]>;\n    inspect(app: string, includeScreenshot: boolean, signal?: AbortSignal): Promise<ComputerSnapshot>;\n    act(app: string, action: ComputerAction, signal?: AbortSignal): Promise<ComputerSnapshot>;\n}',
+  },
+  {
+    name: 'ComputerSnapshot',
+    declaration: 'export interface ComputerSnapshot {\n    readonly app: ComputerApp;\n    readonly title?: string;\n    readonly text: string;\n    readonly elements: readonly ComputerElement[];\n    readonly screenshot?: SaveImageAttachment;\n}',
   },
   {
     name: 'ConfinedArgv',

@@ -12,7 +12,7 @@ Desktop 产品已经能发现 Skills 并交换 ACP 文本，但用户无法导�
 
 Desktop 主进程只暴露 Skill 导入／删除、附件暂存和产物导出的窄接口。用户 Skill 经校验后复制到 `~/.dsh/skills`；项目与内置 Skill 保持只读。输入框启动菜单提供附件上传，并以悬停子菜单呈现有效 Skills 目录。两层菜单都有不透明的浮层底色和轻微边缘阴影，命中区域相互重叠，因此鼠标进入子菜单时不会将其关闭。选中的 Skill 是 input-trigger 引用，其模型形式保持 `/skill-name`；输入框和已发送消息把该引用呈现为同一种中性胶囊，图标与名称之间保留间距。
 
-选中的附件先复制到 Session 产物区，再把不透明 id 交给提示调用。图片转换成 ACP image block，支持的普通文件转换成 ACP resource link。Desktop 消息适配器把持久化的方括号资源引用文本投影为文件胶囊，并在可见对话中省略本地 URI。Renderer 不会获得文件字节或任意读取权限。
+选中的附件先复制到 Session 产物区，再把不透明 id 交给提示调用。图片通过 Runtime 的本地附件存储成为可持久化的 ACP image block，并以图片输入交给已配置的支持视觉输入的 OpenAI 兼容模型；支持的普通文件转换成 ACP resource link。Desktop 消息适配器把持久化的方括号资源引用文本投影为文件胶囊，并在可见对话中省略本地 URI。Renderer 不会获得文件字节或任意读取权限。选择附件或 Skill 都不会向草稿写入预设任务提示。
 
 每次提示前后，主进程会比较工作区中的受支持普通文件。新建或修改的文件复制到 `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`，并记录在 `manifest.json`。Desktop 适配器把这些副本投影为成功编辑位置，因此现有 deliverables 累加器会在最终回复后展示它们。Desktop 专用控件提供原生“另存为”和 ZIP 导出。
 

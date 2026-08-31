@@ -24,6 +24,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent bash tool; deployment composition supplies the PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent pwsh tool, the Windows counterpart of the persistent bash tool; deployment composition supplies a pwsh-dialect PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`, `ctx.fs` | `tool/call`, `fs/observed after view presence/absence, edit absence, or successful mutation`, `tool/result` | - | Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API. |
+| `@deepseek-ai/dsh-tool-computer` | `computer` | `ctx.tools`, `ctx.computer`, `ctx.attachments`, `ctx.approval + an owning Agent for screenshots and mutations` | `tool/call`, `durable attachment for an approved screenshot`, `approved local computer action`, `tool/result` | - | The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval. |
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
@@ -624,6 +625,68 @@ Notes for using the `str_replace` command:
 Source: [`packages/fs/tool-str-replace-editor/src/index.ts`](../packages/fs/tool-str-replace-editor/src/index.ts)
 
 Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API.
+
+<a id="deepseek-aidsh-tool-computer"></a>
+
+## `@deepseek-ai/dsh-tool-computer`
+
+### `computer`
+
+Inspect or operate an approved local desktop app. Use list, then pass the returned app id to inspect. Inspect before every click/type/scroll because element ids expire after each operation. Prefer app APIs, browser automation, shell, or filesystem tools when they can complete the task.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "list",
+        "inspect",
+        "click",
+        "type",
+        "key",
+        "scroll"
+      ]
+    },
+    "app": {
+      "type": "string",
+      "description": "App id from computer list."
+    },
+    "elementId": {
+      "type": "string",
+      "description": "Element id from the latest inspect result."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to enter for type."
+    },
+    "key": {
+      "type": "string",
+      "description": "Named key for key, for example Return or Escape."
+    },
+    "direction": {
+      "type": "string",
+      "description": "Direction for scroll.",
+      "enum": [
+        "up",
+        "down"
+      ]
+    },
+    "screenshot": {
+      "type": "boolean",
+      "description": "Include a screenshot on inspect when accessibility text is insufficient."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/computer/tool-computer/src/index.ts`](../packages/computer/tool-computer/src/index.ts)
+
+The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval.
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

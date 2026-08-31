@@ -26,6 +26,7 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import ComputerRuntime from '@deepseek-ai/dsh-computer'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import WebRuntime from '@deepseek-ai/dsh-web'
@@ -44,6 +45,7 @@ import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
+import * as ToolComputer from '@deepseek-ai/dsh-tool-computer'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
@@ -309,6 +311,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-computer',
+    dir: 'tool-computer',
+    source: 'packages/computer/tool-computer/src/index.ts',
+    requires: ['ctx.tools', 'ctx.computer', 'ctx.attachments', 'ctx.approval + an owning Agent for screenshots and mutations'],
+    writes: ['tool/call', 'durable attachment for an approved screenshot', 'approved local computer action', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ComputerRuntime)
+      await ctx.plugin(CatalogAttachmentStore)
+      await ctx.plugin(ToolComputer)
+    },
+    note:
+      'The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs',

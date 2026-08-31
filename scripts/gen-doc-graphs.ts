@@ -514,6 +514,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
   },
   {
+    key: 'computer',
+    pkg: 'computer',
+    title: 'Local computer-control provider registry',
+    mode: 'seam',
+    implementations: ['computer-browser-cdp', 'computer-macos'],
+    consumers: ['tool-computer'],
+    note: 'Browser and native desktop providers expose bounded inspection and actions; tool-computer applies approval and durable screenshot handling.',
+  },
+  {
     key: 'spillStore',
     pkg: 'spill',
     title: 'Spill storage seam',

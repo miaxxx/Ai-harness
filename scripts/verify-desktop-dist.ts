@@ -61,7 +61,13 @@ try {
     DSH_DESKTOP_WORKSPACE: workspace,
     DSH_DESKTOP_DIST_SMOKE: '1',
   }
-  const result = await run(executable, [], temporary, environment, 60_000)
+  const result = await run(
+    executable,
+    [`--user-data-dir=${join(temporary, 'user-data')}`],
+    temporary,
+    environment,
+    60_000,
+  )
   if (!result.stderr.includes('desktop-dist-smoke: ready')) {
     throw new Error(`verify-desktop-dist: application exited without the ready marker:\n${result.stderr}`)
   }

@@ -1,0 +1,19 @@
+{
+  "name": "@deepseek-ai/dsh-computer-macos",
+  "description": "macOS Accessibility and screenshot Provider for dsh-computer",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/computer/computer-macos"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" } },
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
+  "license": "MIT",
+  "peerDependencies": { "@deepseek-ai/dsh-computer": "workspace:^", "@deepseek-ai/dsh-invariants": "workspace:^", "@deepseek-ai/cordis": "workspace:^" },
+  "devDependencies": { "@deepseek-ai/dsh-computer": "workspace:^", "@deepseek-ai/dsh-invariants": "workspace:^", "@deepseek-ai/cordis": "workspace:^" }
+}
