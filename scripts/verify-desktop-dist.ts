@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 
@@ -15,7 +15,7 @@ const source = resolve(process.argv[2] ?? join(
   root,
   'apps/desktop/dist-electron',
   `mac-${architecture}`,
-  'DeepSeek Harness.app',
+  'Orbis AI.app',
 ))
 if (!existsSync(source)) throw new Error(`verify-desktop-dist: application missing at ${source}`)
 
@@ -42,11 +42,36 @@ async function run(command: string, args: string[], cwd: string, env = process.e
 
 const temporary = await mkdtemp(join(tmpdir(), 'dsh-desktop-dist-'))
 try {
-  const relocated = join(temporary, 'DeepSeek Harness.app')
+  const relocated = join(temporary, 'Orbis AI.app')
   await run('ditto', [source, relocated], temporary)
+  const runtime = join(relocated, 'Contents', 'Resources', 'runtime', 'app')
+  const config = await readFile(join(runtime, 'cordis.yml'), 'utf8')
+  if (!config.includes("name: '@deepseek-ai/dsh-compaction-tool-result-pruner'")) {
+    throw new Error('verify-desktop-dist: embedded ACP Runtime omits oversized tool-result recovery')
+  }
+  for (const expected of [
+    'maxImagePixels: 201326592',
+    'maxImageDimension: 32768',
+    'imageCompressionConcurrency: 1',
+  ]) {
+    if (!config.includes(expected)) {
+      throw new Error(`verify-desktop-dist: embedded ACP Runtime omits large-canvas image policy ${expected}`)
+    }
+  }
+  const prunerEntry = join(
+    runtime,
+    'node_modules',
+    '@deepseek-ai',
+    'dsh-compaction-tool-result-pruner',
+    'lib',
+    'index.js',
+  )
+  if (!existsSync(prunerEntry)) {
+    throw new Error(`verify-desktop-dist: embedded tool-result pruner missing at ${prunerEntry}`)
+  }
   const workspace = join(temporary, 'workspace')
   await run('mkdir', ['-p', workspace], temporary)
-  const executable = join(relocated, 'Contents', 'MacOS', 'DeepSeek Harness')
+  const executable = join(relocated, 'Contents', 'MacOS', 'Orbis AI')
   const environment: NodeJS.ProcessEnv = {
     PATH: '/usr/bin:/bin',
     HOME: process.env.HOME,

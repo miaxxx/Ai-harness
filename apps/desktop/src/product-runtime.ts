@@ -39,6 +39,7 @@ import * as themePlugin from '@deepseek-ai/dsh-client-ui-theme/client'
 import * as layoutPlugin from '@deepseek-ai/dsh-client-ui-layout/client'
 import * as sidebarPlugin from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import * as conversationPlugin from '@deepseek-ai/dsh-client-ui-conversation/client'
+import * as toolPlugin from '@deepseek-ai/dsh-client-ui-tool/client'
 import * as inputTriggerPlugin from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import * as deliverablesPlugin from '@deepseek-ai/dsh-client-ui-deliverables/client'
 import * as workspacePlugin from '@deepseek-ai/dsh-client-ui-workspace/client'
@@ -46,9 +47,9 @@ import * as nativeDirectoryPickerPlugin from '@deepseek-ai/dsh-client-ui-directo
 import * as settingsGeneralPlugin from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import * as desktopModelSettingsPlugin from './desktop-model-settings.tsx'
 import * as desktopMcpSettingsPlugin from './desktop-mcp-settings.tsx'
+import * as desktopBrandPlugin from './desktop-brand.tsx'
 import { clearPendingAttachments, desktopContentPlugin, pendingAttachmentIds } from './desktop-content-ui.tsx'
 import { projectDesktopAssistant, projectDesktopUserText } from './desktop-message-projection.ts'
-import * as officialBrandPlugin from '@deepseek-ai/dsh-client-ui-brand-official/client'
 import * as rendererPlugin from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {
   DesktopRendererFrame, DesktopSessionNotification, DesktopSessionSummary,
@@ -259,6 +260,7 @@ class DesktopSession {
   private blank: boolean
   private running = false
   private promptAttempted = false
+  private promptError: ConversationSnapshot['promptError'] = null
   private updatedAt = Date.now()
 
   constructor(
@@ -539,6 +541,7 @@ class DesktopSession {
       draft.openState = 'open'
       draft.openError = null
       draft.blank = this.blank
+      draft.promptError = this.promptError
     })
   }
 
@@ -548,6 +551,7 @@ class DesktopSession {
       .join('\n')
     if (text.trim() === '') return rpcFailure('Desktop ACP currently accepts text prompts only.')
     this.promptAttempted = true
+    this.promptError = null
     this.setPlan([])
     this.running = true
     this.publish()
@@ -561,7 +565,9 @@ class DesktopSession {
       this.blank = false
       return { ok: true, value: { accepted: true } }
     } catch (error: unknown) {
-      return rpcFailure(error instanceof Error ? error.message : String(error))
+      const failure = rpcFailure<{ accepted: true }>(error instanceof Error ? error.message : String(error))
+      if (!failure.ok) this.promptError = { op: 'send', error: failure.error }
+      return failure
     } finally {
       this.running = false
       this.updatedAt = Date.now()
@@ -1170,6 +1176,7 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, sidebarPlugin)
   await mountPlugin(ctx, inputTriggerPlugin)
   await mountPlugin(ctx, conversationPlugin)
+  await mountPlugin(ctx, toolPlugin)
   await mountPlugin(ctx, workspacePlugin)
   await mountPlugin(ctx, nativeDirectoryPickerPlugin)
   await mountPlugin(ctx, settingsGeneralPlugin)
@@ -1177,7 +1184,7 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, desktopMcpSettingsPlugin)
   await mountPlugin(ctx, deliverablesPlugin)
   await mountPlugin(ctx, desktopContentPlugin(sessions))
-  await mountPlugin(ctx, officialBrandPlugin)
+  await mountPlugin(ctx, desktopBrandPlugin)
   await mountPlugin(ctx, rendererPlugin)
   sessions.rebuildConversationRegistries()
 

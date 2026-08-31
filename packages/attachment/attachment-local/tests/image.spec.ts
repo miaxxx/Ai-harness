@@ -25,10 +25,14 @@ describe('raster decoding', () => {
   it('rejects excess decoded pixels before decoding', async () => {
     await expect(detectImage(await raster('png'), { maxPixels: 5 }))
       .rejects.toMatchObject({ code: 'IMAGE_TOO_MANY_PIXELS' })
+    await expect(probeImage(await raster('png'), { maxPixels: 5 }))
+      .rejects.toMatchObject({ code: 'IMAGE_TOO_MANY_PIXELS' })
   })
 
   it('rejects a side above the per-side limit and accepts a side exactly at it', async () => {
     await expect(detectImage(await raster('png'), { maxDimension: 2 }))
+      .rejects.toMatchObject({ code: 'IMAGE_DIMENSION_TOO_LARGE' })
+    await expect(probeImage(await raster('png'), { maxDimension: 2 }))
       .rejects.toMatchObject({ code: 'IMAGE_DIMENSION_TOO_LARGE' })
     await expect(detectImage(await raster('png'), { maxDimension: 3 }))
       .resolves.toMatchObject({ mediaType: 'image/png', width: 3, height: 2, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })

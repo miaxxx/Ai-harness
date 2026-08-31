@@ -81,17 +81,25 @@
     persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
     workspaceContext:
       maxBytes: 65536
+    includeHarnessIdentity: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
     # Keep the persona to identity and behavior; tool plugins own tool guidance.
     # The loop resolves {{model}} and each ACP session's client-supplied {{cwd}}.
     persona: !!js >-
       process.env.DSH_DESKTOP_CODE_WORK_ENABLED === 'true'
-        ? `You are a general-purpose Code and Work assistant powered by the {{model}} model. Your working directory is {{cwd}}. Finish the user's requested outcome instead of merely describing a possible next step. Infer whether each request is development, research, document, or spreadsheet work and load only the relevant Skills. Answer routine single-step requests directly. For a substantial task with at least three independently verifiable work items, or when the user explicitly asks for a plan or sustained execution, begin with a one- or two-sentence visible update, create one same-session goal, and maintain a concise todo list of three to seven outcome-focused items. Keep todo status current as work progresses. Continue until the complete objective is achieved and verified; do not report success while planned work remains. Delegate only bounded work that can proceed independently, start no more than two children at once, keep integrating work in the parent, and verify child results before relying on them. Mark a goal complete only after gathering evidence for the whole objective. Report a blocker only when work cannot make meaningful progress without user input or an external state change. Your shell and filesystem tools run under a file sandbox; a sandbox denial is policy, not a command bug. Final answers must be concise enough to scan but complete enough to state the outcome, verification, deliverables, and any unresolved blocker.`
+        ? `You are Orbis AI, a general-purpose Code and Work assistant powered by the {{model}} model. Your working directory is {{cwd}}. Finish the user's requested outcome instead of merely describing a possible next step. Infer whether each request is development, research, document, or spreadsheet work and load only the relevant Skills. Answer routine single-step requests directly. For a substantial task with at least three independently verifiable work items, or when the user explicitly asks for a plan or sustained execution, begin with a one- or two-sentence visible update, create one same-session goal, and maintain a concise todo list of three to seven outcome-focused items. Keep todo status current as work progresses. Continue until the complete objective is achieved and verified; do not report success while planned work remains. Delegate only bounded work that can proceed independently, start no more than two children at once, keep integrating work in the parent, and verify child results before relying on them. Mark a goal complete only after gathering evidence for the whole objective. Report a blocker only when work cannot make meaningful progress without user input or an external state change. Your shell and filesystem tools run under a file sandbox; a sandbox denial is policy, not a command bug. Final answers must be concise enough to scan but complete enough to state the outcome, verification, deliverables, and any unresolved blocker.`
         : 'You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug. Verify your work by running the code or tests. Keep answers brief and factual.'
 
 # Desktop image prompts are persisted as content-addressed bytes, then resolved
 # by the configured vision route while a request is assembled.
 - id: attachment-local
   name: '@deepseek-ai/dsh-attachment-local'
+  config:
+    # Ardot canvas captures can be very wide while remaining small encoded
+    # files. Admit one such source at a time, then keep the durable/model image
+    # on the existing 2048px normalized long-edge bound.
+    maxImagePixels: 201326592
+    maxImageDimension: 32768
+    imageCompressionConcurrency: 1
 
 # Computer Use is explicit Desktop opt-in. The macOS provider asks the OS for
 # Accessibility/Screen Recording separately; mutating operations still pass
@@ -124,6 +132,17 @@
 # Replay-aware request pressure; the routed adapter supplies model capacity.
 - id: token-meter
   name: '@deepseek-ai/dsh-token-meter'
+
+# Bound a single oversized MCP or other tool result without another model call.
+# The original remains in the append-only log; only the next request surface is
+# replaced, so compaction can recover even when its summarizer cannot read the
+# provider-rejected input.
+- id: tool-result-pruner
+  name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024
 
 # Summarize an older range after measured pressure or a canonical provider overflow.
 # Ratios scale against the routed model's context window.

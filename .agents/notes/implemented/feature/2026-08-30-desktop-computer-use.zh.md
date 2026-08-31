@@ -13,10 +13,10 @@ Desktop 会话可以使用文件系统、Shell 和 Web 搜索工具，但在任�
 **`ctx.computer` 是按 Provider 选择的电脑控制能力，`computer` 是其唯一具备授权意识的面向模型消费者。**
 
 - `dsh-computer` 拥有应用发现、受限快照和小粒度输入操作。Provider 返回临时元素 id；服务选择一个已配置且可用的 Provider，不依赖注册顺序。
-- `dsh-computer-browser-cdp` 在存在 `DSH_BROWSER_CDP_URL` 时使用本机 Chromium DevTools 端点。它检查选中的页面并只发送固定的 DevTools 操作；不会启动浏览器，也不会运行模型编写的脚本。
-- `dsh-computer-macos` 对选中的应用使用固定 JXA 辅助功能操作，绝不把模型文本解释为 JXA。macOS 将辅助功能和屏幕录制权限授予 ACP Runtime 进程。
+- `dsh-computer-browser-cdp` 在存在 `DSH_BROWSER_CDP_URL` 时使用本机 Chromium DevTools 端点。它检查选中的页面并只发送固定的 DevTools 操作；不会启动浏览器，也不会运行模型编写的脚本。轮次取消会关闭该范围的连接，并拒绝仍在等待的命令。
+- `dsh-computer-macos` 对选中的应用使用固定 JXA 辅助功能操作，绝不把模型文本解释为 JXA。macOS 将辅助功能和屏幕录制权限授予 ACP Runtime 进程，截图捕获与活动轮次共用同一个取消信号。
 - `dsh-tool-computer` 会为每次截图、点击、输入、按键与滚动通过 `ctx.approval` 请求授权。仅文本检查保持只读。截图经过 `ctx.attachments`，因此其模型可见像素是持久化工具结果内容。
-- Desktop 在用户于主模型设置中启用前保持 Computer Use 关闭。本机 DevTools 端点优先于 macOS 可视化控制；每个改变状态的操作仍进入现有 ACP 授权 UI。
+- Desktop 在用户于主模型设置中启用前保持 Computer Use 关闭。本机 DevTools 端点优先于 macOS 可视化控制；每个改变状态的操作仍进入现有 ACP 授权 UI。Renderer 会挂载 `computer` 与其他 ACP 工具共用的通用工具卡片表层，并把提示词失败保留在会话快照中，使被拒绝的请求保持可见。
 
 ## 考虑过的替代方案
 

@@ -373,7 +373,7 @@ class AcpRuntimeSupervisor {
     const buttons = request.options.map(option => permissionLabel(option.kind))
     const result = await dialog.showMessageBox(window, {
       type: 'warning',
-      message: `DeepSeek Harness requests permission for tool call ${request.toolCall.toolCallId}`,
+      message: `Orbis AI requests permission for tool call ${request.toolCall.toolCallId}`,
       detail: 'Permission decides whether this action should run. Runtime sandbox policy independently constrains what it can access.',
       buttons,
       cancelId: Math.max(0, request.options.findIndex(option => option.kind.startsWith('reject_'))),
@@ -717,7 +717,7 @@ async function createWindow(): Promise<BrowserWindow> {
     height: 820,
     minWidth: 860,
     minHeight: 560,
-    title: 'DeepSeek Harness',
+    title: 'Orbis AI',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#ffffff',

@@ -46,7 +46,8 @@ const CREATE_DESCRIPTION =
   'Create one persisted same-session completion goal when the current direct human request '
   + 'is a long-running objective that should continue across autonomous goal rounds. You may '
   + 'infer that intent without requiring the user to say "create a goal". Do not use this for '
-  + 'trivial single-turn work. Execution rejects non-human and subagent authority.'
+  + 'trivial single-turn work. The objective must state the concrete outcome, relevant constraints, '
+  + 'and how final completion will be verified. Execution rejects non-human and subagent authority.'
 
 const GET_DESCRIPTION =
   'Read the current same-session goal, including its exact id/revision, objective, phase, completed '
@@ -116,7 +117,9 @@ function guidance(blockedAfter: number): string {
     + 'create a goal for routine single-turn work. Call get_goal before update_goal and copy its '
     + 'exact goal_id and revision. After session resume or fork, an active goal is disarmed: when '
     + 'a human asks to continue or resume in any wording or language, use update_goal action '
-    + 'resume to rearm it. Mark complete only when the objective is actually achieved. Mark '
+    + 'resume to rearm it. Write each goal objective with a concrete outcome, constraints, and '
+    + 'verification criteria. Mark complete only after the final state satisfies those criteria and '
+    + 'current evidence establishes the whole objective; when a check fails, repair and re-check instead. Mark '
     + `blocked only after the same blocking condition persists for at least ${blockedAfter} `
     + 'consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, '
     + 'or useful remaining work is not blocked.'
@@ -211,7 +214,7 @@ export function apply(ctx: Context, config: Config): void {
       objective: {
         type: 'string',
         required: true,
-        description: 'The concrete completion objective inferred from the direct human request.',
+        description: 'Concrete outcome, relevant constraints, and final verification criteria inferred from the direct human request.',
       },
       max_goal_rounds: {
         type: 'number',

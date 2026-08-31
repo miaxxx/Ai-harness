@@ -30,10 +30,12 @@ export default defineConfig({
   define: {
     // Client packages only make build-time process.env reads. Keep the
     // sandboxed Renderer free of a process polyfill while selecting the
-    // shipped brand contribution for the Desktop product composition.
+    // Desktop product identity and locale copy without a process polyfill.
     'process.env': JSON.stringify({
-      DSH_CLIENT_BUILD_PROFILE: process.env.DSH_CLIENT_BUILD_PROFILE ?? 'official',
-      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_BUILD_PROFILE: process.env.DSH_CLIENT_BUILD_PROFILE ?? 'orbis',
+      DSH_CLIENT_TITLE: 'Orbis AI',
+      DSH_CLIENT_HERO_HEADLINE: 'Orbis AI',
+      DSH_CLIENT_HERO_PREVIEW: '',
     }),
   },
   build: {

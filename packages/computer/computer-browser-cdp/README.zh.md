@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-为 [`dsh-computer`](../computer/README.zh.md) 提供 Chromium DevTools Protocol 实现。将 `DSH_BROWSER_CDP_URL` 设为本机浏览器端点，例如 `http://127.0.0.1:9222`；该实现列出页面目标，并只通过结构化 DevTools 命令控制已选择的目标。
+为 [`dsh-computer`](../computer/README.zh.md) 提供 Chromium DevTools Protocol 实现。将 `DSH_BROWSER_CDP_URL` 设为本机浏览器端点，例如 `http://127.0.0.1:9222`；该实现列出页面目标，并只通过结构化 DevTools 命令控制已选择的目标。取消活动轮次会关闭对应连接，并拒绝仍在等待的检查或截图命令。
 
 ## 模型体验
 

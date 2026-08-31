@@ -13,10 +13,10 @@ Desktop sessions could use filesystem, shell, and Web search tools but could not
 **`ctx.computer` is the provider-selected computer-control capability, and `computer` is its single approval-aware model consumer.**
 
 - `dsh-computer` owns app discovery, bounded snapshots, and small input actions. Providers return temporary element ids and the service selects one configured usable provider rather than relying on registration order.
-- `dsh-computer-browser-cdp` uses a local Chromium DevTools endpoint when `DSH_BROWSER_CDP_URL` is present. It inspects a selected page and sends only fixed DevTools operations; it does not launch a browser or run model-authored scripts.
-- `dsh-computer-macos` uses fixed JXA Accessibility operations for the selected app. It never interprets model text as JXA. macOS grants Accessibility and Screen Recording permissions to the ACP Runtime process.
+- `dsh-computer-browser-cdp` uses a local Chromium DevTools endpoint when `DSH_BROWSER_CDP_URL` is present. It inspects a selected page and sends only fixed DevTools operations; it does not launch a browser or run model-authored scripts. Turn cancellation closes the scoped connection and rejects pending commands.
+- `dsh-computer-macos` uses fixed JXA Accessibility operations for the selected app. It never interprets model text as JXA. macOS grants Accessibility and Screen Recording permissions to the ACP Runtime process, and screenshot capture shares the active turn's cancellation signal.
 - `dsh-tool-computer` asks through `ctx.approval` for each screenshot, click, entry, key press, and scroll. Text-only inspection stays read-only. Screenshots pass through `ctx.attachments`, so their model-visible pixels are durable tool-result content.
-- Desktop keeps Computer Use off until the user enables it in the primary-model settings. A local DevTools endpoint takes precedence over macOS visual control; each mutating action still reaches the existing ACP approval UI.
+- Desktop keeps Computer Use off until the user enables it in the primary-model settings. A local DevTools endpoint takes precedence over macOS visual control; each mutating action still reaches the existing ACP approval UI. The Renderer mounts the generic tool-card surface used by `computer` and other ACP tools, and it retains prompt failures in the conversation snapshot so a rejected request is visible.
 
 ## Alternatives considered
 

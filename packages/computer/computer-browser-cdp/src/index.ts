@@ -79,6 +79,12 @@ async function connect(target: ConnectedTarget, signal?: AbortSignal): Promise<C
     for (const call of pending.values()) call.reject(reason)
     pending.clear()
   }
+  const abortPending = (): void => {
+    const reason: unknown = signal?.reason
+    failPending(reason instanceof Error ? reason : new Error('Browser inspection was cancelled.'))
+    socket.close()
+  }
+  signal?.addEventListener('abort', abortPending, { once: true })
   socket.addEventListener('close', () => { failPending(new Error('Browser DevTools connection closed.')) })
   socket.addEventListener('error', () => { failPending(new Error('Browser DevTools connection failed.')) })
   socket.addEventListener('message', (event) => {
@@ -92,13 +98,18 @@ async function connect(target: ConnectedTarget, signal?: AbortSignal): Promise<C
   })
   return {
     send(method, params = {}) {
+      signal?.throwIfAborted()
       const id = nextId++
       return new Promise<Record<string, unknown>>((resolve, reject) => {
         pending.set(id, { resolve, reject })
         socket.send(JSON.stringify({ id, method, params }))
       })
     },
-    close() { failPending(new Error('Browser DevTools connection closed.')); socket.close() },
+    close() {
+      signal?.removeEventListener('abort', abortPending)
+      failPending(new Error('Browser DevTools connection closed.'))
+      socket.close()
+    },
   }
 }
 

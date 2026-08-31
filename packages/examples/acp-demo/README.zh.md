@@ -23,6 +23,7 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 | `provider` | 必填 | 每个由 ACP 创建的 agent 所用的提供方路由。 |
 | `model` | 必填 | 每个由 ACP 创建的 agent 所用的模型。 |
 | `maxParallelToolCalls` | agent loop（智能体循环）默认值 | 正整数工具调用并发上限；`1` 表示串行。 |
+| `includeHarnessIdentity` | `true` | 在部署 persona 之前包含固定 harness 身份。 |
 | `persona` | 无 | 供 `dsh-system-prompt` 使用的部署 persona 模板。 |
 | `toolOrder` | 字典序 | 供 `dsh-system-prompt` 使用的显式面向模型工具顺序。 |
 | `tools` | `{ mode: 'native' }` | Native、Code Mode 或组合式模型工具传输。 |

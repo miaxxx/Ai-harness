@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId, StreamChunk  } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionEvent, SessionId, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
@@ -638,6 +638,7 @@ describe('tool-call scheduler: failure quiescence', () => {
         { id: 'c2', name: 'p', args: { id: '2' } },
         { id: 'c3', name: 'p', args: { id: '3' } },
       ]),
+      textResponse('follow-up recovered'),
     ])
     const ctx = await harness(adapter, 3)
     const gated = gatedParallelTool('p')
@@ -687,6 +688,14 @@ describe('tool-call scheduler: failure quiescence', () => {
     expect(events(agent).findLast(event => event.type === 'turn/end')).toMatchObject({
       data: { reason: { kind: 'error', error: { message: schedulerError.message, code: 'UNKNOWN' } } },
     })
+    expect(events(agent).filter(event => event.type === 'tool/result').map(event => event.data.error?.code))
+      .toEqual([TOOL_OUTCOME_UNKNOWN, TOOL_OUTCOME_UNKNOWN, TOOL_OUTCOME_UNKNOWN])
+
+    const nextIdle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
+    await nextIdle
+    expect(events(agent).findLast(event => event.type === 'assistant/message')?.data.message.content)
+      .toContainEqual({ type: 'text', text: 'follow-up recovered' })
   })
 })
 

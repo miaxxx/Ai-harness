@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Chromium DevTools Protocol provider for [`dsh-computer`](../computer/README.md). Set `DSH_BROWSER_CDP_URL` to a local browser endpoint, such as `http://127.0.0.1:9222`; the provider lists page targets and controls only the selected target through structured DevTools commands.
+Chromium DevTools Protocol provider for [`dsh-computer`](../computer/README.md). Set `DSH_BROWSER_CDP_URL` to a local browser endpoint, such as `http://127.0.0.1:9222`; the provider lists page targets and controls only the selected target through structured DevTools commands. Cancelling the active turn closes its connection and rejects pending inspection or screenshot commands.
 
 ## Model Experience
 

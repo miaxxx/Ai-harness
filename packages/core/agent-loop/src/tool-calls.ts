@@ -6,8 +6,8 @@
  * and drains started calls.
  *
  * Abort records synthetic error results for skipped calls so replay stays
- * valid. A terminal scheduler failure preserves already-recorded `tool/call`
- * events without fabricating results.
+ * valid. A terminal scheduler failure preserves its failure while the caller
+ * closes unmatched calls with interruption results.
  * @module dsh-agent-loop/tool-calls
  */
 
@@ -44,8 +44,9 @@ interface GroupOutcome {
  * the signal still aborted after accepting started-call context through the
  * caller-supplied acceptor (the machine stages it in its next-step inbox for the
  * step boundary). An internal scheduler failure stops new dispatches, drains
- * already-started dispatches, and rejects with the first failure without
- * fabricating tool results.
+ * already-started dispatches, and rejects with the first failure. The caller
+ * then closes unmatched assistant calls without classifying the scheduler
+ * failure as a tool outcome.
  * The committed step's AgentLoop driver boundary supplies the initiating Agent
  * that becomes each explicit {@link ToolExecutionInput.agent}.
  *

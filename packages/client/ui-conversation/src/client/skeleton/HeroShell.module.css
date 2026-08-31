@@ -1,4 +1,4 @@
-/* NEW SESSION hero (figma Input_Bottom 75:8208): fish + title, workspace chip
+/* NEW SESSION hero (figma Input_Bottom 75:8208): brand + title, workspace chip
    above the shared InputBar card. The input itself is InputBar — only stack
    geometry and the chip live here. */
 
@@ -23,13 +23,12 @@
   overflow: visible;
 }
 
-/* figma 34:10411: fish + title, gap 10, centered; 26/32 wt500. The preview
+/* Brand mark + title, gap 10, centered; 26/32 wt500. The preview
    badge is a product addition outside that source: a mono superscript pill
    riding the title's top-right. */
 .headline {
-  display: grid;
-  grid-template-columns: 34px auto auto;
-  column-gap: 10px;
+  display: flex;
+  gap: 10px;
   align-items: center;
   justify-content: center;
   font-size: 26px;
@@ -38,14 +37,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.headlineText {
-  grid-row: 1;
-  grid-column: 2;
-}
-
 .previewBadge {
-  grid-row: 1;
-  grid-column: 3;
   align-self: start;
   margin-top: 2px;
   margin-left: -3px;
@@ -63,11 +55,13 @@
 
 /* Keep hover detection on a stationary box while the mark moves within it. */
 .fishHitbox {
-  grid-row: 1;
-  grid-column: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.fishHitbox:empty {
+  display: none;
 }
 
 /* Keep the hero mark in the same primary ink as its headline. */

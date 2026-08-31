@@ -7,6 +7,10 @@ export const NS = 'conversation'
 // string: both describe the same next action.
 const PLAN_NEXT_ACTION_ZH = '描述你的任务以生成计划'
 const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
+const HERO_HEADLINE_ZH = process.env.DSH_CLIENT_HERO_HEADLINE ?? '探索未至之境'
+const HERO_HEADLINE_EN = process.env.DSH_CLIENT_HERO_HEADLINE ?? 'Into the Unknown'
+const HERO_PREVIEW_ZH = process.env.DSH_CLIENT_HERO_PREVIEW ?? '预览版'
+const HERO_PREVIEW_EN = process.env.DSH_CLIENT_HERO_PREVIEW ?? 'Preview'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
@@ -73,8 +77,8 @@ export const zh = {
   'access.confirm.acknowledge': '我已了解风险，并愿意继续',
   'access.confirm.cancel': '取消',
   'access.confirm.enable': '启用 Full access',
-  'hero.headline': '探索未至之境',
-  'hero.preview': '预览版',
+  'hero.headline': HERO_HEADLINE_ZH,
+  'hero.preview': HERO_PREVIEW_ZH,
   'hero.chooseWorkspace': '选择工作区',
   'session.hierarchy': '会话层级',
   'details.title': '详情',
@@ -252,8 +256,8 @@ export const en = {
   'access.confirm.acknowledge': 'I understand the risks and want to continue',
   'access.confirm.cancel': 'Cancel',
   'access.confirm.enable': 'Enable Full access',
-  'hero.headline': 'Into the Unknown',
-  'hero.preview': 'Preview',
+  'hero.headline': HERO_HEADLINE_EN,
+  'hero.preview': HERO_PREVIEW_EN,
   'hero.chooseWorkspace': 'Choose workspace',
   'session.hierarchy': 'Session hierarchy',
   'details.title': 'Details',

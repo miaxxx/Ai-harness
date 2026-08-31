@@ -1,0 +1,15 @@
+.name {
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 24px;
+}

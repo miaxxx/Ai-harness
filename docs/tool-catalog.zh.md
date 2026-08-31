@@ -1042,7 +1042,7 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 
 ### `create_goal`
 
-当当前直接人类请求是需要跨自主 Goal Round 持续推进的长期目标时，创建一个持久化的同会话完成目标。即使用户没有明确说「创建目标」，你也可以推断其意图。不要用于简单的单轮工作。执行时会拒绝非人类权限和 subagent 权限。
+当当前直接人类请求是需要跨自主 Goal Round 持续推进的长期目标时，创建一个持久化的同会话完成目标。即使用户没有明确说「创建目标」，你也可以推断其意图。不要用于简单的单轮工作。目标必须说明具体结果、相关约束以及最终完成的验证方式。执行时会拒绝非人类权限和 subagent 权限。
 
 ```json
 {
@@ -1050,7 +1050,7 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
   "properties": {
     "objective": {
       "type": "string",
-      "description": "The concrete completion objective inferred from the direct human request."
+      "description": "Concrete outcome, relevant constraints, and final verification criteria inferred from the direct human request."
     },
     "max_goal_rounds": {
       "type": "number",

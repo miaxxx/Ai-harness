@@ -97,7 +97,7 @@ export function DesktopModelSettingsSection() {
           <input type="checkbox" checked={computerUseEnabled} onChange={(event) => { setComputerUseEnabled(event.target.checked) }} />
           <span>
             <strong>允许 Computer Use</strong>
-            <small>允许模型检查浏览器或 macOS 应用。每次点击、输入、按键和滚动仍会单独请求批准。</small>
+            <small>允许模型检查浏览器或 macOS 应用。每次截图、点击、输入、按键和滚动仍会单独请求批准；截图检查要求主模型支持图片输入，macOS 还需为应用开启屏幕录制权限。</small>
           </span>
         </label>
 

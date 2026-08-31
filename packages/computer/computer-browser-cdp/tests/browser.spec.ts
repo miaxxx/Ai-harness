@@ -205,6 +205,14 @@ describe('Chromium CDP computer Provider', () => {
     await expect(legacyAbort).rejects.toThrow('cancelled')
 
     socketMode = 'open'
+    responseFor = () => ({ skip: true })
+    const activeController = new AbortController()
+    const active = provider.inspect('tab', true, activeController.signal)
+    await vi.waitFor(() => { expect(sockets.at(-1)?.sent.length).toBe(1) })
+    activeController.abort(new Error('active stop'))
+    await expect(active).rejects.toThrow('active stop')
+    expect(sockets.at(-1)?.closed).toBe(true)
+
     responseFor = () => ({ error: { message: 'protocol failure' } })
     await expect(provider.inspect('tab', false)).rejects.toThrow('protocol failure')
 

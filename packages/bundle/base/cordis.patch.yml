@@ -431,6 +431,12 @@
       config:
         persona: ''
 
+    # Final-state acceptance stays outside the loop and outside artifact tools:
+    # one prompt policy covers ordinary turns and autonomous goal rounds, while
+    # the shipped delivery-verification skill supplies type-specific procedures.
+    - id: delivery-quality-policy
+      name: '@deepseek-ai/dsh-delivery-quality-policy'
+
     # Agents created at startup. The base stays empty; raw overlays may create
     # agents, while Web creates sessions on client request.
     - id: agent-loop

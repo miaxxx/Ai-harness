@@ -9,7 +9,7 @@ function renderBootFailure(root: HTMLElement, error: unknown): void {
   const eyebrow = document.createElement('p')
   eyebrow.textContent = 'Desktop product boot failed'
   const heading = document.createElement('h1')
-  heading.textContent = 'DeepSeek Harness could not start'
+  heading.textContent = 'Orbis AI could not start'
   const detail = document.createElement('pre')
   detail.textContent = message
   panel.append(eyebrow, heading, detail)

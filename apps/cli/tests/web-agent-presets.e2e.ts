@@ -224,7 +224,7 @@ describe('the shipped Web composition', () => {
     expect(ctx.agentPresets.defaultId).toBe('code')
   })
 
-  it.each(['code', 'work'] as const)('shares bundled task skills with the %s preset', async (presetId) => {
+  it.each(['code', 'work', 'standard', 'cordis'] as const)('shares bundled task skills with the %s preset', async (presetId) => {
     const handle = await ctx.agents.create({
       sessionId: SessionId(`preset-bundled-skills-${presetId}-${randomUUID()}`),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, presetId).then(() => undefined),
@@ -232,7 +232,7 @@ describe('the shipped Web composition', () => {
     try {
       const names = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
       expect(names).toEqual(expect.arrayContaining([
-        'code-development', 'document-work', 'spreadsheet-work', 'web-research',
+        'code-development', 'delivery-verification', 'document-work', 'spreadsheet-work', 'web-research',
       ]))
     } finally {
       await handle.dispose()

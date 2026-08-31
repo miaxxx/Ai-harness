@@ -65,9 +65,13 @@ describe('macOS computer Provider', () => {
   it('inspects accessibility content with and without screenshots', async () => {
     const provider = capture()
     await expect(provider.inspect('Editor', false)).resolves.toMatchObject({ title: 'Document', text: 'hello' })
-    const image = await provider.inspect('Editor', true)
+    const controller = new AbortController()
+    const image = await provider.inspect('Editor', true, controller.signal)
     expect(image).toMatchObject({ screenshot: { mediaType: 'image/png', name: 'Editor-snapshot.png' } })
     expect(image.screenshot?.data).toEqual(new Uint8Array([1, 2, 3]))
+    expect(execFileMock).toHaveBeenLastCalledWith(
+      '/usr/sbin/screencapture', expect.any(Array), expect.objectContaining({ signal: controller.signal }), expect.any(Function),
+    )
 
     execFileMock.mockImplementation((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => {
       callback(null, JSON.stringify({ ...snapshot, title: undefined }))

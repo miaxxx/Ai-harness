@@ -263,6 +263,9 @@ describe('headless stream-json snapshots', () => {
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
+        expect(actual.content).toContain(
+          'Run the checks against the final state after the last meaningful change',
+        )
         const context = contextFromLogs([actual.content])
         const session = normalizeSessionSnapshot(actual.content, context)
         if (refreshing) await writeFile(headlessSessionExpected, session)

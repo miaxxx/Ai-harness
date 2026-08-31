@@ -495,13 +495,17 @@ describe('ACP prompt lifecycle', () => {
   })
 
   it('a failed turn with no retry still rejects', async () => {
-    harness = await makeBridgeHarness({ script: [errorResponse('terminal boom')] })
+    harness = await makeBridgeHarness({ script: [errorResponse('terminal boom'), textResponse('next answer')] })
     let offered = 0
     harness.ctx.on('agent/request-error', async () => { offered += 1 })
     const sessionId = await newSession(harness)
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] }))
       .rejects.toThrow(/turn failed: terminal boom/)
     expect(offered).toBe(1)
+
+    await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'continue' }] }))
+      .resolves.toEqual({ stopReason: 'end_turn' })
+    await vi.waitFor(() => { expect(messageText(harness!)).toBe('partialnext answer') })
   })
 
   it('a pre-step-rejected prompt settles instead of hanging', async () => {

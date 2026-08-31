@@ -630,6 +630,7 @@
       "entry": [
         "src/main.ts",
         "src/preload.ts",
+        "src/css-modules.d.ts",
         "src/renderer.css.d.ts"
       ],
       "project": [

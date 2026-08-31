@@ -58,10 +58,13 @@ function actionScript(app: string, action: ComputerAction): string {
   if (action.kind === 'key') return base + `const keys={Return:36,Escape:53,Tab:48,Space:49,Up:126,Down:125,Left:123,Right:124}; const code=keys[${JSON.stringify(action.key)}]; if(code===undefined) throw new Error('Unsupported key'); Application('System Events').keyCode(code); ` + snapshotExpression()
   return base + `const x=es[${Number(action.elementId)}]; x.actions.byName(${JSON.stringify(action.direction === 'up' ? 'AXScrollUp' : 'AXScrollDown')}).perform(); ` + snapshotExpression()
 }
-async function screenshot(): Promise<Uint8Array> {
+async function screenshot(signal?: AbortSignal): Promise<Uint8Array> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-computer-'))
   const path = join(directory, 'snapshot.png')
-  try { await run('/usr/sbin/screencapture', ['-x', '-t', 'png', path]); return new Uint8Array(await readFile(path)) }
+  try {
+    await run('/usr/sbin/screencapture', ['-x', '-t', 'png', path], signal === undefined ? {} : { signal })
+    return new Uint8Array(await readFile(path))
+  }
   finally { await rm(directory, { recursive: true, force: true }) }
 }
 function snapshot(value: JxaSnapshot, image?: Uint8Array): ComputerSnapshot {
@@ -75,7 +78,7 @@ export function apply(ctx: Context): void {
     async listApps(signal) { return await jxa(appsScript, signal) as ComputerApp[] },
     async inspect(app, includeScreenshot, signal) {
       const value = await jxa(inspectScript(app), signal) as JxaSnapshot
-      return snapshot(value, includeScreenshot ? await screenshot() : undefined)
+      return snapshot(value, includeScreenshot ? await screenshot(signal) : undefined)
     },
     async act(app, action, signal) { return snapshot(await jxa(actionScript(app, action), signal) as JxaSnapshot) },
   }

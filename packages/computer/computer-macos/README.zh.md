@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`dsh-computer` 的 macOS Provider。它通过固定 JXA 操作调用辅助功能 API，仅在请求快照像素时调用 `screencapture`。macOS 必须授予辅助功能权限；截图还需要屏幕录制权限。模型不会提供可执行 JXA。
+`dsh-computer` 的 macOS Provider。它通过固定 JXA 操作调用辅助功能 API，仅在请求快照像素时调用 `screencapture`。macOS 必须授予辅助功能权限；截图还需要屏幕录制权限。截图捕获会遵循活动轮次的取消信号。模型不会提供可执行 JXA。
 
 ## Model Experience
 

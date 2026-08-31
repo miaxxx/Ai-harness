@@ -39,8 +39,8 @@
     "vite": "^6.0.0"
   },
   "build": {
-    "appId": "ai.deepseek.harness.desktop",
-    "productName": "DeepSeek Harness",
+    "appId": "ai.orbis.desktop",
+    "productName": "Orbis AI",
     "asar": true,
     "files": [
       "dist/**/*",

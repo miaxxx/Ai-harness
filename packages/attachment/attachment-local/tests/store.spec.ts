@@ -161,6 +161,19 @@ describe('local attachment store', () => {
     expect(String(saved.attachmentId)).toBe(`sha256:${createHash('sha256').update(read.data).digest('hex')}`)
   })
 
+  it('reports malformed transformed input as an invalid image', async () => {
+    const complete = new Uint8Array(await sharp({
+      create: { width: 4, height: 4, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    }).png().toBuffer())
+    const truncated = complete.subarray(0, 62)
+    await expect(sharp(truncated).metadata()).resolves.toMatchObject({ width: 4, height: 4 })
+
+    await expect(prepareImageFile({ data: truncated, mediaType: 'image/png' }, {
+      ...LIMITS, maxImagePixels: 64,
+    }, { maxDimension: 2, maxBytes: 1024 * 1024 }))
+      .rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+  })
+
   it('keeps admitted history readable after deployment limits become stricter', async () => {
     const storageRoot = await root()
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)

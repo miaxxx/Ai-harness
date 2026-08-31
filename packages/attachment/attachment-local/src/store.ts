@@ -14,7 +14,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { normalizeImage } from './normalization.ts'
+import { canPassThroughNormalization, normalizeImage } from './normalization.ts'
 import type { NormalizationPolicy } from './normalization.ts'
 import { detectImage, probeImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
@@ -52,7 +52,7 @@ async function inspectMetadata(
   limits: ImageAttachmentLimits,
 ): Promise<DetectedImage> {
   if (data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
-  const detected = await detectImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
+  const detected = await probeImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
   if (detected.mediaType !== declaredMediaType) throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
   return detected
 }
@@ -97,8 +97,20 @@ export async function prepareImageFile(
   if (input.data.byteLength > limits.maxImageBytes) {
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
-  const detected = await inspectMetadata(input.data, input.mediaType, limits)
-  const normalized = await normalizeImage(input.data, detected, policy)
+  const probed = await inspectMetadata(input.data, input.mediaType, limits)
+  const sourceLimits = { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension }
+  const detected = canPassThroughNormalization(probed, input.data.byteLength, policy)
+    ? await detectImage(input.data, sourceLimits)
+    : probed
+  let normalized
+  try {
+    normalized = await normalizeImage(input.data, detected, policy)
+  } catch (error) {
+    // Successful transforms perform the source decode. On failure, decode once
+    // here so malformed bytes stay distinct from a valid conversion failure.
+    if (detected === probed) await detectImage(input.data, sourceLimits)
+    throw error
+  }
   const sha256 = digest(normalized.data)
   const name = displayName(input.name)
   const downscaled = detected.width !== normalized.width || detected.height !== normalized.height

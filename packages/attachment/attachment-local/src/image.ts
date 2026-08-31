@@ -80,17 +80,30 @@ async function imageMetadata(image: Sharp): Promise<DetectedImage> {
   }
 }
 
+/** Apply source-raster limits before any full decode begins. */
+function assertDecodedImageLimits(detected: DetectedImage, limits?: DecodedImageLimits): void {
+  if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
+    throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
+  }
+  if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
+    throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
+  }
+}
+
 /**
  * Parse a supported raster's header and return its intrinsic metadata without
  * decoding pixels. Digest-verified reads use this: admission already proved
  * that these exact bytes decode completely, so the read path only re-derives
  * the reference fields instead of paying the full-raster decode again.
  * @param data - complete encoded image bytes.
+ * @param limits - optional intrinsic-dimension limits checked from the header before decoding.
  * @returns verified format and dimensions.
  */
-export async function probeImage(data: Uint8Array): Promise<DetectedImage> {
+export async function probeImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
   try {
-    return await imageMetadata(sharp(data, { failOn: 'error', limitInputPixels: false }))
+    const detected = await imageMetadata(sharp(data, { failOn: 'error', limitInputPixels: false }))
+    assertDecodedImageLimits(detected, limits)
+    return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
@@ -115,12 +128,7 @@ export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits)
   try {
     const image = sharp(data, { failOn: 'error', limitInputPixels: false })
     const detected = await imageMetadata(image)
-    if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
-      throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
-    }
-    if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
-      throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
-    }
+    assertDecodedImageLimits(detected, limits)
     await image.raw().toBuffer()
     return detected
   } catch (error) {

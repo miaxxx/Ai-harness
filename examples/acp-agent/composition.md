@@ -45,6 +45,8 @@ flowchart LR
   cfg --> plugin_acp_mcp_user_config
   plugin_acp_token_meter["token-meter<br/>@deepseek-ai/dsh-token-meter"]
   cfg --> plugin_acp_token_meter
+  plugin_acp_tool_result_pruner["tool-result-pruner<br/>@deepseek-ai/dsh-compaction-tool-result-pruner"]
+  cfg --> plugin_acp_tool_result_pruner
   plugin_acp_compaction_basic["compaction-basic<br/>@deepseek-ai/dsh-compaction-basic"]
   cfg --> plugin_acp_compaction_basic
   plugin_acp_session_projection["session-projection<br/>@deepseek-ai/dsh-session-projection"]
@@ -122,6 +124,7 @@ flowchart LR
 | `tool-computer` | `@deepseek-ai/dsh-tool-computer` |
 | `mcp-user-config` | `@deepseek-ai/dsh-mcp-user-config` |
 | `token-meter` | `@deepseek-ai/dsh-token-meter` |
+| `tool-result-pruner` | `@deepseek-ai/dsh-compaction-tool-result-pruner` |
 | `compaction-basic` | `@deepseek-ai/dsh-compaction-basic` |
 | `session-projection` | `@deepseek-ai/dsh-session-projection` |
 | `desktop-goal` | `@deepseek-ai/dsh-goal` |

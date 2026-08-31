@@ -15,7 +15,7 @@ export interface DesktopDirectoryCrumb {
 }
 
 /** One child entry in the typed Desktop directory browser. */
-export interface DesktopDirectoryEntry {
+interface DesktopDirectoryEntry {
   name: string
   path: string
   kind: 'directory' | 'file'

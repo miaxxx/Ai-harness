@@ -151,6 +151,20 @@ describe('dsh-acp-demo composition', () => {
     await ctx.fiber.dispose()
   })
 
+  it('lets a product-owned persona replace the fixed Harness identity', async () => {
+    const ctx = await mount({
+      provider: 'mock',
+      model: 'mock',
+      includeHarnessIdentity: false,
+      persona: 'You are Orbis AI.',
+      workspaceContext: false,
+    })
+    const assembly = await ctx.get('systemPrompt')!.assemble()
+    expect(assembly.sections[0]?.text).toBe('You are Orbis AI.')
+    expect(assembly.sections.map(section => section.name)).not.toContain('harness:identity')
+    await ctx.fiber.dispose()
+  })
+
   it('uses default skill config when apply is called directly without skills', async () => {
     await withIsolatedSkillHomes(async () => {
       const ctx = new Context()

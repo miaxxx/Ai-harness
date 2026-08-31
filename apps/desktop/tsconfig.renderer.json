@@ -7,15 +7,14 @@
   "include": [
     "src/renderer.tsx",
     "src/product-runtime.ts",
+    "src/desktop-brand.tsx",
     "src/desktop-model-settings.tsx",
     "src/desktop-mcp-settings.tsx",
     "src/desktop-content-ui.tsx",
     "src/desktop-message-projection.ts",
     "src/shared.ts",
     "src/renderer.css.d.ts",
-    "src/desktop-model-settings.module.css.d.ts",
-    "src/desktop-mcp-settings.module.css.d.ts",
-    "src/desktop-content-ui.module.css.d.ts"
+    "src/css-modules.d.ts"
   ],
   "references": [
     { "path": "../../vendor/cordis" },
@@ -29,12 +28,12 @@
     { "path": "../../packages/client/ui-layout" },
     { "path": "../../packages/client/ui-sidebar" },
     { "path": "../../packages/client/ui-conversation" },
+    { "path": "../../packages/client/ui-tool" },
     { "path": "../../packages/client/ui-input-trigger" },
     { "path": "../../packages/client/ui-deliverables" },
     { "path": "../../packages/client/ui-workspace" },
     { "path": "../../packages/client/ui-directory-picker-native" },
     { "path": "../../packages/client/ui-settings-general" },
-    { "path": "../../packages/client/ui-brand-official" },
     { "path": "../../packages/client/ui-renderer" },
     { "path": "../../packages/core/session" },
     { "path": "../../packages/typert/protocol" }

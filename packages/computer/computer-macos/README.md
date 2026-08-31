@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-macOS Provider for `dsh-computer`. It runs fixed JXA operations against the Accessibility API and uses `screencapture` only when a snapshot requests pixels. macOS must grant Accessibility; screenshots also require Screen Recording. The model never supplies executable JXA.
+macOS Provider for `dsh-computer`. It runs fixed JXA operations against the Accessibility API and uses `screencapture` only when a snapshot requests pixels. macOS must grant Accessibility; screenshots also require Screen Recording. Screenshot capture observes the active turn's cancellation signal. The model never supplies executable JXA.
 
 ## Model Experience
 
