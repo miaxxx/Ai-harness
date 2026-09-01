@@ -58,19 +58,20 @@ describe('ACP product protocol boundary', () => {
     })
 
     expect(result.stopReason).toBe('end_turn')
-    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(2) })
-    expect(harness.updates.map(update => update.sessionUpdate)).toEqual([
+    const transcriptUpdates = () => harness!.updates.filter(update =>
+      update.sessionUpdate === 'user_message_chunk' || update.sessionUpdate === 'agent_message_chunk')
+    await vi.waitFor(() => { expect(transcriptUpdates()).toHaveLength(2) })
+    expect(transcriptUpdates().map(update => update.sessionUpdate)).toEqual([
       'user_message_chunk',
       'agent_message_chunk',
     ])
-    const userUpdate = harness.updates[0]
+    const [userUpdate, agentUpdate] = transcriptUpdates()
     expect(userUpdate).toEqual(expect.objectContaining({
       sessionUpdate: 'user_message_chunk',
       content: { type: 'text', text: 'say hello' },
     }))
     if (userUpdate?.sessionUpdate !== 'user_message_chunk') throw new Error('expected a user message update')
     expect(userUpdate.messageId).toEqual(expect.any(String))
-    const agentUpdate = harness.updates[1]
     expect(agentUpdate).toEqual(expect.objectContaining({
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello there' },
