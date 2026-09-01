@@ -99,6 +99,7 @@ describe('Chromium CDP computer Provider', () => {
     expect(calls.some(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed')).toBe(true)
     expect(calls.some(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mouseWheel')).toBe(true)
     expect(calls.some(call => call.method === 'Input.dispatchKeyEvent')).toBe(true)
+    expect(calls.filter(call => call.method === 'Input.insertText').map(call => call.params.text)).toEqual(['typed', 'pasted'])
     expect(calls.some(call => call.method === 'Runtime.evaluate' && String(call.params.expression).includes('contextmenu'))).toBe(true)
   })
 
