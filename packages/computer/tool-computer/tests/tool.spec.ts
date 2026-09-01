@@ -82,6 +82,16 @@ describe('computer tool', () => {
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
   })
 
+  it('expires cached element ids after the bounded observation window', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    const { ctx } = await harness()
+    const observed = await execute(ctx, { action: 'observe', target: 'Editor' }, 'agent-a')
+    const elementId = (observed.value as { accessibility: { elements: Array<{ id: string }> } }).accessibility.elements[0]!.id
+    vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
+    clock.mockReturnValue(31_001)
+    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
+  })
+
   it('maps the complete bounded action vocabulary and returns a semantic diff after element actions', async () => {
     const { ctx, actions } = await harness()
     vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
@@ -91,7 +101,7 @@ describe('computer tool', () => {
     }
     let id = await observe()
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId: id, button: 'right', double: true }, 'agent-a')).toMatchObject({ isError: false, value: { diff: expect.any(String) } })
-    id = await observe(); await execute(ctx, { action: 'set_value', target: 'Editor', elementId: id, value: 'v' }, 'agent-a')
+    id = await observe(); await execute(ctx, { action: 'set_value', target: 'Editor', elementId: id, value: '' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'type_text', target: 'Editor', elementId: id, text: 't' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'paste', target: 'Editor', elementId: id, text: 'p' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'scroll', target: 'Editor', elementId: id, direction: 'left', amount: 120 }, 'agent-a')
@@ -101,6 +111,7 @@ describe('computer tool', () => {
     await execute(ctx, { action: 'scroll', target: 'Editor', x: 5, y: 6, direction: 'down' }, 'agent-a')
     expect(actions.map(action => action.kind)).toEqual(['click', 'set_value', 'type_text', 'paste', 'scroll', 'secondary_action', 'drag', 'key', 'scroll'])
     expect(actions[0]).toMatchObject({ kind: 'click', button: 'right', count: 2 })
+    expect(actions[1]).toEqual(expect.objectContaining({ kind: 'set_value', value: '' }))
   })
 
   it('renders target lists, full observations, diffs, images, and call metadata', async () => {
