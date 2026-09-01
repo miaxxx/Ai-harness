@@ -40,7 +40,11 @@ function accessibleResponses(request: { method: string; params: Record<string, u
   if (request.method !== 'Runtime.evaluate') return { result: {} }
   const expression = String(request.params.expression)
   if (expression === 'document.body.innerText') return { result: { result: { value: 'Page text' } } }
-  if (expression.includes('slice(0,240)')) return { result: { result: { value: [{ id: 'obs:0', role: 'button', label: 'Go', value: '', enabled: true, focused: false, actions: ['click'] }] } } }
+  if (expression.includes('slice(0,240)')) {
+    const encodedObservationId = /return \{id:(".*?")\+':'\+index/.exec(expression)?.[1]
+    const observationId = encodedObservationId === undefined ? 'obs' : JSON.parse(encodedObservationId) as string
+    return { result: { result: { value: [{ id: `${observationId}:0`, role: 'button', label: 'Go', value: '', enabled: true, focused: false, actions: ['click'] }] } } }
+  }
   return { result: { result: { value: true } } }
 }
 beforeEach(() => { sockets.splice(0); responseFor = accessibleResponses; vi.stubGlobal('WebSocket', FakeSocket) })
@@ -67,7 +71,7 @@ describe('Chromium CDP computer Provider', () => {
     const semantic = await provider.observe(tab, 'accessibility')
     expect(semantic).toMatchObject({ target: { kind: 'browser-tab', id: 'tab' }, title: 'Tab', accessibility: { text: 'Page text', elements: [{ label: 'Go' }] } })
     const elementId = semantic.accessibility?.elements[0]?.id
-    expect(elementId).toMatch(/^[0-9a-f-]+:0$/)
+    expect(elementId).toBe(`${semantic.id}:0`)
     const visual = await provider.observe(tab, 'both')
     expect(visual.visual).toMatchObject({ scope: 'browser-tab', image: { mediaType: 'image/png', name: 'browser-tab.png' } })
     expect(sockets.every(socket => socket.closed)).toBe(true)
