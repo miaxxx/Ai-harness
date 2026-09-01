@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import * as DeliveryQualityPolicy from '@deepseek-ai/dsh-delivery-quality-policy'
 
 describe('delivery quality policy', () => {
-  it('registers the complete acceptance loop as one stable prompt section', async () => {
+  it('registers outcome-proportional completion evidence as one stable prompt section', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, { persona: '' })
     const fiber = await ctx.plugin(DeliveryQualityPolicy)
@@ -14,8 +14,14 @@ describe('delivery quality policy', () => {
       name: DeliveryQualityPolicy.DELIVERY_QUALITY_SECTION,
       text: DeliveryQualityPolicy.DELIVERY_QUALITY_PROMPT,
     })
-    expect(renderPrompt(assembly)).toContain('Run the checks against the final state after the last meaningful change')
-    expect(renderPrompt(assembly)).toContain('repair it and rerun the affected checks')
+    const prompt = renderPrompt(assembly)
+    expect(prompt).toContain('If the current state already satisfies the request, stop without making unnecessary changes')
+    expect(prompt).toContain('For read-only questions or research')
+    expect(prompt).toContain('For code or file mutations')
+    expect(prompt).toContain('For external or GUI mutations')
+    expect(prompt).toContain('For produced or edited artifacts')
+    expect(prompt).toContain('A successful action call by itself is not evidence')
+    expect(prompt).toContain('repair it and rerun the affected checks')
 
     await fiber.dispose()
     expect((await ctx.systemPrompt.assemble()).sections)

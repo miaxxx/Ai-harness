@@ -65,12 +65,24 @@ async function runCli(
   return { code: result.exitCode ?? -1, stdout: result.stdout, stderr: result.stderr }
 }
 
+/** Reconstruct semantic transcript messages from ACP streaming chunks. */
 function transcript(updates: RunJson['updates']): string[] {
-  return updates.flatMap(({ update }) => {
-    if (update.content?.type !== 'text' || typeof update.content.text !== 'string') return []
-    if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') return []
-    return [`${update.sessionUpdate}:${update.content.text}`]
-  })
+  const messages: Array<{ kind: 'user_message_chunk' | 'agent_message_chunk'; text: string }> = []
+
+  for (const { update } of updates) {
+    if (update.content?.type !== 'text' || typeof update.content.text !== 'string') continue
+    if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') continue
+
+    const kind = update.sessionUpdate
+    const previous = messages.at(-1)
+    // ACP may split one semantic message into many adjacent deltas. Preserve
+    // user/agent turn boundaries while making the acceptance independent of
+    // transport chunk size.
+    if (previous?.kind === kind) previous.text += update.content.text
+    else messages.push({ kind, text: update.content.text })
+  }
+
+  return messages.map(({ kind, text }) => `${kind}:${text}`)
 }
 
 describe.skipIf(!existsSync(dshBin) || !existsSync(acpBin))('dsh built ACP client portability', () => {

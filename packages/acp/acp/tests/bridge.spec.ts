@@ -58,25 +58,32 @@ describe('ACP product protocol boundary', () => {
     })
 
     expect(result.stopReason).toBe('end_turn')
-    await vi.waitFor(() => { expect(harness!.updates).toHaveLength(2) })
-    expect(harness.updates.map(update => update.sessionUpdate)).toEqual([
-      'user_message_chunk',
-      'agent_message_chunk',
-    ])
-    const userUpdate = harness.updates[0]
+    await vi.waitFor(() => {
+      const userUpdates = harness!.updates.filter(update => update.sessionUpdate === 'user_message_chunk')
+      const agentText = harness!.updates
+        .filter(update => update.sessionUpdate === 'agent_message_chunk')
+        .map(update => update.content.type === 'text' ? update.content.text : '')
+        .join('')
+      expect(userUpdates).toHaveLength(1)
+      expect(agentText).toBe('hello there')
+    })
+
+    const userUpdates = harness.updates.filter(update => update.sessionUpdate === 'user_message_chunk')
+    const agentUpdates = harness.updates.filter(update => update.sessionUpdate === 'agent_message_chunk')
+    expect(harness.updates).toHaveLength(userUpdates.length + agentUpdates.length)
+
+    const userUpdate = userUpdates[0]
     expect(userUpdate).toEqual(expect.objectContaining({
       sessionUpdate: 'user_message_chunk',
       content: { type: 'text', text: 'say hello' },
     }))
     if (userUpdate?.sessionUpdate !== 'user_message_chunk') throw new Error('expected a user message update')
     expect(userUpdate.messageId).toEqual(expect.any(String))
-    const agentUpdate = harness.updates[1]
-    expect(agentUpdate).toEqual(expect.objectContaining({
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'hello there' },
-    }))
-    if (agentUpdate?.sessionUpdate !== 'agent_message_chunk') throw new Error('expected an agent message update')
-    expect(agentUpdate.messageId).toEqual(expect.any(String))
+
+    expect(agentUpdates.length).toBeGreaterThan(0)
+    expect(agentUpdates.map(update => update.content.type === 'text' ? update.content.text : '').join('')).toBe('hello there')
+    expect(new Set(agentUpdates.map(update => update.messageId)).size).toBe(1)
+    expect(agentUpdates[0]?.messageId).toEqual(expect.any(String))
     expect(harness.ctx.agents.get(SessionId(sessionId))?.session.header.cwd).toBe(process.cwd())
     expect(harness.adapter.requests[0]?.messages.at(-1)?.content).toEqual([{ type: 'text', text: 'say hello' }])
   })

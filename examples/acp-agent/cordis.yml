@@ -265,20 +265,20 @@
 - id: tool-fs
   name: '@deepseek-ai/dsh-tool-fs'
 
-# Desktop mounts one bundled catalog for both Code and Work requests. Snapshot
-# and generic ACP compositions keep their existing tool catalog unless the
-# Desktop host explicitly enables this product surface.
+# Desktop exposes bundled Skills for Code/Work and for Computer Use. Generic
+# ACP compositions keep their existing tool catalog unless one of those Desktop
+# product surfaces is explicitly enabled.
 - id: skill
   name: '@deepseek-ai/dsh-skill'
-  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true' && process.env.DSH_DESKTOP_COMPUTER_USE_ENABLED !== 'true'
 
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
-  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true' && process.env.DSH_DESKTOP_COMPUTER_USE_ENABLED !== 'true'
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
-  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+  disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true' && process.env.DSH_DESKTOP_COMPUTER_USE_ENABLED !== 'true'
 
 # Work requests get the same DeepSeek-backed search capability as the Web
 # product. The credential resolves on the request, so a deployment without a

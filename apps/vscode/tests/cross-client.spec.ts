@@ -62,13 +62,22 @@ async function createFromCli(
   return JSON.parse(result.stdout) as CliRunJson
 }
 
+/** Reconstruct semantic transcript messages from ACP streaming chunks. */
 function transcript(updates: readonly SessionNotification[]): string[] {
-  return updates.flatMap((notification) => {
+  const messages: Array<{ kind: 'user_message_chunk' | 'agent_message_chunk'; text: string }> = []
+
+  for (const notification of updates) {
     const update = notification.update
-    if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') return []
-    if (update.content.type !== 'text') return []
-    return [`${update.sessionUpdate}:${update.content.text}`]
-  })
+    if (update.sessionUpdate !== 'user_message_chunk' && update.sessionUpdate !== 'agent_message_chunk') continue
+    if (update.content.type !== 'text') continue
+
+    const kind = update.sessionUpdate
+    const previous = messages.at(-1)
+    if (previous?.kind === kind) previous.text += update.content.text
+    else messages.push({ kind, text: update.content.text })
+  }
+
+  return messages.map(({ kind, text }) => `${kind}:${text}`)
 }
 
 describe.skipIf(!existsSync(dshBin) || !existsSync(acpBin))('CLI → VS Code durable ACP handoff', () => {
