@@ -70,7 +70,7 @@ try {
   const computerSkill = join(runtime, 'skills', 'computer-use', 'SKILL.md')
   if (!existsSync(computerSkill)) throw new Error(`verify-desktop-dist: bundled Computer Use skill missing at ${computerSkill}`)
   const computerSkillText = await readFile(computerSkill, 'utf8')
-  for (const expected of ['Accessibility Computer', 'Visual Computer', 'Never repeat a failed action blindly', 'authoritative']) {
+  for (const expected of ['Accessibility Computer', 'Visual Computer', 'never repeat a failed action blindly', 'authoritative']) {
     if (!computerSkillText.includes(expected)) throw new Error(`verify-desktop-dist: bundled Computer Use skill omits ${expected}`)
   }
   for (const packageName of ['dsh-computer', 'dsh-computer-browser-cdp', 'dsh-computer-macos', 'dsh-tool-computer']) {
