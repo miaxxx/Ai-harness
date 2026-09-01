@@ -41,14 +41,16 @@ function stable(error: unknown): never {
   if (/not authorized|assistive access|accessibility|1002|-1743/i.test(message)) throw computerError('COMPUTER_PERMISSION_REQUIRED', message, error)
   if (/no controllable window|window unavailable/i.test(message)) throw computerError('WINDOW_UNAVAILABLE', message, error)
   if (/element expired|invalid element/i.test(message)) throw computerError('ELEMENT_EXPIRED', message, error)
+  if (/action unsupported/i.test(message)) throw computerError('ACTION_UNSUPPORTED', message, error)
   if (/not found|isn't running|does not exist/i.test(message)) throw computerError('TARGET_NOT_FOUND', message, error)
   throw error
 }
 async function settle(signal?: AbortSignal): Promise<void> {
   if (limits.settleMs === 0) return
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, limits.settleMs)
-    const abort = () => { clearTimeout(timer); reject(signal?.reason instanceof Error ? signal.reason : new Error('Computer action cancelled.')) }
+    const done = () => { signal?.removeEventListener('abort', abort); resolve() }
+    const timer = setTimeout(done, limits.settleMs)
+    const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(signal?.reason instanceof Error ? signal.reason : new Error('Computer action cancelled.')) }
     signal?.addEventListener('abort', abort, { once: true })
   })
 }
