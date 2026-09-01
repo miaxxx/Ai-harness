@@ -35,7 +35,8 @@ async function harness(): Promise<Harness> {
     observe: (target, mode) => {
       const id = `obs-${++generation}`
       return Promise.resolve({
-        id, target, title: target.kind === 'app' ? 'Document' : undefined,
+        id, target,
+        ...(target.kind === 'app' ? { title: 'Document' } : {}),
         ...(mode === 'visual' ? {} : { accessibility: { text: `state-${generation}`, elements: [{ id: `${id}:0`, role: 'button', label: 'Save', value: String(generation), enabled: true, focused: false, actions: ['click'] }] } }),
         ...(mode === 'accessibility' ? {} : { visual: { scope: target.kind === 'desktop' ? 'desktop' as const : 'window' as const, image: { data: new Uint8Array([1]), mediaType: 'image/png' as const } } }),
       })
@@ -63,9 +64,9 @@ describe('computer tool', () => {
 
   it('keeps visual observation behind approval and persists the image', async () => {
     const { ctx, attachments } = await harness()
-    vi.spyOn(ctx, 'get').mockReturnValue(undefined)
+    const get = vi.spyOn(ctx, 'get').mockReturnValue(undefined)
     expect(await execute(ctx, { action: 'observe', targetKind: 'desktop', observation: 'visual' }, 'agent-a')).toMatchObject({ isError: true })
-    vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
+    get.mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
     expect(await execute(ctx, { action: 'observe', targetKind: 'desktop', observation: 'visual' }, 'agent-a')).toMatchObject({ isError: false })
     expect(attachments.saved).toHaveLength(1)
   })
@@ -74,9 +75,9 @@ describe('computer tool', () => {
     const { ctx } = await harness()
     const observed = await execute(ctx, { action: 'observe', target: 'Editor' }, 'agent-a')
     const elementId = (observed.value as { accessibility: { elements: Array<{ id: string }> } }).accessibility.elements[0]!.id
-    vi.spyOn(ctx, 'get').mockReturnValue(undefined)
+    const get = vi.spyOn(ctx, 'get').mockReturnValue(undefined)
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
-    vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
+    get.mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-b')).toMatchObject({ isError: true })
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: false })
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
