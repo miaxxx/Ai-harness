@@ -12,6 +12,8 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 export const name = 'tool-computer'
 export const inject = ['tools', 'computer', 'attachments']
 
+const OBSERVATION_CACHE_TTL_MS = 30_000
+
 type ActionName = 'list' | 'observe' | 'click' | 'drag' | 'set_value' | 'type_text' | 'paste' | 'key' | 'scroll' | 'secondary_action'
 type Args = {
   action: ActionName
@@ -25,6 +27,7 @@ type Args = {
   direction?: 'up' | 'down' | 'left' | 'right'; amount?: number
 }
 function need(value: string | undefined, field: string): string { if (value === undefined || value.trim() === '') throw new Error(`computer: ${field} is required for this action`); return value }
+function present(value: string | undefined, field: string): string { if (value === undefined) throw new Error(`computer: ${field} is required for this action`); return value }
 function number(value: number | undefined, field: string): number { if (value === undefined || !Number.isFinite(value)) throw new Error(`computer: ${field} is required for this action`); return value }
 function target(args: Args): ComputerTarget {
   const kind = args.targetKind ?? 'app'
@@ -82,7 +85,7 @@ function actionFrom(args: Args, current: ComputerObservation | undefined): Compu
     return { kind: 'click', ...(elementId === undefined ? {} : { elementId }), ...(point === undefined ? {} : { point }), button: args.button ?? 'left', count: args.double === true ? 2 : 1 }
   }
   if (args.action === 'drag') return { kind: 'drag', from: { x: number(args.x, 'x'), y: number(args.y, 'y') }, to: { x: number(args.toX, 'toX'), y: number(args.toY, 'toY') } }
-  if (args.action === 'set_value') return { kind: 'set_value', elementId: scopedElement(args.elementId, current), value: need(args.value, 'value') }
+  if (args.action === 'set_value') return { kind: 'set_value', elementId: scopedElement(args.elementId, current), value: present(args.value, 'value') }
   if (args.action === 'type_text') return { kind: 'type_text', elementId: scopedElement(args.elementId, current), text: need(args.text, 'text') }
   if (args.action === 'paste') return { kind: 'paste', elementId: scopedElement(args.elementId, current), text: need(args.text, 'text') }
   if (args.action === 'key') return { kind: 'key', key: need(args.key, 'key'), modifiers: args.modifiers ?? [] }
@@ -95,15 +98,28 @@ function actionFrom(args: Args, current: ComputerObservation | undefined): Compu
   throw computerError('ACTION_UNSUPPORTED', `Unsupported action ${args.action}.`)
 }
 
-/** Register the single computer tool. Runtime state is limited to latest semantic observations per agent and target. */
+interface CachedObservation { value: ComputerObservation; observedAt: number }
+
+/** Register the single computer tool. Runtime state is limited to recent observations per agent and target. */
 export function apply(ctx: Context): void {
-  const observations = new Map<string, Map<string, ComputerObservation>>()
-  const latest = (agentId: string | undefined, value: ComputerTarget): ComputerObservation | undefined => agentId === undefined ? undefined : observations.get(agentId)?.get(targetKey(value))
+  const observations = new Map<string, Map<string, CachedObservation>>()
+  const latest = (agentId: string | undefined, value: ComputerTarget): ComputerObservation | undefined => {
+    if (agentId === undefined) return undefined
+    const agent = observations.get(agentId)
+    const cached = agent?.get(targetKey(value))
+    if (cached === undefined) return undefined
+    if (Date.now() - cached.observedAt > OBSERVATION_CACHE_TTL_MS) {
+      agent?.delete(targetKey(value))
+      if (agent?.size === 0) observations.delete(agentId)
+      return undefined
+    }
+    return cached.value
+  }
   const remember = (agentId: string | undefined, value: ComputerObservation): void => {
     if (agentId === undefined) return
     let agent = observations.get(agentId)
     if (agent === undefined) { agent = new Map(); observations.set(agentId, agent) }
-    agent.set(targetKey(value.target), value)
+    agent.set(targetKey(value.target), { value, observedAt: Date.now() })
   }
   const persisted = async (value: ComputerObservation): Promise<RenderValue & { id: string }> => {
     if (value.visual === undefined) return value as unknown as RenderValue & { id: string }
