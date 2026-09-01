@@ -104,6 +104,7 @@ try {
     DSH_AGENTS_HOME: join(temporary, '.agents'),
     DSH_DESKTOP_WORKSPACE: workspace,
     DSH_DESKTOP_DIST_SMOKE: '1',
+    DSH_TELEMETRY_DISABLED: '1',
   }
   const result = await run(
     executable,
