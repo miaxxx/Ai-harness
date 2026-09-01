@@ -44,8 +44,8 @@ export type ComputerAction =
   | { readonly kind: 'click'; readonly elementId?: string; readonly point?: ComputerPoint; readonly button: 'left' | 'right'; readonly count: 1 | 2 }
   | { readonly kind: 'drag'; readonly from: ComputerPoint; readonly to: ComputerPoint }
   | { readonly kind: 'set_value'; readonly elementId: string; readonly value: string }
-  | { readonly kind: 'type_text'; readonly elementId?: string; readonly text: string }
-  | { readonly kind: 'paste'; readonly elementId?: string; readonly text: string }
+  | { readonly kind: 'type_text'; readonly elementId: string; readonly text: string }
+  | { readonly kind: 'paste'; readonly elementId: string; readonly text: string }
   | { readonly kind: 'key'; readonly key: string; readonly modifiers: readonly ('alt' | 'control' | 'meta' | 'shift')[] }
   | { readonly kind: 'scroll'; readonly elementId?: string; readonly point?: ComputerPoint; readonly direction: 'up' | 'down' | 'left' | 'right'; readonly amount: number }
   | { readonly kind: 'secondary_action'; readonly elementId: string }
