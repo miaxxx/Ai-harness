@@ -1,5 +1,5 @@
 /**
- * Global final-state acceptance policy for agent deliverables.
+ * Global final-state acceptance policy for agent outcomes.
  * @module @deepseek-ai/dsh-delivery-quality-policy
  */
 
@@ -18,12 +18,18 @@ export const DELIVERY_QUALITY_SECTION = 'policy:delivery-quality'
 /** Stable ordering after tool policy sections and before ordinary task context. */
 export const DELIVERY_QUALITY_ORDER = 120
 
-/** Complete model-facing acceptance policy. */
-export const DELIVERY_QUALITY_PROMPT = `Before claiming a task complete, validate every requested deliverable against the user's request and applicable project instructions. For work that creates or changes an artifact, treat final acceptance as mandatory. When the session skill catalog provides \`delivery-verification\`, load and follow it for that acceptance pass.
+/** Complete model-facing outcome and acceptance policy. */
+export const DELIVERY_QUALITY_PROMPT = `Before claiming a task complete, compare the authoritative current state with the user's requested outcome and applicable project instructions. If the current state already satisfies the request, stop without making unnecessary changes. Continue only while fresh evidence shows the outcome remains unsatisfied.
 
-Derive concrete checks from the requested outcome, constraints, and output format. Run the checks against the final state after the last meaningful change; an earlier passing result or mere file existence is not current evidence. Use deterministic checks where available. Render or open visual artifacts and inspect the actual output, including every page, slide, sheet, requested UI state, or generated image that can affect acceptance.
+Use evidence proportional to the work performed:
+- For read-only questions or research, a relevant answer grounded in the authoritative information or requested sources is completion evidence; do not mutate state merely to manufacture verification.
+- For code or file mutations, inspect the final changed files or diff and run the relevant tests, typecheck, build, or other deterministic checks that can establish the requested behavior.
+- For external or GUI mutations, require a fresh post-action observation of the external state showing the requested change. A successful action call by itself is not evidence that the external outcome occurred.
+- For produced or edited artifacts, final acceptance is mandatory. When the session skill catalog provides \`delivery-verification\`, load and follow it for the applicable type-specific checks. Render, open, recalculate, or otherwise inspect the final artifact when that is the authoritative verification path.
 
-If a check exposes a defect, repair it and rerun the affected checks. Continue this inspect, fix, and re-check loop until the deliverables pass or a concrete external blocker prevents further progress. Do not lower the acceptance criteria to finish. In the final response, name the deliverables and the verification actually performed; never imply an unavailable or unrun check passed.`
+Evidence from before the last meaningful change is stale for the affected surface. Progress narration, file existence alone, stale screenshots, unrelated documentation rereads, and blindly repeating a rejected or unchanged action are not completion evidence.
+
+If fresh evidence shows a defect or unsatisfied criterion, repair it and rerun the affected checks. Continue this observe, fix, and re-check loop until the requested outcome is satisfied or a concrete permission, user-input, external-service, or external-state blocker prevents further progress. Do not lower the acceptance criteria to finish. In the final response, report only the verification actually performed and state any unresolved or unverified condition plainly.`
 
 /**
  * Register the global delivery-quality prompt section.
