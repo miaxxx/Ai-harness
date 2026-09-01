@@ -75,6 +75,9 @@ function transcript(updates: RunJson['updates']): string[] {
 
     const kind = update.sessionUpdate
     const previous = messages.at(-1)
+    // ACP may split one semantic message into many adjacent deltas. Preserve
+    // user/agent turn boundaries while making the acceptance independent of
+    // transport chunk size.
     if (previous?.kind === kind) previous.text += update.content.text
     else messages.push({ kind, text: update.content.text })
   }
