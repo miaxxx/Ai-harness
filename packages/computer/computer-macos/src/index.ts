@@ -119,8 +119,9 @@ async function observe(target: ComputerTarget, mode: ComputerObservationMode, si
   const id = randomUUID()
   if (target.kind === 'browser-tab') throw computerError('ACTION_UNSUPPORTED', 'The macOS provider does not support browser-tab targets.')
   if (target.kind === 'desktop') {
+    const accessibility = mode === 'visual' ? undefined : { text: '', elements: [] }
     const visual = mode === 'accessibility' ? undefined : { image: { data: await screenshotDesktop(signal), mediaType: 'image/png' as const, name: 'desktop.png' }, scope: 'desktop' as const }
-    return { id, target, accessibility: mode === 'visual' ? undefined : { text: '', elements: [] }, ...(visual === undefined ? {} : { visual }) }
+    return { id, target, ...(accessibility === undefined ? {} : { accessibility }), ...(visual === undefined ? {} : { visual }) }
   }
   if (mode !== 'accessibility') throw computerError('WINDOW_UNAVAILABLE', 'Window-scoped macOS capture is unavailable; refusing to mislabel a full-screen capture as an app window.')
   const value = await jxa<JxaSnapshot>(traversal(target.id, id), signal)
