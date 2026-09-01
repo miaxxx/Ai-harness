@@ -89,11 +89,14 @@ describe('macOS computer Provider', () => {
     expect(scripts.some(script => script.includes('AXScrollLeft'))).toBe(true)
   })
 
-  it('maps stable permission, stale-element, and capture failures', async () => {
+  it('maps stable permission, stale-element, unsupported-action, and capture failures', async () => {
     const provider = capture()
+    const target = { kind: 'app' as const, id: 'Editor', name: 'Editor' }
     execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('Not authorized to send Apple events'), ''))
     await expect(provider.listTargets()).rejects.toThrow('COMPUTER_PERMISSION_REQUIRED')
-    await expect(provider.perform({ kind: 'app', id: 'Editor', name: 'Editor' }, { kind: 'click', elementId: 'bad', button: 'left', count: 1 })).rejects.toThrow('ELEMENT_EXPIRED')
+    await expect(provider.perform(target, { kind: 'click', elementId: 'bad', button: 'left', count: 1 })).rejects.toThrow('ELEMENT_EXPIRED')
+    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('Action unsupported'), ''))
+    await expect(provider.perform(target, { kind: 'secondary_action', elementId: 'latest:0' })).rejects.toThrow('ACTION_UNSUPPORTED')
     execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('screenshot failed'), ''))
     await expect(provider.observe({ kind: 'desktop', id: 'desktop', name: 'Desktop' }, 'visual')).rejects.toThrow('CAPTURE_FAILED')
   })
