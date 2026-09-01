@@ -58,6 +58,25 @@ try {
       throw new Error(`verify-desktop-dist: embedded ACP Runtime omits large-canvas image policy ${expected}`)
     }
   }
+  for (const expected of [
+    "name: '@deepseek-ai/dsh-computer'",
+    "name: '@deepseek-ai/dsh-computer-browser-cdp'",
+    "name: '@deepseek-ai/dsh-computer-macos'",
+    "name: '@deepseek-ai/dsh-tool-computer'",
+    "disabled: !!js process.env.DSH_DESKTOP_COMPUTER_USE_ENABLED !== 'true'",
+  ]) {
+    if (!config.includes(expected)) throw new Error(`verify-desktop-dist: embedded ACP Runtime omits Computer Use contract ${expected}`)
+  }
+  const computerSkill = join(runtime, 'skills', 'computer-use', 'SKILL.md')
+  if (!existsSync(computerSkill)) throw new Error(`verify-desktop-dist: bundled Computer Use skill missing at ${computerSkill}`)
+  const computerSkillText = await readFile(computerSkill, 'utf8')
+  for (const expected of ['Accessibility Computer', 'Visual Computer', 'Never repeat a failed action blindly', 'authoritative']) {
+    if (!computerSkillText.includes(expected)) throw new Error(`verify-desktop-dist: bundled Computer Use skill omits ${expected}`)
+  }
+  for (const packageName of ['dsh-computer', 'dsh-computer-browser-cdp', 'dsh-computer-macos', 'dsh-tool-computer']) {
+    const entry = join(runtime, 'node_modules', '@deepseek-ai', packageName, 'lib', 'index.js')
+    if (!existsSync(entry)) throw new Error(`verify-desktop-dist: embedded Computer Use package missing at ${entry}`)
+  }
   const prunerEntry = join(
     runtime,
     'node_modules',
@@ -96,7 +115,7 @@ try {
   if (!result.stderr.includes('desktop-dist-smoke: ready')) {
     throw new Error(`verify-desktop-dist: application exited without the ready marker:\n${result.stderr}`)
   }
-  console.log(`verify-desktop-dist: relocated ${basename(source)} initialized its embedded ACP Runtime without external Node or repository paths.`)
+  console.log(`verify-desktop-dist: relocated ${basename(source)} initialized its embedded ACP Runtime without external Node or repository paths, with Computer Use disabled by default and its opt-in closure packaged.`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }
