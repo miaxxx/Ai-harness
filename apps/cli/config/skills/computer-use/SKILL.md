@@ -7,6 +7,8 @@ description: Use whenever the task requires interacting with a graphical desktop
 
 Use Computer Use as a state-based GUI capability, not as a blind macro system. Prefer direct APIs, shell/filesystem operations, or dedicated application tools when they can complete the requested outcome more reliably.
 
+Use this priority order unless the task itself requires a lower layer: **connector / purpose-built API / CLI > Accessibility Computer > Visual Computer**. Start with the most structured authoritative interface that can express and verify the requested outcome; do not escalate to pixels merely because Computer Use is available.
+
 ## Interaction loop
 
 1. Observe the authoritative current target state before acting. If that state already satisfies the user's request, stop without mutating anything.
@@ -14,7 +16,7 @@ Use Computer Use as a state-based GUI capability, not as a blind macro system. P
 3. Element identifiers are valid only for the latest observation that produced them. Never reuse an element id after another action or observation has made it stale.
 4. Perform the smallest justified bounded action. Do not chain speculative gestures when one action can establish the next state.
 5. After every mutating action, use the fresh post-action observation returned by the tool, or observe again when more detail is needed. Decide the next step only from that current evidence.
-6. If an action fails or the resulting state is unchanged, do not blindly repeat the same action. Re-observe, inspect the error/state difference, and choose a different action only when new evidence justifies it.
+6. If an action fails or the resulting state is unchanged, never repeat a failed action blindly. Re-observe, inspect the error/state difference, and choose a different action only when new evidence justifies it.
 7. Compare the latest authoritative state with the requested outcome. Continue only while current evidence shows the outcome is still unsatisfied; stop as soon as it is satisfied.
 
 ## Semantic first, visual fallback
