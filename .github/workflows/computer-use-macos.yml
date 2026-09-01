@@ -1,0 +1,62 @@
+name: Computer Use macOS
+
+on:
+  pull_request:
+    paths:
+      - 'packages/computer/**'
+      - 'packages/guard/delivery-quality-policy/**'
+      - 'packages/goal/goal-round-driver/**'
+      - 'apps/cli/config/skills/computer-use/**'
+      - 'examples/acp-agent/cordis.yml'
+      - 'examples/acp-agent/tests/computer-use-composition.spec.ts'
+      - 'scripts/build-desktop-runtime.ts'
+      - 'scripts/verify-desktop-dist.ts'
+      - '.github/workflows/computer-use-macos.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  computer-use-macos:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    name: computer use / macOS desktop
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run focused Computer Use regressions
+        run: >-
+          pnpm exec vitest run
+          packages/computer/computer/tests/computer.spec.ts
+          packages/computer/computer-browser-cdp/tests/browser.spec.ts
+          packages/computer/computer-macos/tests/macos.spec.ts
+          packages/computer/tool-computer/tests/tool.spec.ts
+          packages/guard/delivery-quality-policy/tests/delivery-quality-policy.spec.ts
+          packages/goal/goal-round-driver/tests/outcome-policy.spec.ts
+          examples/acp-agent/tests/computer-use-composition.spec.ts
+
+      - name: Build workspace packages
+        run: pnpm run build
+
+      - name: Stage packaged Desktop runtime
+        run: pnpm run build:desktop-runtime
+
+      - name: Verify packaged Desktop runtime
+        run: pnpm run verify:desktop-dist
