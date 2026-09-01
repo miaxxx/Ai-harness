@@ -52,11 +52,8 @@ jobs:
           packages/goal/goal-round-driver/tests/outcome-policy.spec.ts
           examples/acp-agent/tests/computer-use-composition.spec.ts
 
-      - name: Build workspace packages
-        run: pnpm run build
-
-      - name: Stage packaged Desktop runtime
-        run: pnpm run build:desktop-runtime
+      - name: Build packaged Desktop app
+        run: pnpm run dist:desktop
 
       - name: Verify packaged Desktop runtime
         run: pnpm run verify:desktop-dist
