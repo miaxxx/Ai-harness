@@ -632,7 +632,7 @@ Standalone view/create/unique literal replace/line insert tool over the filesyst
 
 ### `computer`
 
-Inspect or operate an approved local desktop app. Use list, then pass the returned app id to inspect. Inspect before every click/type/scroll because element ids expire after each operation. Prefer app APIs, browser automation, shell, or filesystem tools when they can complete the task.
+Observe or operate desktop, native-app, and browser-tab targets. Prefer purpose-built APIs/CLI first. Observe the named target directly; list only for discovery. Prefer accessibility state and element actions, using visual/coordinates only when semantic state is insufficient. Every mutation returns fresh state; never reuse an element id after an action.
 
 ```json
 {
@@ -642,40 +642,97 @@ Inspect or operate an approved local desktop app. Use list, then pass the return
       "type": "string",
       "enum": [
         "list",
-        "inspect",
+        "observe",
         "click",
-        "type",
+        "drag",
+        "set_value",
+        "type_text",
+        "paste",
         "key",
-        "scroll"
+        "scroll",
+        "secondary_action"
       ]
     },
-    "app": {
+    "targetKind": {
       "type": "string",
-      "description": "App id from computer list."
+      "description": "Target kind; defaults to app.",
+      "enum": [
+        "app",
+        "browser-tab",
+        "desktop"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "description": "Native app name/id or browser tab id. Omit for desktop."
+    },
+    "observation": {
+      "type": "string",
+      "description": "Observation mode; accessibility is the default.",
+      "enum": [
+        "accessibility",
+        "visual",
+        "both"
+      ]
     },
     "elementId": {
       "type": "string",
-      "description": "Element id from the latest inspect result."
+      "description": "Element id from the latest observation for this agent and target."
+    },
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "toX": {
+      "type": "number"
+    },
+    "toY": {
+      "type": "number"
+    },
+    "button": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right"
+      ]
+    },
+    "double": {
+      "type": "boolean"
     },
     "text": {
-      "type": "string",
-      "description": "Text to enter for type."
+      "type": "string"
+    },
+    "value": {
+      "type": "string"
     },
     "key": {
-      "type": "string",
-      "description": "Named key for key, for example Return or Escape."
+      "type": "string"
+    },
+    "modifiers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "alt",
+          "control",
+          "meta",
+          "shift"
+        ]
+      }
     },
     "direction": {
       "type": "string",
-      "description": "Direction for scroll.",
       "enum": [
         "up",
-        "down"
+        "down",
+        "left",
+        "right"
       ]
     },
-    "screenshot": {
-      "type": "boolean",
-      "description": "Include a screenshot on inspect when accessibility text is insufficient."
+    "amount": {
+      "type": "number"
     }
   },
   "required": [

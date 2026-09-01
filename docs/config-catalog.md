@@ -548,14 +548,14 @@ Source: [`packages/compaction/compaction-tool-result-pruner/src/types.ts:4`](../
 ## `@deepseek-ai/dsh-computer`
 
 ```ts config-catalog
-/** Provider-selection settings for local computer control. */
+/** Optional runtime routing preferences for Computer providers. */
 export interface ComputerRuntimeConfig {
-  /** Provider id selected for this composition. Omit only when one usable provider is mounted. */
+  /** Provider id used only to break ties when multiple available Providers support the same target kind. */
   readonly provider?: string
 }
 ```
 
-Source: [`packages/computer/computer/src/index.ts:12`](../packages/computer/computer/src/index.ts)
+Source: [`packages/computer/computer/src/index.ts:18`](../packages/computer/computer/src/index.ts)
 
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 

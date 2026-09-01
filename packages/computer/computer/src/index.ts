@@ -14,8 +14,11 @@ export { ComputerError, computerError } from './types.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { computer: ComputerRuntime } }
 
-/** Optional tie-breaker for deployments with two Providers supporting the same target kind. */
-export interface ComputerRuntimeConfig { readonly provider?: string }
+/** Optional runtime routing preferences for Computer providers. */
+export interface ComputerRuntimeConfig {
+  /** Provider id used only to break ties when multiple available Providers support the same target kind. */
+  readonly provider?: string
+}
 
 /** Registry and deterministic target-aware router. Providers remain stateless across calls. */
 export class ComputerRuntime extends Service {
