@@ -63,7 +63,8 @@ export function DesktopModelSettingsSection() {
       const settings = await window.dshDesktop.saveModelSettings({ baseURL, model, protocol, apiKey, computerUseEnabled })
       setLoaded(settings)
       setApiKey('')
-      setMessage({ kind: 'success', text: `已将 ${settings.model} 设为主模型，ACP Runtime 已重新连接。` })
+      const modality = settings.capabilities.input.includes('image') ? '文字与图片' : '仅文字'
+      setMessage({ kind: 'success', text: `已验收 ${settings.model}（${modality}），ACP Runtime 已重新连接。` })
     } catch (error: unknown) {
       setMessage({ kind: 'error', text: publicError(error) })
     } finally {
@@ -100,6 +101,14 @@ export function DesktopModelSettingsSection() {
             <small>允许模型检查浏览器或 macOS 应用。每次截图、点击、输入、按键和滚动仍会单独请求批准；截图检查要求主模型支持图片输入，macOS 还需为应用开启屏幕录制权限。</small>
           </span>
         </label>
+
+        {loaded?.capabilities.verified === true && (
+          <p className={css.status} data-kind="success">
+            已验证文字、工具调用与所选协议；图片输入：{loaded.capabilities.input.includes('image') ? '支持' : '不支持'}
+            {loaded.capabilities.contextWindow === undefined ? '' : `；上下文：${loaded.capabilities.contextWindow.toLocaleString()} tokens`}
+            {loaded.capabilities.maxOutputTokens === undefined ? '' : `；最大输出：${loaded.capabilities.maxOutputTokens.toLocaleString()} tokens`}
+          </p>
+        )}
 
         <label className={css.field}>
           <span>Base URL</span>

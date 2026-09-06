@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-- **由全局提示词策略拥有完成流程。** `@deepseek-ai/dsh-delivery-quality-policy` 贡献一个静态 `policy:delivery-quality` 系统提示词段落。agent 宣告完成之前，必须从请求中提取可观察检查项，在最后一次有意义修改后验证最终状态，修复失败，并重新执行受影响检查。它只报告实际执行的检查。
+- **由全局提示词策略拥有完成流程。** `@deepseek-ai/dsh-delivery-quality-policy` 贡献一个静态 `policy:delivery-quality` 系统提示词段落。agent 宣告完成之前，必须从请求中提取可观察检查项，在最后一次有意义修改后验证最终状态，修复失败，并重新执行受影响检查。询问附件资源时，必须取得适用的读取或目录列表证据，而不是根据名称推断。它只报告实际执行的检查。
 - **由一个内置 Skill 分流类型化验收。** `delivery-verification` 适用于产生产物的任务与有来源研究。入口保存共享验收循环，并分流到代码、浏览器 UI、文档、PDF、演示文稿、表格、图片与研究的聚焦参考文件。混合产物加载全部适用参考。这是渐进披露，不是八个重复同一触发条件与循环的目录条目。
 - **复用现有 Skill 选择机制实施必加载规则。** `dsh-tool-skill` 已要求模型在执行任务操作前加载描述明确匹配任务的每个 Skill。全局策略会在目录中存在 `delivery-verification` 时点名该 Skill。所有完整产品 preset 都暴露共享内置 Skill 根目录；固定提示词的 Minimal preset 按设计没有 Skill 目录。因此不引入分类器或第二套路由服务。
 - **Goal 提示词采用同一完成标准。** Goal 创建指引要求具体结果、约束与验证标准。每个 Goal Round 要求在最后一次有意义修改后收集当前证据；检查失败时先修复和重新检查，再调用 `update_goal complete`。Goal 持久格式与 agent loop 均不改变。

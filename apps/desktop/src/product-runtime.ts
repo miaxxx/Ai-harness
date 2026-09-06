@@ -46,10 +46,19 @@ import * as workspacePlugin from '@deepseek-ai/dsh-client-ui-workspace/client'
 import * as nativeDirectoryPickerPlugin from '@deepseek-ai/dsh-client-ui-directory-picker-native/client'
 import * as settingsGeneralPlugin from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import * as desktopModelSettingsPlugin from './desktop-model-settings.tsx'
+import * as desktopWebSearchSettingsPlugin from './desktop-web-search-settings.tsx'
 import * as desktopMcpSettingsPlugin from './desktop-mcp-settings.tsx'
 import * as desktopBrandPlugin from './desktop-brand.tsx'
-import { clearPendingAttachments, desktopContentPlugin, pendingAttachmentIds } from './desktop-content-ui.tsx'
-import { projectDesktopAssistant, projectDesktopUserText } from './desktop-message-projection.ts'
+import { desktopContentPlugin } from './desktop-content-ui.tsx'
+import { desktopPreviewPlugin } from './desktop-preview-ui.tsx'
+import { DesktopPreviewController, selectAutoPreviewArtifact } from './desktop-preview.ts'
+import { desktopPromptDisplay, splitDesktopPrompt } from './desktop-prompt.ts'
+import {
+  accumulateDesktopAssistantBlocks,
+  appendDesktopMessageBlocks,
+  projectDesktopAssistant,
+  projectDesktopUserText,
+} from './desktop-message-projection.ts'
 import * as rendererPlugin from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {
   DesktopRendererFrame, DesktopSessionNotification, DesktopSessionSummary,
@@ -160,19 +169,6 @@ function reasoningContent(value: unknown): ContentBlock[] {
     : []
 }
 
-function appendMessageBlocks(target: ContentBlock[], blocks: readonly ContentBlock[]): void {
-  for (const block of blocks) {
-    const previous = target.at(-1)
-    if (block.type === 'text' && previous?.type === 'text') {
-      previous.text += block.text
-    } else if (block.type === 'reasoning' && previous?.type === 'reasoning') {
-      previous.text += block.text
-    } else {
-      target.push(block)
-    }
-  }
-}
-
 function toolOutput(update: unknown): ContentBlock[] {
   if (typeof update !== 'object' || update === null) return []
   const content = (update as { content?: unknown }).content
@@ -255,6 +251,7 @@ class DesktopSession {
   private readonly entries: AcpTranscriptEntry[] = []
   private readonly messages = new Map<string, AcpMessageEntry>()
   private readonly tools = new Map<string, AcpToolEntry>()
+  private readonly pendingUserDisplays: Array<{ readonly text: string }> = []
   private plan: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }> = []
   private loaded: boolean
   private blank: boolean
@@ -268,6 +265,7 @@ class DesktopSession {
     private readonly cwd: string,
     conversation: { events: ConversationEventRegistry; views: ConversationViewRegistry },
     private readonly onChanged: (session: DesktopSession) => void,
+    private readonly previewArtifacts: (paths: readonly string[]) => void,
     options: { loaded: boolean; blank: boolean },
   ) {
     this.loaded = options.loaded
@@ -325,7 +323,9 @@ class DesktopSession {
     const update = notification.update
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        this.acceptMessage('user', update.messageId, userTextContent(update.content))
+        this.acceptMessage('user', update.messageId, this.pendingUserDisplays.length > 0
+          ? [{ type: 'text', text: this.pendingUserDisplays.shift()?.text ?? '' }]
+          : userTextContent(update.content))
         break
       case 'agent_message_chunk':
         this.acceptMessage('assistant', update.messageId, textContent(update.content))
@@ -393,6 +393,7 @@ class DesktopSession {
       insertion -= 1
     }
     this.entries.splice(insertion, 0, entry)
+    this.previewArtifacts(entry.locations ?? [])
   }
 
   private acceptMessage(role: 'user' | 'assistant', rawId: unknown, blocks: readonly ContentBlock[]): void {
@@ -405,7 +406,7 @@ class DesktopSession {
       this.messages.set(id, entry)
       this.entries.push(entry)
     }
-    appendMessageBlocks(entry.blocks, blocks)
+    appendDesktopMessageBlocks(entry.blocks, blocks)
   }
 
   private setPlan(entries: readonly { content: string; status: 'pending' | 'in_progress' | 'completed' }[]): void {
@@ -421,6 +422,7 @@ class DesktopSession {
     let step = 0
     let turnOpen = false
     let stepOpen = false
+    let stepHasTool = false
     let assistantBlocks: ContentBlock[] = []
     const append = (event: SyntheticSessionEvent): void => {
       events.push({ ...event, seq, time: baseTime + seq })
@@ -457,6 +459,7 @@ class DesktopSession {
         closeTurn()
         openTurn()
         assistantBlocks = []
+        stepHasTool = false
         append({
           type: 'user/message',
           data: { id: messageId(entry.id), role: 'user', content: entry.blocks, source: { kind: 'user' } },
@@ -464,14 +467,21 @@ class DesktopSession {
         })
         continue
       }
-      openStep()
       if (entry.kind === 'message') {
-        appendMessageBlocks(assistantBlocks, entry.blocks)
+        // ACP does not publish a model-step boundary. A response after a tool
+        // group starts the next step and must not inherit the prior response.
+        const followsTool = stepHasTool
+        if (followsTool) closeStep()
+        openStep()
+        assistantBlocks = accumulateDesktopAssistantBlocks(assistantBlocks, entry.blocks, followsTool)
+        stepHasTool = false
         for (const event of projectDesktopAssistant(
           assistantBlocks, this.running, turn, step, messageId(entry.id),
         )) append(event)
         continue
       }
+      openStep()
+      stepHasTool = true
       append({
         type: 'tool/call',
         data: { turn, step, callId: callId(entry.id), name: entry.title, arguments: entry.rawInput },
@@ -549,7 +559,9 @@ class DesktopSession {
     const text = content
       .flatMap(part => part.type === 'text' && typeof part.text === 'string' ? [part.text] : [])
       .join('\n')
-    if (text.trim() === '') return rpcFailure('Desktop ACP currently accepts text prompts only.')
+    const prompt = splitDesktopPrompt(text)
+    if (prompt.length === 0) return rpcFailure('Desktop ACP currently accepts text prompts only.')
+    const display = desktopPromptDisplay(prompt)
     this.promptAttempted = true
     this.promptError = null
     this.setPlan([])
@@ -558,21 +570,33 @@ class DesktopSession {
     this.onChanged(this)
     try {
       await this.ensureLoaded()
-      const attachmentIds = pendingAttachmentIds(this.sessionId)
-      const result = await window.dshDesktop.prompt(this.sessionId, text, attachmentIds)
-      clearPendingAttachments(this.sessionId)
-      this.acceptArtifacts(result.artifacts)
+      const pendingDisplay = { text: display }
+      this.pendingUserDisplays.push(pendingDisplay)
+      const result = window.dshDesktop.prompt(this.sessionId, prompt)
       this.blank = false
+      this.publish()
+      this.onChanged(this)
+      void result.then((completed) => {
+        this.acceptArtifacts(completed.artifacts)
+      }, (error: unknown) => {
+        const index = this.pendingUserDisplays.indexOf(pendingDisplay)
+        if (index >= 0) this.pendingUserDisplays.splice(index, 1)
+        this.promptError = { op: 'send', error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} } }
+      }).then(() => {
+        this.running = false
+        this.updatedAt = Date.now()
+        this.publish()
+        this.onChanged(this)
+      })
       return { ok: true, value: { accepted: true } }
     } catch (error: unknown) {
       const failure = rpcFailure<{ accepted: true }>(error instanceof Error ? error.message : String(error))
       if (!failure.ok) this.promptError = { op: 'send', error: failure.error }
-      return failure
-    } finally {
       this.running = false
       this.updatedAt = Date.now()
       this.publish()
       this.onChanged(this)
+      return failure
     }
   }
 
@@ -616,6 +640,7 @@ class DesktopSessions {
   constructor(
     private readonly rootCtx: Context,
     private readonly conversation: { events: ConversationEventRegistry; views: ConversationViewRegistry },
+    private readonly preview: DesktopPreviewController,
   ) {
     this.channel = new SessionProvideChannel({
       rebuildBundles: () => {
@@ -658,6 +683,7 @@ class DesktopSessions {
 
   async create(cwd: string): Promise<SessionId> {
     const id = await window.dshDesktop.createSession(cwd) as SessionId
+    this.preview.resetForNewConversation()
     this.adopt({ sessionId: id, cwd }, { loaded: true, blank: true })
     this.list.update((draft) => {
       if (!draft.ids.includes(id)) draft.ids.unshift(id)
@@ -674,9 +700,18 @@ class DesktopSessions {
     return this.records.get(sessionId)?.summary.cwd
   }
 
+  currentSessionId(): SessionId | undefined {
+    return this.list.getSnapshot().current
+  }
+
   currentCwd(): string {
     const current = this.list.getSnapshot().current
     return current === undefined ? '' : this.cwd(current) ?? ''
+  }
+
+  /** Open a captured artifact in the owned preview panel. */
+  openArtifact(path: string): Promise<void> {
+    return this.preview.openPath(path)
   }
 
   runtimeDetached(): void {
@@ -705,6 +740,12 @@ class DesktopSessions {
         row.cwd,
         this.conversation,
         (changed) => { this.noteChanged(changed) },
+        (paths) => {
+          const target = selectAutoPreviewArtifact(paths)
+          if (target !== undefined) void this.preview.openPath(target).catch((error: unknown) => {
+            console.error('[desktop-product] failed to preview artifact:', error)
+          })
+        },
         { loaded: options?.loaded ?? false, blank: options?.blank ?? false },
       )
       record = {
@@ -857,7 +898,10 @@ class DesktopWorkspaces {
   })
   private rows: StoredWorkspace[] = []
 
-  constructor(private readonly sessions: DesktopSessions) {}
+  constructor(
+    private readonly sessions: DesktopSessions,
+    private readonly preview: DesktopPreviewController,
+  ) {}
 
   asService(): IWorkspaces {
     return this
@@ -981,7 +1025,7 @@ class DesktopWorkspaces {
   }
 
   openPath(path: string): Promise<void> {
-    return window.dshDesktop.openPath(path)
+    return this.preview.openPath(path)
   }
 
   rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView> {
@@ -1162,8 +1206,9 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
     events: ctx.get('conversationEvents') as ConversationEventRegistry,
     views: ctx.get('conversationViews') as ConversationViewRegistry,
   }
-  const sessions = new DesktopSessions(ctx, conversation)
-  const workspaces = new DesktopWorkspaces(sessions)
+  const preview = new DesktopPreviewController(window.dshDesktop)
+  const sessions = new DesktopSessions(ctx, conversation, preview)
+  const workspaces = new DesktopWorkspaces(sessions, preview)
   ctx.provide('sessions', sessions.asService())
   ctx.provide('workspaces', workspaces.asService())
   ctx.provide('connection', connectionStub())
@@ -1181,9 +1226,11 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, nativeDirectoryPickerPlugin)
   await mountPlugin(ctx, settingsGeneralPlugin)
   await mountPlugin(ctx, desktopModelSettingsPlugin)
+  await mountPlugin(ctx, desktopWebSearchSettingsPlugin)
   await mountPlugin(ctx, desktopMcpSettingsPlugin)
   await mountPlugin(ctx, deliverablesPlugin)
   await mountPlugin(ctx, desktopContentPlugin(sessions))
+  await mountPlugin(ctx, desktopPreviewPlugin(preview))
   await mountPlugin(ctx, desktopBrandPlugin)
   await mountPlugin(ctx, rendererPlugin)
   sessions.rebuildConversationRegistries()
@@ -1199,6 +1246,9 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
       sessions.runtimeDetached()
       console.error('[desktop-product] ACP Runtime failed:', frame.message ?? 'unknown error')
     }
+  })
+  const unsubscribePreviewRequests = window.dshDesktop.subscribePreviewRequest((url) => {
+    preview.openUrl(url)
   })
 
   const initialWorkspace = await window.dshDesktop.workspace()
@@ -1216,6 +1266,7 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
 
   return () => {
     unsubscribeFrames()
+    unsubscribePreviewRequests()
     unsubscribeSessions()
     unmount()
     void ctx.fiber.dispose()

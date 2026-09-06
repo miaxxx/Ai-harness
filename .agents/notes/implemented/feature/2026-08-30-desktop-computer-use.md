@@ -17,6 +17,7 @@ Desktop sessions could use filesystem, shell, and Web search tools but could not
 - `dsh-computer-macos` uses fixed JXA Accessibility operations for the selected app. It never interprets model text as JXA. macOS grants Accessibility and Screen Recording permissions to the ACP Runtime process, and screenshot capture shares the active turn's cancellation signal.
 - `dsh-tool-computer` asks through `ctx.approval` for each screenshot, click, entry, key press, and scroll. Text-only inspection stays read-only. Screenshots pass through `ctx.attachments`, so their model-visible pixels are durable tool-result content.
 - Desktop keeps Computer Use off until the user enables it in the primary-model settings. A local DevTools endpoint takes precedence over macOS visual control; each mutating action still reaches the existing ACP approval UI. The Renderer mounts the generic tool-card surface used by `computer` and other ACP tools, and it retains prompt failures in the conversation snapshot so a rejected request is visible.
+- Local attachments are not Computer Use targets. The Desktop persona, Skill summary, and `computer` schema direct inline images to model vision and path-backed images, files, or folders to filesystem, `read_image`, or document tools. Computer Use applies only when the request requires live application, browser, or desktop state.
 
 ## Alternatives considered
 

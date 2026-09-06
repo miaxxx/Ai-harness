@@ -13,7 +13,7 @@ Requires `ctx.systemPrompt` and registers the `policy:delivery-quality` section 
 
 The policy distinguishes four completion surfaces instead of forcing one universal validator:
 
-- **Read-only questions and research:** a relevant answer grounded in authoritative information or the requested sources is evidence. No mutation is required merely to prove completion.
+- **Read-only questions and research:** a relevant answer grounded in authoritative information or the requested sources is evidence. A question about an attached resource requires a successful applicable read or listing before the answer; its display name is not evidence. No mutation is required merely to prove completion.
 - **Code and file mutations:** inspect the final files or diff and run the relevant deterministic checks such as tests, typecheck, or build.
 - **External and GUI mutations:** require fresh post-action observation showing the requested external state. Tool-call success alone is not outcome evidence.
 - **Produced or edited artifacts:** use the bundled `delivery-verification` Skill when available and follow its type-specific acceptance procedure, including render/open/recalculate inspection where appropriate.

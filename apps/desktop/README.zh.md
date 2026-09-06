@@ -6,11 +6,11 @@
 
 ## 进程职责
 
-Electron 主进程负责窗口、`dsh-app://` 资源协议、IPC 准入和 ACP 运行时监督。Renderer 运行在沙箱内，启用上下文隔离且不集成 Node。preload 只暴露固定的工作区、Session、Skill 导入、附件暂存、产物导出、模型设置、MCP 设置和运行时操作；它不暴露通用 IPC、文件系统、shell 或进程原语。
+Electron 主进程负责窗口、`dsh-app://` 资源协议、IPC 准入和 ACP 运行时监督。Renderer 运行在沙箱内，启用上下文隔离且不集成 Node。preload 只暴露固定的工作区、Session、Skill 导入、附件暂存、产物预览与导出、模型设置、MCP 设置和运行时操作；它不暴露通用 IPC、文件系统、shell 或进程原语。
 
 在源码模式下，主进程使用 `@deepseek-ai/dsh-acp-client` 启动已构建的 ACP 示例运行时。需要其他运行时时，可用 `DSH_DESKTOP_ACP_COMMAND` 和 `DSH_DESKTOP_ACP_ARGS_JSON` 替换该命令。在打包应用中，主进程改为通过 `process.resourcesPath` 定位内置 Node 可执行文件、ACP 入口和配置。主进程把 ACP Session 更新映射为展示帧，并呈现 ACP 权限选项；运行时仍拥有权限策略与沙箱强制执行。
 
-Desktop 将 Code 与 Work 作为一个自动任务表层运行：Runtime 判断请求类型，并加载相关的开发、网页研究、文档或表格内置 Skill。会产生产物的任务还会加载内置 delivery-verification Skill；其最终验收按产物类型分流，并重复检查、修复和重新检查，直到当前产物通过或仍有具体阻塞条件。Shell 与文件系统能力共用。网页搜索使用 DeepSeek 搜索提供方，因此即使主聊天模型配置为其他 OpenAI 兼容端点，仍需要 `DEEPSEEK_API_KEY`。只有部署提供了相应提供方或工具时，才使用 LSP 与二进制办公格式。
+Desktop 将 Code 与 Work 作为一个自动任务表层运行：Runtime 判断请求类型，并加载相关的开发、网页研究、文档或表格内置 Skill。会产生产物的任务还会加载内置 delivery-verification Skill；其最终验收按产物类型分流，并重复检查、修复和重新检查，直到当前产物通过或仍有具体阻塞条件。Shell 与文件系统能力共用。网页搜索使用 You.com 的直连搜索 API，独立于主聊天模型的 OpenAI 兼容端点，并需要 `YDC_API_KEY`。只有部署提供了相应提供方或工具时，才使用 LSP 与二进制办公格式。
 
 ## 运行预览
 
@@ -38,10 +38,10 @@ pnpm run verify:desktop-dist
 - 主进程监督一个独立 ACP 运行时，并在退出前终止它。
 - Session 列表和加载使用 Runtime 的持久 ACP 操作；加载会回放展示更新。
 - Session 关闭会释放实时句柄，不删除持久历史。
-- 技术验证 Renderer 可以创建和加载 Session、提交提示词、取消活动轮次、回答权限请求，并显示流式文本、默认展开的实时推理以及由 ACP 更新渲染的工具卡片。提示词被拒绝时，错误会继续显示在输入区域，不会表现成消息发出后无人回复。配置的 OpenAI 兼容主模型会启用高强度推理。设置会在用户明确开启前保持 Computer Use 关闭；可用时使用本机 Chromium DevTools 端点，否则使用 macOS 辅助功能，截图和每次输入操作仍会请求批准。截图检查还要求主模型支持图片输入，原生截图则需要 macOS 屏幕录制权限。内置 ACP 图片存储每次接纳一张不超过 201,326,592 源像素且单边不超过 32,768px 的大型画布截图，随后把长边规范化到 2048px，再写入模型可见的持久历史。
+- 技术验证 Renderer 可以创建和加载 Session、提交提示词、取消活动轮次、回答权限请求，并显示流式文本、默认展开的实时推理以及由 ACP 更新渲染的工具卡片。提示词被拒绝时，错误会继续显示在输入区域，不会表现成消息发出后无人回复。保存 OpenAI 兼容主模型前，Desktop 会先验收带函数工具的文字请求，再检测可选图片输入以及端点公布的上下文和输出容量。已知 OpenAI 模型 ID 继承内置的 effort 元数据；未知模型不发送猜测的推理强度，并在端点没有提供容量时采用保守 token 数。设置会在用户明确开启前保持 Computer Use 关闭；可用时使用本机 Chromium DevTools 端点，否则使用 macOS 辅助功能，截图和每次输入操作仍会请求批准。截图检查还要求能力验收确认图片输入可用，原生截图则需要 macOS 屏幕录制权限。内置 ACP 图片存储每次接纳一张不超过 201,326,592 源像素且单边不超过 32,768px 的大型画布截图，随后把长边规范化到 2048px，再写入模型可见的持久历史。
 - 普通提示直接执行。复杂 Desktop 任务会创建一个持久化的同 Session 目标、发布包含三至七项的任务清单，并在多个 Goal Round 中持续推进，直到 Runtime 记录完成状态或具体阻塞条件。任务条跟随 ACP 计划更新，并在下一条人工消息开始时清空。
-- 输入框加号菜单提供附件上传和悬停展开的 Skills 目录。选中的 Skill 在发送前后保持带内边距的中性胶囊，不会自动插入任务提示；普通 ACP resource link 显示为文件胶囊，不暴露本地 URI。文件选择器可暂存 PNG／JPEG／WebP／GIF 图片以及普通文本、代码、Markdown、HTML、JSON、CSV 文件。图片会作为 ACP image block 发送给已配置的支持视觉输入的 OpenAI 兼容模型，而不是本地路径。用户导入的 Skill 位于 `~/.dsh/skills`，可在设置中删除；项目和内置 Skill 在管理页只读。
-- 每轮会把新建或修改的普通文件复制到 `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`，写入 Session 清单，并在最终回复后展示产物。用户可以打开文件、单独另存一份或把 Session 的全部产物导出为 ZIP。二进制办公格式生成不在本阶段范围内。
+- 隐藏标题栏的顶部是原生拖动区域，拖动其空白区域即可移动窗口。输入框加号菜单提供附件上传和悬停展开的 Skills 目录。Skill 以及粘贴的文件或文件夹引用会直接在草稿中显示为带内边距的中性胶囊；用户可将其置于普通文字之间并重复引用，提交的 ACP 提示词会保留每个引用的位置。刚发送和重新回放的用户消息都会以同一种文件胶囊保留附件名称和位置，不暴露本地 URI。文件选择器可暂存 PNG／JPEG／WebP／GIF 图片以及普通文本、代码、Markdown、HTML、JSON、CSV 文件，其中的图片会作为 ACP image block 发送给已配置的支持视觉输入的 OpenAI 兼容模型。粘贴文件或文件夹不会复制文件，也不递归扫描文件夹；Runtime 通过 resource link 获得其绝对路径，工具因而可以读取或操作用户选择的项目。没有源文件路径的剪贴板图片会先保存到 Session 输入目录，再以 resource link 发送。附件检查使用内联视觉、文件系统、`read_image` 或文档工具；除非请求需要实时应用、浏览器或桌面，否则不会加载 Computer Use。纯文本仍按输入框原有方式粘贴。用户导入的 Skill 位于 `~/.dsh/skills`，可在设置中删除；项目和内置 Skill 在管理页只读。
+- 每轮会把新建或修改的普通文件复制到 `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`，写入 Session 清单，并在最终回复后展示产物。文件卡会显示格式，并提供系统默认应用、应用内预览栏和 Finder 的打开方式；右键菜单可打开文件位置、复制路径，或把产物以和用户附件相同的引用胶囊加入当前输入框。浏览器原生支持的产物会自动在右侧可调宽预览中打开；HTTP 与 HTTPS 链接也使用同一浏览器面板。收起面板会保留当前标签但退出全屏，关闭标签或新建 Session 才清空它。Chromium 无法渲染的格式则保留明确的系统应用打开操作。用户可以把 Session 的全部产物导出为 ZIP。二进制办公格式生成不在本阶段范围内。
 - 设置页可以添加、编辑和删除 stdio 或 Streamable HTTP MCP 服务器。仅所有者可读写的 Desktop 文档由 Runtime 共用；界面直接编辑会重启 Runtime，需批准的 `mcp_config` 工具则让用户可以要求 Agent 配置同一份清单。连接后的工具以 `mcp__<server>__<tool>` 名称继续供后续 Session 使用。
 
 生成的 `.app` 已包含 Node、ACP 运行时、配置、JavaScript 依赖和 macOS 原生辅助程序。它按设计不签名：macOS 可能要求用户明确放行，并且该应用不适合公开分发。代码签名、公证、DMG 生成、通用二进制、自动更新、崩溃恢复、首次运行流程和完整产品界面仍属于后续工作。

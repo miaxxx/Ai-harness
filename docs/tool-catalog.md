@@ -24,8 +24,8 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent bash tool; deployment composition supplies the PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent pwsh tool, the Windows counterpart of the persistent bash tool; deployment composition supplies a pwsh-dialect PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`, `ctx.fs` | `tool/call`, `fs/observed after view presence/absence, edit absence, or successful mutation`, `tool/result` | - | Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API. |
-| `@deepseek-ai/dsh-tool-computer` | `computer` | `ctx.tools`, `ctx.computer`, `ctx.attachments`, `ctx.approval + an owning Agent for screenshots and mutations` | `tool/call`, `durable attachment for an approved screenshot`, `approved local computer action`, `tool/result` | - | The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval. |
-| `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
+| `@deepseek-ai/dsh-tool-computer` | `computer` | `ctx.tools`, `ctx.computer`, `ctx.attachments`, `ctx.approval + an owning Agent for visual observations and mutations` | `tool/call`, `durable attachment for an approved visual observation`, `approved local computer action`, `tool/result` | - | The schema is provider-independent. Deployments may mount CDP and macOS Providers together; target kind selects the route. Visual observations and mutating actions fail closed without one-shot user approval. |
+| `@deepseek-ai/dsh-tool-fs` | `edit`, `list_directory`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
@@ -632,7 +632,7 @@ Standalone view/create/unique literal replace/line insert tool over the filesyst
 
 ### `computer`
 
-Observe or operate desktop, native-app, and browser-tab targets. Prefer purpose-built APIs/CLI first. Observe the named target directly; list only for discovery. Prefer accessibility state and element actions, using visual/coordinates only when semantic state is insufficient. Every mutation returns fresh state; never reuse an element id after an action.
+Observe or operate live desktop, native-app, and browser-tab state. Never use this tool merely to inspect an attachment. Use inline vision, filesystem, read_image, or document tools for attached images, files, and folders. Prefer purpose-built APIs/CLI first. Observe the named target directly; list only for discovery. Prefer accessibility state and element actions, using visual/coordinates only when semantic state is insufficient. Every mutation returns fresh state; never reuse an element id after an action.
 
 ```json
 {
@@ -716,8 +716,12 @@ Observe or operate desktop, native-app, and browser-tab targets. Prefer purpose-
         "type": "string",
         "enum": [
           "alt",
+          "command",
+          "cmd",
           "control",
+          "ctrl",
           "meta",
+          "option",
           "shift"
         ]
       }
@@ -743,7 +747,7 @@ Observe or operate desktop, native-app, and browser-tab targets. Prefer purpose-
 
 Source: [`packages/computer/tool-computer/src/index.ts`](../packages/computer/tool-computer/src/index.ts)
 
-The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval.
+The schema is provider-independent. Deployments may mount CDP and macOS Providers together; target kind selects the route. Visual observations and mutating actions fail closed without one-shot user approval.
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -778,6 +782,35 @@ Edit an existing UTF-8 text file by replacing literal text.
     "file_path",
     "old_string",
     "new_string"
+  ]
+}
+```
+
+Source: [`packages/fs/tool-fs/src/index.ts`](../packages/fs/tool-fs/src/index.ts)
+
+### `list_directory`
+
+List the direct children of a directory without reading file contents. Use this before describing an attached directory; do not infer its contents from the directory name.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "directory_path": {
+      "type": "string",
+      "description": "Path to the directory, resolved by the filesystem backend."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first entry to return. Defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum number of entries to return. Defaults to 200."
+    }
+  },
+  "required": [
+    "directory_path"
   ]
 }
 ```

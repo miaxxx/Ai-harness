@@ -110,13 +110,13 @@
     },
     {
       "name": "create_goal",
-      "description": "Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say \"create a goal\". Do not use this for trivial single-turn work. Execution rejects non-human and subagent authority.",
+      "description": "Create one persisted same-session completion goal when the current direct human request is a long-running objective that should continue across autonomous goal rounds. You may infer that intent without requiring the user to say \"create a goal\". Do not use this for trivial single-turn work. The objective must state the concrete outcome, relevant constraints, and how final completion will be verified. Execution rejects non-human and subagent authority.",
       "parameters": {
         "type": "object",
         "properties": {
           "objective": {
             "type": "string",
-            "description": "The concrete completion objective inferred from the direct human request."
+            "description": "Concrete outcome, relevant constraints, and final verification criteria inferred from the direct human request."
           },
           "max_goal_rounds": {
             "type": "number",
@@ -264,6 +264,30 @@
       }
     },
     {
+      "name": "list_directory",
+      "description": "List the direct children of a directory without reading file contents. Use this before describing an attached directory; do not infer its contents from the directory name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "directory_path": {
+            "type": "string",
+            "description": "Path to the directory, resolved by the filesystem backend."
+          },
+          "offset": {
+            "type": "number",
+            "description": "1-based first entry to return. Defaults to 1."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of entries to return. Defaults to 200."
+          }
+        },
+        "required": [
+          "directory_path"
+        ]
+      }
+    },
+    {
       "name": "ralph",
       "description": "Run a foreground fresh-agent Ralph loop toward one immutable objective. Use only when the direct human explicitly asks for Ralph or fresh-agent iteration. Each round opens a new child with no parent conversation or prior child session; the shared workspace is long-term memory, and only a bounded structured report crosses rounds. The call returns when a worker reports completion or a concrete blocker, or at the round limit. Ordinary long-running same-session work belongs to goal tools.",
       "parameters": {
@@ -300,6 +324,22 @@
           "limit": {
             "type": "number",
             "description": "Maximum number of lines to return. Defaults to 2000."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "read_image",
+      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches. Requires the current model to accept image input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the image file, resolved by the filesystem backend."
           }
         },
         "required": [

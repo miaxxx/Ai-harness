@@ -12,13 +12,13 @@ Status: implemented
 
 产品将 Code 与 Work 作为两个主要任务 preset。Code 保留 Code Mode 工具呈现与完整开发工具组装。Work 使用原生工具呈现，并采用由网页搜索、文件系统、Shell、后台任务、压缩、目标、提问、待办和 Skill 加载器组成的精简组装。新安装默认使用 Code；已有用户设置仍覆盖组装默认值。
 
-两个 preset 挂载同一个受信任的内置目录 `apps/cli/config/skills/`。其中包含四个轻依赖 Skill：`code-development`、`web-research`、`document-work` 与 `spreadsheet-work`。它们的描述根据用户任务触发，因此不需要模式路由器，也不要求每轮加载全部 Skill。
+两个 preset 挂载同一个受信任的内置目录 `apps/cli/config/skills/`。其中面向具体任务的创作与验收 Skills 通过描述根据用户请求触发，因此不需要模式路由器，也不要求每轮加载全部 Skill。`document-work` 负责选择文档格式，`evidence-grounded-frontend-system` 则负责 HTML/CSS 与浏览器产物的设计、实现和验证。
 
 Desktop 使用 ACP Runtime，而不是 Web preset 宿主。其监督进程设置 `DSH_DESKTOP_CODE_WORK_ENABLED` 与打包后的内置 Skill 路径，ACP 组装据此挂载同一份 Skill 目录、加载工具和基于 DeepSeek 的网页搜索。打包步骤把共享目录复制进独立 Runtime。通用 ACP 与快照运行不会设置产品标记，因此其人设和工具目录保持不变。
 
 同一个 Desktop 产品标记还会挂载持久化目标领域、同 Session 连续执行驱动器和面向模型的目标工具。普通请求不创建目标。包含至少三个可独立验证工作项的复杂请求会使用一个目标和一份包含三至七项的 `todo_write` 清单；父 agent 持续工作，直到验证完整目标、报告具体阻塞条件或用户取消。提示策略把委派限制为同时最多两个独立子任务，现有 subagent 深度限制则阻止递归委派。ACP 计划更新进入 Desktop 现有的 Todo 面板，不引入第二套任务存储。
 
-这些 Skills 使用当前 preset 已提供的能力。文档和表格指导在专用工具存在时优先使用，否则回退到可移植的 Markdown、HTML、CSV 或 TSV，而不依赖办公 SDK。代码指导在部署已配置语言服务器时使用 LSP，否则回退到搜索和源码检查；交付应用不会仅为了显示 LSP 工具名称而安装语言服务器。
+这些 Skills 使用当前 preset 已提供的能力。文档工作会保留明确指定的输出格式、技术栈或现有文件格式；三者均未指定的新文档默认生成为一个内联 CSS 与 JavaScript 的独立 HTML 文件。无法生成用户指定格式时会明确失败，而不会静默改成 HTML。表格指导在专用工具存在时优先使用，否则采用可移植的 CSV 或 TSV，而不依赖办公 SDK。默认 HTML 的前端指导不要求框架或构建链，但会遵循明确指定的技术栈。代码指导在部署已配置语言服务器时使用 LSP，否则回退到搜索和源码检查；交付应用不会仅为了显示 LSP 工具名称而安装语言服务器。
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ Desktop 使用 ACP Runtime，而不是 Web preset 宿主。其监督进程设置
 
 **让每个复杂 Desktop 任务都使用计划模式或动态工作流。** 计划模式会在执行前停下来等待审阅，而产品需求是在同一个用户轮次内完成计划和执行。动态工作流会增加脚本编排层，但现有的同 Session 目标、Todo 和 subagent 工具已经能够覆盖这些任务。
 
-**随 preset 安装语言服务器与办公库。** 这会把轻量组装变更变成平台相关的依赖管理。LSP 和更丰富的办公格式继续由能力决定：宿主提供时使用，否则明确降级。
+**随 preset 安装语言服务器与办公库。** 这会把轻量组装变更变成平台相关的依赖管理。LSP 和更丰富的办公格式继续由能力决定：宿主提供时使用；无法生成用户指定格式时明确报告，而不是静默替换成其他格式。
 
 ## Consequences
 

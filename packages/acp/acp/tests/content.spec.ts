@@ -111,6 +111,16 @@ describe('ACP rich content codec', () => {
     expect(fixture.saveImages).not.toHaveBeenCalled()
   })
 
+  it('admits a large canonical image payload without exhausting the JavaScript stack', async () => {
+    const fixture = admissionFixture()
+    const data = 'A'.repeat(8 * 1024 * 1024)
+
+    await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
+      { type: 'image', data, mimeType: 'image/png' },
+    ], true, new AbortController().signal)).resolves.toHaveLength(1)
+    expect(fixture.saveImages.mock.calls[0]?.[0]?.[0]?.data.byteLength).toBe(6 * 1024 * 1024)
+  })
+
   it('requires the advertised capability, store, and exact image-capable route', async () => {
     const prompt = [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }] as const
     const capable = admissionFixture()
@@ -198,11 +208,11 @@ describe('ACP rich content codec', () => {
     expect(imageOnly[0]?.type).toBe('image')
     await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
       { type: 'text', text: 'before' },
-      { type: 'resource_link', name: 'Guide', uri: 'https://example.test/guide' },
+      { type: 'resource_link', name: 'Guide', uri: 'https://example.test/guide', mimeType: 'inode/directory', size: 0 },
       { type: 'text', text: 'after' },
     ], true, new AbortController().signal)).resolves.toEqual([{
       type: 'text',
-      text: 'before\n[resource_link name="Guide" uri="https://example.test/guide"]\nafter',
+      text: 'before\n[resource_link name="Guide" uri="https://example.test/guide" mime_type="inode/directory" size=0]\nafter',
     }])
     await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
       { type: 'text', text: ' \n ' },

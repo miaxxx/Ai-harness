@@ -274,6 +274,28 @@ describe('input-machine: insert-ref and the occurrence table', () => {
     expect(m.state.phase).toBe('plain')
   })
 
+  it('adds symmetric separators beside continuous text without duplicating existing whitespace', () => {
+    const continuous = new InputMachine()
+    continuous.dispatch({ type: 'draft-changed', draft: '正文/web-research继续' })
+    continuous.dispatch({
+      type: 'insert-ref',
+      reference: refOf('web-research'),
+      span: spanOf(continuous, 2, 15),
+    })
+    const displayText = referenceDraftText(refOf('web-research'))
+    expect(continuous.state.draft).toBe(`正文 ${displayText} 继续`)
+    expect(continuous.state.occurrences[0]).toMatchObject({ offset: 3, length: displayText.length })
+
+    const lineBreak = new InputMachine()
+    lineBreak.dispatch({ type: 'draft-changed', draft: '正文\n/web-research\n继续' })
+    lineBreak.dispatch({
+      type: 'insert-ref',
+      reference: refOf('web-research'),
+      span: spanOf(lineBreak, 3, 16),
+    })
+    expect(lineBreak.state.draft).toBe(`正文\n${displayText}\n继续`)
+  })
+
   it('same-named references stay independent: distinct occurrenceIds, one deletion leaves the other', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: '/alp' })

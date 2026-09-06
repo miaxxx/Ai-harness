@@ -316,15 +316,15 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-computer',
     dir: 'tool-computer',
     source: 'packages/computer/tool-computer/src/index.ts',
-    requires: ['ctx.tools', 'ctx.computer', 'ctx.attachments', 'ctx.approval + an owning Agent for screenshots and mutations'],
-    writes: ['tool/call', 'durable attachment for an approved screenshot', 'approved local computer action', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.computer', 'ctx.attachments', 'ctx.approval + an owning Agent for visual observations and mutations'],
+    writes: ['tool/call', 'durable attachment for an approved visual observation', 'approved local computer action', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ComputerRuntime)
       await ctx.plugin(CatalogAttachmentStore)
       await ctx.plugin(ToolComputer)
     },
     note:
-      'The schema is provider-independent. Deployments select a CDP or macOS provider; screenshots and mutating actions fail closed without one-shot user approval.',
+      'The schema is provider-independent. Deployments may mount CDP and macOS Providers together; target kind selects the route. Visual observations and mutating actions fail closed without one-shot user approval.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs',

@@ -475,43 +475,58 @@
   transform: translate(-50%, -50%);
 }
 
-/* Structured references use the same inline-backdrop technique as /skill:
-   their complete display text remains in the textarea, so wrapping and caret
-   geometry come from the browser's native glyph metrics. The leading marker
-   reserves the icon's advance while the backdrop paints the domain glyph. */
+/* The transparent advance copy exactly matches the textarea while the visible
+   capsule is an absolute overlay. Its typography and padding can therefore be
+   tuned without moving wrapping or the native caret. */
 .chip {
-  --dsh-reference-chip-fill: color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent);
   position: relative;
-  border-radius: 9px;
-  background: var(--dsh-reference-chip-fill);
-  box-shadow:
-    -8px 0 0 var(--dsh-reference-chip-fill),
-    8px 0 0 var(--dsh-reference-chip-fill);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 0.92em;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  display: inline-block;
+  font: inherit;
+  color: transparent;
+  white-space: nowrap;
+  vertical-align: baseline;
 }
 
-.chipTrigger {
-  position: relative;
-}
-
-.chipTriggerGlyph {
+.chipAdvance {
   color: transparent;
 }
 
-.chipIcon {
+.chipVisual {
   position: absolute;
   top: 50%;
   left: 50%;
-  /* The hidden marker keeps native caret geometry. Pull the wider 16px icon
-     into the capsule's leading overhang so it cannot crowd the label. */
-  transform: translate(calc(-50% - 7px), -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary, #171717) 8%, var(--dsw-specific-input-major, #fff));
+  color: var(--dsw-alias-label-primary, #171717);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+.chipIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 
 .chipInvalid {
-  text-decoration: line-through;
   opacity: 0.7;
+}
+
+.chipInvalid .chipVisual {
   color: var(--dsw-alias-state-error-primary);
+  text-decoration: line-through;
+}
+
+.backdropDisabled .chipVisual {
+  color: var(--dsw-alias-label-tertiary);
 }

@@ -148,13 +148,12 @@ function TurnMaxTokensItem({ t }: {
  * Display projection of reference forms in a user bubble (free geometry — no
  * textarea alignment constraint here); everything else stays plain text. The
  * logged model text remains the single truth; this is presentation only.
- * Plain-text `/name` / `@name` word-boundary tokens decorate (the sent text
- * IS the reference — the bubble uses the same plainest token
- * scan as the composer, minus the lexicon: sent tokens were validated at
- * compose time, so shape alone decorates).
+ * Structured `<skill>name</skill>` spans are the durable Skill form. Legacy
+ * `/name` and plain `@name` tokens still decorate by word boundary; those sent
+ * tokens were validated at compose time, so this projection needs no lexicon.
  */
 function projectUserText(text: string, sessionLabels: readonly string[]): ReactNode {
-  const ranges: { start: number; end: number; label: string; kind: 'session' | 'plain' }[] = []
+  const ranges: { start: number; end: number; label: string; kind: 'session' | 'skill' | 'plain' }[] = []
   for (const rawLabel of [...new Set(sessionLabels)].sort((a, b) => b.length - a.length)) {
     const label = `@${rawLabel}`
     let start = text.indexOf(label)
@@ -163,11 +162,24 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
       start = text.indexOf(label, start + label.length)
     }
   }
-  const re = /(^|\s)(\/[\w-]+|@"[^"\n]+"|@[^\s]+)/gu
+  const skillRe = /<skill>([\w-]+)<\/skill>/gu
+  let skillMatch: RegExpExecArray | null
+  while ((skillMatch = skillRe.exec(text)) !== null) {
+    const label = skillMatch[1]
+    if (label !== undefined && label !== '') {
+      ranges.push({ start: skillMatch.index, end: skillMatch.index + skillMatch[0].length, label, kind: 'skill' })
+    }
+  }
+  // Quoted file tokens are emitted by the Desktop prompt projection and may
+  // sit directly beside CJK text (例如“将@\"设计图.png\"加入…”). Slash and
+  // ordinary @ tokens still require whitespace so email addresses and paths
+  // do not become accidental references.
+  const re = /@"[^"\n]+"|(^|\s)(\/[\w-]+|@[^\s]+)/gu
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
-    const tokenStart = m.index + (m[1]?.length ?? 0)
-    const rawLabel = m[2] ?? ''
+    const quotedFile = m[0].startsWith('@"')
+    const tokenStart = m.index + (quotedFile ? 0 : (m[1]?.length ?? 0))
+    const rawLabel = quotedFile ? m[0] : m[2] ?? ''
     const label = rawLabel.startsWith('@"')
       ? rawLabel
       : rawLabel.replace(/[.,;:!?，。；：！？]+$/gu, '')
@@ -182,18 +194,20 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
     if (range.start < cursor) continue
     const { start: tokenStart, end, label, kind } = range
     if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
-    const referenceKind = kind === 'session'
-      ? 'session'
+    const referenceKind = kind === 'session' || kind === 'skill'
+      ? kind
       : label.startsWith('/')
         ? 'skill'
         : label.startsWith('@')
           ? label.endsWith('/') ? 'folder' : 'file'
           : undefined
-    const displayLabel = referenceKind === undefined
+    const displayLabel = kind === 'skill'
       ? label
-      : referenceKind === 'session' || referenceKind === 'skill'
-        ? label.slice(1)
-        : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1)
+      : referenceKind === undefined
+        ? label
+        : referenceKind === 'session' || referenceKind === 'skill'
+          ? label.slice(1)
+          : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1)
     parts.push(
       <span
         key={tokenStart}

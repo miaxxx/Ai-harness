@@ -1,5 +1,5 @@
 /**
- * The web-search card's staged form over the `web-search-deepseek` settings
+ * The web-search card's staged form over the `web-search-you` settings
  * namespace.
  *
  * The key is the one control that does not live in the section: its literal
@@ -17,13 +17,13 @@ import {
 } from './card-form.ts'
 
 /**
- * Namespace of the DeepSeek search provider. Spelled here rather than
+ * Namespace of the You.com search provider. Spelled here rather than
  * imported: a client package must not depend on a Host package.
  */
-export const WEB_SEARCH_NS = 'web-search-deepseek'
+export const WEB_SEARCH_NS = 'web-search-you'
 
 /** Credential reference the provider resolves when the section names none. */
-const DEFAULT_API_KEY_REF = 'DEEPSEEK_API_KEY'
+const DEFAULT_API_KEY_REF = 'YDC_API_KEY'
 
 /** Form field the credential control stages under. */
 const API_KEY_FIELD = 'apiKey'
@@ -34,8 +34,8 @@ export interface WebSearchSettings {
   apiKeyEnv?: string
   /** Provider endpoint; blank inherits the provider default. */
   baseURL?: string
-  /** Maximum searches served within one request. */
-  maxUses?: number
+  /** Default number of sources returned by You.com for one search. */
+  numResults?: number
 }
 
 /** What the credentials domain last reported, and for which reference. */
@@ -52,8 +52,8 @@ interface CredentialState {
 export interface WebSearchCardState extends CardShell {
   /** Provider endpoint. */
   baseURL: CardFieldState
-  /** Searches allowed per request. */
-  maxUses: CardFieldState
+  /** Sources requested from You.com for each search. */
+  numResults: CardFieldState
   /** The staged credential, which starts blank on every load. */
   apiKey: CardFieldState
   /** Whether the Host reports a credential configured for the referenced key. */
@@ -70,14 +70,14 @@ export interface WebSearchCardFace extends CardActions {
   }
 }
 
-/** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
+/** Bridges the `web-search-you` scope and the credentials domain onto the card. */
 export class WebSearchCardController {
   private readonly form: CardForm<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param scope - the bound settings scope for the `web-search-deepseek` namespace.
+   * @param scope - the bound settings scope for the `web-search-you` namespace.
    * @param api - wire face used for the credential the section references.
    */
   constructor(
@@ -86,7 +86,7 @@ export class WebSearchCardController {
   ) {
     this.form = new CardForm(
       scope,
-      [textField('baseURL'), numberField('maxUses')],
+      [textField('baseURL'), numberField('numResults')],
       [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }],
     )
     this.store = this.form.bind(() => this.projection())
@@ -98,7 +98,7 @@ export class WebSearchCardController {
     return {
       ...this.form.shell(),
       baseURL: this.form.field('baseURL'),
-      maxUses: this.form.field('maxUses'),
+      numResults: this.form.field('numResults'),
       apiKey: this.form.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
       apiKeyWritable: this.credential.writable,

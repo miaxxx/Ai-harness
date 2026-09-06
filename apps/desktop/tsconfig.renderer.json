@@ -9,9 +9,13 @@
     "src/product-runtime.ts",
     "src/desktop-brand.tsx",
     "src/desktop-model-settings.tsx",
+    "src/desktop-web-search-settings.tsx",
     "src/desktop-mcp-settings.tsx",
     "src/desktop-content-ui.tsx",
+    "src/desktop-preview.ts",
+    "src/desktop-preview-ui.tsx",
     "src/desktop-message-projection.ts",
+    "src/desktop-prompt.ts",
     "src/shared.ts",
     "src/renderer.css.d.ts",
     "src/css-modules.d.ts"

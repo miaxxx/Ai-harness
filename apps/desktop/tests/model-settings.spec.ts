@@ -14,19 +14,37 @@ describe('Desktop model settings storage', () => {
       version: MODEL_SETTINGS_VERSION,
       ...common,
       computerUseEnabled: false,
+      capabilities: { input: ['text'], verified: false },
+    })
+  })
+
+  it('upgrades version 2 settings for verification before optional modalities are enabled', () => {
+    expect(parseStoredModelSettings({ version: 2, ...common, computerUseEnabled: true })).toEqual({
+      version: MODEL_SETTINGS_VERSION,
+      ...common,
+      computerUseEnabled: true,
+      capabilities: { input: ['text'], verified: false },
     })
   })
 
   it('accepts complete current settings', () => {
-    const current = { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: true }
+    const current = {
+      version: MODEL_SETTINGS_VERSION,
+      ...common,
+      computerUseEnabled: true,
+      capabilities: { input: ['text', 'image'], contextWindow: 65_536, maxOutputTokens: 8192, verified: true },
+    }
     expect(parseStoredModelSettings(current)).toEqual(current)
   })
 
   it.each([
     null,
     { version: MODEL_SETTINGS_VERSION, ...common },
+    { version: 2, ...common },
     { version: 99, ...common, computerUseEnabled: false },
-    { version: MODEL_SETTINGS_VERSION, ...common, protocol: 'other', computerUseEnabled: false },
+    { version: MODEL_SETTINGS_VERSION, ...common, protocol: 'other', computerUseEnabled: false, capabilities: { input: ['text'], verified: true } },
+    { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: false, capabilities: { input: ['image'], verified: true } },
+    { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: false, capabilities: { input: ['text'], contextWindow: 0, verified: true } },
   ])('rejects malformed or unsupported settings: %j', (value) => {
     expect(() => parseStoredModelSettings(value)).toThrow('Desktop model settings are malformed')
   })

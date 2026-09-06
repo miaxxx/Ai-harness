@@ -1,4 +1,5 @@
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"deepseek-harness-acp","version":"0.0.1"},"agentCapabilities":{"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false}},"authMethods":[]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"deepseek-harness-acp","version":"0.0.1"},"agentCapabilities":{"promptCapabilities":{"image":false,"audio":false,"embeddedContext":false},"sessionCapabilities":{"close":{},"list":{},"resume":{}},"loadSession":true},"authMethods":[]}}
 {"jsonrpc":"2.0","id":2,"result":{"sessionId":"{{sessionId}}"}}
-{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"TITLE_DONE"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"user_message_chunk","messageId":"{{sessionId}}","content":{"type":"text","text":"Reply with exactly TITLE_DONE. Do not use tools."}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"agent_message_chunk","messageId":"dsh-stream-1-1","content":{"type":"text","text":"TITLE_DONE"}}}}
 {"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}

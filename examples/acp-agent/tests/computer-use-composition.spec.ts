@@ -49,6 +49,15 @@ function configRow(id: string): string {
 }
 
 describe('ACP Computer Use composition', () => {
+  it('keeps local attachment inspection outside Computer Use', () => {
+    expect(CONFIG).toContain('An attachment is already model input or a local resource, not desktop state')
+    expect(CONFIG).toContain('Never load computer-use or call computer merely to inspect an attachment')
+    expect(CONFIG).toContain('use list_directory for an attached directory')
+    expect(CONFIG).toContain("name: '@deepseek-ai/dsh-delivery-quality-policy'")
+    const skill = readFileSync(new URL('../../../apps/cli/config/skills/computer-use/SKILL.md', import.meta.url), 'utf8')
+    expect(skill).toContain('Never use it merely to inspect an attached image, file, or folder')
+  })
+
   it('keeps every Computer component behind the same explicit Desktop opt-in', () => {
     for (const id of COMPUTER_ROWS) {
       expect(configRow(id)).toContain(
@@ -71,6 +80,40 @@ describe('ACP Computer Use composition', () => {
         DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? 'sk-dummy-for-computer-use-boot',
         DSH_PERMISSION_MODE: 'danger-full-access',
         DSH_DESKTOP_COMPUTER_USE_ENABLED: 'true',
+      },
+    })
+
+    await spawned.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    const { sessionId } = await spawned.client.newSession({ cwd: workdir, mcpServers: [] })
+    expect(sessionId.length).toBeGreaterThan(0)
+  }, 60_000)
+})
+
+describe('ACP Desktop model composition', () => {
+  it('does not force image input or one reasoning effort across compatible models', () => {
+    const row = configRow('llm-desktop-primary')
+    expect(row).toContain("process.env.DSH_DESKTOP_MODEL_INPUT === 'text,image'")
+    expect(row).toContain('defaultContextWindow: 32768')
+    expect(row).toContain('supportsDeveloperRole: false')
+    expect(row).not.toContain('reasoning: high')
+    expect(row).not.toContain('reasoningEfforts:')
+  })
+
+  it('boots the real ACP product composition with a verified conservative model profile', async () => {
+    workdir = await mkdtemp(join(tmpdir(), 'acp-desktop-model-'))
+    spawned = launchAcpTestAgent({
+      agent: AGENT,
+      cwd: workdir,
+      env: {
+        DSH_DESKTOP_MODEL_ENABLED: 'true',
+        DSH_DESKTOP_MODEL_API: 'openai-completions',
+        DSH_DESKTOP_MODEL_BASE_URL: 'https://gateway.example/v1',
+        DSH_DESKTOP_MODEL_ID: 'unknown-compatible-model',
+        DSH_DESKTOP_MODEL_API_KEY: 'sk-dummy-for-model-composition',
+        DSH_DESKTOP_MODEL_INPUT: 'text',
+        DSH_DESKTOP_MODEL_CONTEXT_WINDOW: '65536',
+        DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS: '4096',
+        DSH_PERMISSION_MODE: 'danger-full-access',
       },
     })
 

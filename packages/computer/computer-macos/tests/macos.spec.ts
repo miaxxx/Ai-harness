@@ -25,7 +25,7 @@ beforeEach(() => {
     if (file === '/usr/sbin/screencapture') {
       const path = args.at(-1)
       if (path === undefined) throw new Error('missing screenshot path')
-      void writeFile(path, new Uint8Array([1, 2, 3])).then(() => callback(null, ''), error => callback(error as Error, ''))
+      void writeFile(path, new Uint8Array([1, 2, 3])).then(() =>{  callback(null, '') }, (error: unknown) => {  callback(error as Error, '') })
     } else {
       const script = String(args.at(-1))
       if (script.includes('applicationProcesses.whose')) callback(null, JSON.stringify([{ id: 'Editor', name: 'Editor' }]))
@@ -87,18 +87,30 @@ describe('macOS computer Provider', () => {
     expect(scripts.some(script => script.includes('setTheClipboardTo'))).toBe(true)
     expect(scripts.some(script => script.includes('AXShowMenu'))).toBe(true)
     expect(scripts.some(script => script.includes('AXScrollLeft'))).toBe(true)
+    expect(scripts.some(script => script.includes('CGEventSetLocation(e,{x:1,y:2})'))).toBe(true)
+    await expect(provider.perform(
+      { kind: 'desktop', id: 'desktop', name: 'Desktop' },
+      { kind: 'click', point: { x: 10, y: 20 }, button: 'left', count: 1 },
+    )).resolves.toHaveProperty('visual.scope', 'desktop')
+    const desktopClick = execFileMock.mock.calls
+      .map(call => String((call[1] as string[]).at(-1)))
+      .filter(script => script.includes('mouseClick(10,20,false,1)'))
+      .at(-1)
+    expect(desktopClick).not.toContain('applicationProcesses.whose({frontmost:true})')
   })
 
   it('maps stable permission, stale-element, unsupported-action, and capture failures', async () => {
     const provider = capture()
     const target = { kind: 'app' as const, id: 'Editor', name: 'Editor' }
-    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('Not authorized to send Apple events'), ''))
+    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) =>{  callback(new Error('Not authorized to send Apple events'), '') })
     await expect(provider.listTargets()).rejects.toThrow('COMPUTER_PERMISSION_REQUIRED')
     await expect(provider.perform(target, { kind: 'click', elementId: 'bad', button: 'left', count: 1 })).rejects.toThrow('ELEMENT_EXPIRED')
-    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('Action unsupported'), ''))
+    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) =>{  callback(new Error('Action unsupported'), '') })
     await expect(provider.perform(target, { kind: 'secondary_action', elementId: 'latest:0' })).rejects.toThrow('ACTION_UNSUPPORTED')
-    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) => callback(new Error('screenshot failed'), ''))
+    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) =>{  callback(new Error('screenshot failed'), '') })
     await expect(provider.observe({ kind: 'desktop', id: 'desktop', name: 'Desktop' }, 'visual')).rejects.toThrow('CAPTURE_FAILED')
+    execFileMock.mockImplementationOnce((_file: string, _args: string[], _options: unknown, callback: ExecCallback) =>{  callback(new Error('Screen Recording permission denied'), '') })
+    await expect(provider.observe({ kind: 'desktop', id: 'desktop', name: 'Desktop' }, 'visual')).rejects.toThrow('COMPUTER_PERMISSION_REQUIRED')
   })
 
   it('registers its invariant companion', async () => {

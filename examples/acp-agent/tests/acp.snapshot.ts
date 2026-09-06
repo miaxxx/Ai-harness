@@ -238,6 +238,7 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     pinsHeader: true,
     headerClass: 'image',
+    toolSchemasSource: 'text-turn',
     configPath: IMAGE_CONFIG,
   },
   {
@@ -247,7 +248,7 @@ const SCENARIOS: Scenario[] = [
     pinsHeader: true,
     headerClass: 'image-text-route',
     systemPromptSource: 'text-turn',
-    toolSchemasSource: 'read-image',
+    toolSchemasSource: 'text-turn',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
   },
   // Authored keyless replay of wide-image admission: the 2001x1 fixture sits

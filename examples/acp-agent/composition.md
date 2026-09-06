@@ -83,6 +83,8 @@ flowchart LR
   cfg --> plugin_acp_tool_todo
   plugin_acp_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_acp_repeat_tool_reminder
+  plugin_acp_delivery_quality_policy["delivery-quality-policy<br/>@deepseek-ai/dsh-delivery-quality-policy"]
+  cfg --> plugin_acp_delivery_quality_policy
   plugin_acp_fs_sandbox["fs-sandbox<br/>@deepseek-ai/dsh-fs-sandbox"]
   cfg --> plugin_acp_fs_sandbox
   plugin_acp_fs_observation_policy["fs-observation-policy<br/>@deepseek-ai/dsh-fs-observation-policy"]
@@ -97,8 +99,8 @@ flowchart LR
   cfg --> plugin_acp_tool_skill
   plugin_acp_web["web<br/>@deepseek-ai/dsh-web"]
   cfg --> plugin_acp_web
-  plugin_acp_web_search_deepseek["web-search-deepseek<br/>@deepseek-ai/dsh-web-search-deepseek"]
-  cfg --> plugin_acp_web_search_deepseek
+  plugin_acp_web_search_you["web-search-you<br/>@deepseek-ai/dsh-web-search-you"]
+  cfg --> plugin_acp_web_search_you
   plugin_acp_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_acp_tool_web
   plugin_acp_hooks_claude_code["hooks-claude-code<br/>@deepseek-ai/dsh-hooks-claude-code"]
@@ -143,6 +145,7 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `tool-todo` | `@deepseek-ai/dsh-tool-todo` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
+| `delivery-quality-policy` | `@deepseek-ai/dsh-delivery-quality-policy` |
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `fs-observation-policy` | `@deepseek-ai/dsh-fs-observation-policy` |
 | `tool-fs` | `@deepseek-ai/dsh-tool-fs` |
@@ -150,7 +153,7 @@ flowchart LR
 | `skill-filesystem` | `@deepseek-ai/dsh-skill-filesystem` |
 | `tool-skill` | `@deepseek-ai/dsh-tool-skill` |
 | `web` | `@deepseek-ai/dsh-web` |
-| `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
+| `web-search-you` | `@deepseek-ai/dsh-web-search-you` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `hooks-claude-code` | `@deepseek-ai/dsh-hooks-claude-code` |
 | `hooks-codex` | `@deepseek-ai/dsh-hooks-codex` |

@@ -14,7 +14,7 @@ Desktop 主进程只暴露 Skill 导入／删除、附件暂存和产物导出�
 
 选中的附件先复制到 Session 产物区，再把不透明 id 交给提示调用。图片通过 Runtime 的本地附件存储成为可持久化的 ACP image block，并以图片输入交给已配置的支持视觉输入的 OpenAI 兼容模型；支持的普通文件转换成 ACP resource link。Desktop 消息适配器把持久化的方括号资源引用文本投影为文件胶囊，并在可见对话中省略本地 URI。Renderer 不会获得文件字节或任意读取权限。选择附件或 Skill 都不会向草稿写入预设任务提示。
 
-每次提示前后，主进程会比较工作区中的受支持普通文件。新建或修改的文件复制到 `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`，并记录在 `manifest.json`。Desktop 适配器把这些副本投影为成功编辑位置，因此现有 deliverables 累加器会在最终回复后展示它们。Desktop 专用控件提供原生“另存为”和 ZIP 导出。
+每次提示前后，主进程会比较工作区中的受支持普通文件。新建或修改的文件复制到 `<workspace>/.dsh/artifacts/<session>/turn-NNNN/`，并记录在 `manifest.json`。Desktop 适配器把这些副本投影为成功编辑位置，因此现有 deliverables 累加器会在最终回复后展示它们。Desktop 专用控件提供原生“另存为”和 ZIP 导出。捕获到的用户产物会交给 [Desktop 应用内浏览器与产物预览](2026-09-04-desktop-in-app-browser-and-artifact-preview.zh.md) 所述的 Desktop 预览能力。
 
 ## 考虑过的替代方案
 
@@ -30,5 +30,5 @@ Desktop 主进程只暴露 Skill 导入／删除、附件暂存和产物导出�
 
 - 新 UI 共用 Skills 注册表、输入菜单、ACP 提示链路和 deliverables 投影，不复制这些系统。
 - Renderer 权限仍是一组固定且由用户操作触发的能力。
-- 附件与捕获产物限于图片以及普通文本、代码、Markdown、HTML、JSON、CSV 系列格式，并限制文件大小和扫描数量。
-- DOCX、XLSX、PDF 与 PPTX 生成仍属于独立能力。
+- 附件仍限于图片以及普通文本、代码、Markdown、HTML、JSON、CSV 系列格式。产物捕获额外识别 PDF、DOCX、XLSX 与 PPTX 输出，并限制文件大小和扫描数量。
+- 二进制办公格式生成仍属于独立能力。

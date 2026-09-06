@@ -8,6 +8,36 @@ body,
   margin: 0;
 }
 
+#root {
+  transition: padding-right var(--ds-transition-duration-slow, 240ms) var(--ds-ease-in-out, ease);
+}
+
+body[data-desktop-preview-open] #root {
+  padding-right: var(--dsh-desktop-preview-width, min(42vw, 680px));
+}
+
+body[data-desktop-preview-fullscreen] #root {
+  padding-right: 0;
+}
+
+body[data-desktop-preview-resizing],
+body[data-desktop-preview-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@media (max-width: 900px) {
+  body[data-desktop-preview-open] #root {
+    padding-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root {
+    transition: none;
+  }
+}
+
 html {
   color-scheme: light;
   background: #fff;
@@ -19,6 +49,24 @@ body {
   --dsw-specific-sidebar-fill: #f3f3f3;
   --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, .14);
   --dsw-shadow-lv2: 0 4px 18px rgba(0, 0, 0, .08);
+}
+
+body::before {
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 64px;
+  content: '';
+  -webkit-app-region: drag;
+}
+
+/* A submitted Desktop turn may keep streaming while the composer accepts the
+   next draft. Keep that turn state out of the editable surface; transcript
+   and tool cards already show the live work above it. */
+[data-composer-activity] {
+  display: none;
 }
 
 button svg {

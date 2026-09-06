@@ -6,7 +6,34 @@ type SyntheticSessionEvent = SessionEvent extends infer Event
   ? Event extends SessionEvent ? Omit<Event, 'seq' | 'time'> : never
   : never
 
-const RESOURCE_LINK = /\n?\[resource_link name=("(?:\\.|[^"\\])*") uri="(?:\\.|[^"\\])*"\]\n?/gu
+const RESOURCE_LINK = /\n?\[resource_link name=("(?:\\.|[^"\\])*") uri="(?:\\.|[^"\\])*"(?: [^\]\n]+)?\]\n?/gu
+
+/** Coalesce adjacent text-like blocks without changing block order. */
+export function appendDesktopMessageBlocks(target: ContentBlock[], blocks: readonly ContentBlock[]): void {
+  for (const block of blocks) {
+    const previous = target.at(-1)
+    if (block.type === 'text' && previous?.type === 'text') previous.text += block.text
+    else if (block.type === 'reasoning' && previous?.type === 'reasoning') previous.text += block.text
+    else target.push({ ...block })
+  }
+}
+
+/**
+ * Accumulate assistant blocks within one model step and reset at a tool boundary.
+ * @param previous - Blocks already projected for the current synthetic step.
+ * @param additions - Newly received ACP message blocks.
+ * @param followsTool - Whether a tool group separates the additions from the previous blocks.
+ * @returns Detached, coalesced blocks for the receiving model step.
+ */
+export function accumulateDesktopAssistantBlocks(
+  previous: readonly ContentBlock[],
+  additions: readonly ContentBlock[],
+  followsTool: boolean,
+): ContentBlock[] {
+  const blocks: ContentBlock[] = followsTool ? [] : previous.map(block => ({ ...block }))
+  appendDesktopMessageBlocks(blocks, additions)
+  return blocks
+}
 
 /**
  * Replace ACP's durable ordinary-file reference with the shared file-chip token.

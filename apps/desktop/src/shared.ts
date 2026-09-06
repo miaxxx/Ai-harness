@@ -1,4 +1,5 @@
 import type { SessionNotification } from '@agentclientprotocol/sdk'
+import type { DesktopPromptPart } from './desktop-prompt.ts'
 
 /** Durable Session metadata safe to expose to the sandboxed Renderer. */
 export interface DesktopSessionSummary {
@@ -46,14 +47,24 @@ export interface DesktopSkillSummary {
   removable: boolean
 }
 
-/** One file staged for the next prompt inside the Session artifact directory. */
+/** One filesystem item prepared for the next Desktop prompt. */
 export interface DesktopAttachment {
   id: string
   name: string
   path: string
   mediaType: string
-  kind: 'image' | 'file'
+  kind: 'image' | 'file' | 'directory'
   size: number
+}
+
+/** Filesystem content observed in one native composer paste. */
+export interface DesktopAttachmentPaste {
+  /** Absolute source paths resolved by Electron from native clipboard files. */
+  paths: readonly string[]
+  /** Whether the clipboard also contains an image with no filesystem path. */
+  imageWithoutPath: boolean
+  /** Selection in the focused composer when the native paste was intercepted. */
+  selection: { readonly start: number; readonly end: number }
 }
 
 /** One ordinary file captured as a durable output of a Session turn. */
@@ -65,8 +76,44 @@ export interface DesktopArtifact {
   size: number
 }
 
+/** Main-process result for one filesystem item requested by the preview panel. */
+export type DesktopPreparedPreview =
+  | { kind: 'directory'; path: string }
+  | {
+    kind: 'file'
+    path: string
+    url: string
+    title: string
+    mediaType: string
+    previewable: boolean
+  }
+
+/** One active destination rendered by the Desktop preview panel. */
+export type DesktopPreviewTarget =
+  | {
+    kind: 'browser'
+    url: string
+    title: string
+    external: string
+    mediaType: string
+  }
+  | {
+    kind: 'external-file'
+    path: string
+    title: string
+    mediaType: string
+  }
+
 /** OpenAI-compatible wire protocol selected for the Desktop primary model. */
 export type DesktopModelProtocol = 'openai-completions' | 'openai-responses'
+
+/** Capabilities verified against the configured Desktop model endpoint. */
+export interface DesktopModelCapabilities {
+  input: ('text' | 'image')[]
+  contextWindow?: number
+  maxOutputTokens?: number
+  verified: boolean
+}
 
 /** Redacted primary-model configuration safe to expose to the Renderer. */
 export interface DesktopModelSettings {
@@ -76,6 +123,7 @@ export interface DesktopModelSettings {
   protocol: DesktopModelProtocol
   apiKeyConfigured: boolean
   computerUseEnabled: boolean
+  capabilities: DesktopModelCapabilities
 }
 
 /** Writable primary-model fields; an empty API key preserves the stored secret. */
@@ -85,6 +133,16 @@ export interface DesktopModelSettingsUpdate {
   protocol: DesktopModelProtocol
   apiKey: string
   computerUseEnabled: boolean
+}
+
+/** Redacted You.com web-search configuration safe to expose to the Renderer. */
+export interface DesktopWebSearchSettings {
+  apiKeyConfigured: boolean
+}
+
+/** Writable You.com key; an empty value preserves the encrypted key already stored. */
+export interface DesktopWebSearchSettingsUpdate {
+  apiKey: string
 }
 
 /** Transport selected for one user-owned MCP server. */
@@ -127,8 +185,8 @@ export interface DesktopBridge {
   createSession(cwd?: string): Promise<string>
   /** Restore one durable Session and replay its presentation updates. */
   loadSession(sessionId: string, cwd?: string): Promise<void>
-  /** Prompt one live Session through ACP. */
-  prompt(sessionId: string, text: string, attachmentIds?: readonly string[]): Promise<DesktopPromptResult>
+  /** Prompt one live Session through ACP with ordered text and attachment parts. */
+  prompt(sessionId: string, prompt: readonly DesktopPromptPart[]): Promise<DesktopPromptResult>
   /** Cancel the current turn for one live Session. */
   cancel(sessionId: string): void
   /** Release one live Session while retaining durable history. */
@@ -141,6 +199,12 @@ export interface DesktopBridge {
   createDirectory(path: string, name: string): Promise<string>
   /** Ask the host OS to open one filesystem path with its default application. */
   openPath(path: string): Promise<void>
+  /** Validate one local path and prepare browser-safe preview metadata. */
+  preparePreview(path: string): Promise<DesktopPreparedPreview>
+  /** Open an HTTP(S) URL in the user's external browser. */
+  openExternal(url: string): Promise<void>
+  /** Observe links from the product Renderer that were routed into the preview panel. */
+  subscribePreviewRequest(listener: (url: string) => void): () => void
   /** List effective bundled, project, and user Skills for a Workspace. */
   listSkills(cwd: string): Promise<DesktopSkillSummary[]>
   /** Import a Skill folder or SKILL.md through the native picker. */
@@ -149,6 +213,12 @@ export interface DesktopBridge {
   removeSkill(name: string): Promise<void>
   /** Pick and stage image or ordinary-file attachments for one Session. */
   pickAttachments(sessionId: string, cwd: string): Promise<DesktopAttachment[]>
+  /** Add filesystem paths or a pathless clipboard image to the pending attachments. */
+  pasteAttachments(sessionId: string, cwd: string, paste: DesktopAttachmentPaste): Promise<DesktopAttachment[]>
+  /** Reference known filesystem paths in the composer without reading the clipboard. */
+  referenceAttachments(sessionId: string, cwd: string, paths: readonly string[]): Promise<DesktopAttachment[]>
+  /** Observe native file/image paste gestures captured before the text composer. */
+  subscribeAttachmentPaste(listener: (paste: DesktopAttachmentPaste) => void): () => void
   /** Remove a staged attachment before submission. */
   removeAttachment(sessionId: string, attachmentId: string): Promise<void>
   /** Copy one captured artifact to a user-selected destination. */
@@ -159,6 +229,10 @@ export interface DesktopBridge {
   modelSettings(): Promise<DesktopModelSettings>
   /** Save the primary model, securely retain its key, and restart the ACP Runtime. */
   saveModelSettings(update: DesktopModelSettingsUpdate): Promise<DesktopModelSettings>
+  /** Read whether a You.com key is configured without exposing its value. */
+  webSearchSettings(): Promise<DesktopWebSearchSettings>
+  /** Save the You.com key in encrypted storage and restart the ACP Runtime. */
+  saveWebSearchSettings(update: DesktopWebSearchSettingsUpdate): Promise<DesktopWebSearchSettings>
   /** List redacted persistent MCP servers. */
   listMcpServers(): Promise<DesktopMcpServerSummary[]>
   /** Save one MCP server and restart the ACP Runtime so its tools become available. */

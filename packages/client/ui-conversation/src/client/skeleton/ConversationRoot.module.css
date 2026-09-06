@@ -259,17 +259,32 @@
   /* Above markdown CodeBlock sticky banners (z-index 6) so the footer never
      paints under a sticking code header while scrolling. */
   z-index: 7;
-  /* Input mask (figma 1205:27463): transcript fades out under a FIXED 36px
-     band at the seat's top (the figma 24% of the resting ~150px composer),
-     solid below — px stops, not %, so a growing draft only widens the solid
-     region and the fade band never stretches. The 0px stop is bg-base at
-     zero alpha (not white, which the figma export hardcodes) so both themes
-     fade from their own base. */
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px,
-    var(--dsw-alias-bg-base) 36px
-  );
+  isolation: isolate;
+}
+
+/* The mask is its own layer rather than the seat background: it must cover
+   the full sticky footprint beside and below the card, while the card and
+   dock remain above it. The fixed feather preserves its visual depth when a
+   growing draft changes the seat height. */
+.root[data-phase='active'] .composerSeat::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 -32px -8px;
+  content: '';
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 0%, transparent) 0px,
+      var(--dsw-alias-bg-base, #fff) 44px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 0%, transparent) 0px,
+      var(--dsw-alias-bg-base, #fff) 36px,
+      var(--dsw-alias-bg-base, #fff) calc(100% - 36px),
+      color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 0%, transparent) 100%
+    );
 }
 
 /* Views may opt into a composer overlay while ConversationRoot retains

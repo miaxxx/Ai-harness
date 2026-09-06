@@ -1,11 +1,13 @@
 ---
 name: computer-use
-description: Use whenever the task requires interacting with a graphical desktop application, browser tab through Computer Use, or native UI state that cannot be completed more reliably through a direct API, shell, filesystem, or structured application tool.
+description: Use only when the requested outcome requires interacting with a graphical desktop application, browser tab, or native UI state. Never use it merely to inspect an attached image, file, or folder; use inline vision, filesystem, read_image, or document tools for attachments.
 ---
 
 # Computer Use
 
 Use Computer Use as a state-based GUI capability, not as a blind macro system. Prefer direct APIs, shell/filesystem operations, or dedicated application tools when they can complete the requested outcome more reliably.
+
+An attachment is model input or a local resource, not desktop state. Inspect inline images directly. Inspect attachment paths with filesystem, `read_image`, or the relevant document tool. Do not load this Skill or call `computer` merely because the user asks what an attachment contains. Escalate only when the user asks to operate an application, browser, or desktop, or when the requested evidence exists only in a live GUI.
 
 Use this priority order unless the task itself requires a lower layer: **connector / purpose-built API / CLI > Accessibility Computer > Visual Computer**. Start with the most structured authoritative interface that can express and verify the requested outcome; do not escalate to pixels merely because Computer Use is available.
 

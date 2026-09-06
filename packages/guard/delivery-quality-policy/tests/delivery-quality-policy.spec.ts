@@ -17,6 +17,7 @@ describe('delivery quality policy', () => {
     const prompt = renderPrompt(assembly)
     expect(prompt).toContain('If the current state already satisfies the request, stop without making unnecessary changes')
     expect(prompt).toContain('For read-only questions or research')
+    expect(prompt).toContain('when the question concerns an attached resource, inspect that resource')
     expect(prompt).toContain('For code or file mutations')
     expect(prompt).toContain('For external or GUI mutations')
     expect(prompt).toContain('For produced or edited artifacts')

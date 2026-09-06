@@ -94,6 +94,8 @@ interface SessionRecord {
   agent: Agent
   dispose: () => Promise<void>
   outputTail: Promise<void>
+  /** Tool names granted for this live ACP task by an allow-always decision. */
+  approvalGrants: Set<string>
   /** Text blocks already delivered as ACP deltas, keyed by agent turn and step. */
   streamedTextBlocks: Map<string, Set<number>>
   inflight: {
@@ -277,16 +279,21 @@ export function apply(ctx: Context, config: AcpConfig): void {
   ctx.on('approval/request', (request, next) => {
     const record = ownedRecord(request.agent)
     if (record === undefined || request.callId === undefined) return next()
+    const grants = record.approvalGrants
+    const supportsTaskGrant = request.toolName === 'computer'
+    if (supportsTaskGrant && grants.has(request.toolName)) return Promise.resolve('allowed-once')
     return conn.requestPermission({
       sessionId: record.agent.session.id,
       toolCall: { toolCallId: request.callId },
       options: [
         { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+        ...supportsTaskGrant ? [{ optionId: 'allow-always', name: 'Allow for this task', kind: 'allow_always' as const }] : [],
         { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
       ],
     }).then(({ outcome }) => {
       if (outcome.outcome === 'cancelled') return 'cancelled'
-      return outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
+      if (supportsTaskGrant && outcome.optionId === 'allow-always') grants.add(request.toolName)
+      return outcome.optionId === 'allow-once' || (supportsTaskGrant && outcome.optionId === 'allow-always') ? 'allowed-once' : 'rejected'
     })
   })
 
@@ -294,6 +301,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
     agent: handle.agent,
     dispose: () => handle.dispose(),
     outputTail: Promise.resolve(),
+    approvalGrants: new Set(),
     streamedTextBlocks: new Map(),
     inflight: undefined,
   })

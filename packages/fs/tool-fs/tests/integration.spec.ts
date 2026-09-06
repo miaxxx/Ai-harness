@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -113,6 +113,31 @@ describe('default deployment (with dsh-fs-observation-policy)', () => {
   })
 
   describe('read', () => {
+    it('lists a directory through the real provider without reading child contents', async () => {
+      await mkdir(join(dir, 'assets', 'images'), { recursive: true })
+      await writeFile(join(dir, 'assets', 'notes.md'), '# Notes\n')
+      await writeFile(join(dir, 'assets', '  (1).png'), 'not decoded')
+      const result = await call('list_directory', { directory_path: join(dir, 'assets') })
+      expect(result.isError).toBe(false)
+      expect(result.value).toMatchObject({
+        path: join(dir, 'assets'),
+        entries: [
+          { name: '  (1).png', path: join(dir, 'assets', '  (1).png'), type: 'file' },
+          { name: 'images', type: 'directory' },
+          { name: 'notes.md', type: 'file' },
+        ],
+        totalEntries: 3,
+      })
+      expect(text(result)).toContain('<type>directory</type>')
+      expect(text(result)).toContain(JSON.stringify({
+        name: '  (1).png',
+        path: join(dir, 'assets', '  (1).png'),
+        type: 'file',
+        size: 11,
+      }))
+      expect(text(result)).not.toContain('# Notes')
+    })
+
     it('returns line-numbered content', async () => {
       await writeFile(join(dir, 'a.txt'), 'alpha\nbeta')
       const result = await call('read', { file_path: 'a.txt' })

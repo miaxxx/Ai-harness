@@ -2,15 +2,15 @@
 
 English | [中文](computer.zh.md)
 
-The computer-control capability is a [capability seam](../../.agents/notes/implemented/feature/2026-08-30-desktop-computer-use.md) with one `ctx.computer` service, interchangeable browser and macOS providers, and the model-facing `computer` tool. The service owns provider selection and a bounded snapshot vocabulary. Providers own how one app or browser tab is inspected and acted on; the tool owns approvals, durable screenshot attachment storage, and presentation.
+The computer-control capability is a [capability seam](../../.agents/notes/implemented/feature/2026-08-30-desktop-computer-use.md) with one `ctx.computer` service, target-aware browser and macOS Providers, and the model-facing `computer` tool. The service routes each native-application, browser-tab, or Desktop target to a capable Provider. Providers own bounded observations and fixed input actions; the tool owns approvals, short-lived per-Agent observation state, durable screenshot attachment storage, and presentation.
 
 Source: [`packages/computer/computer/src/types.ts`](../../packages/computer/computer/src/types.ts)
 
-## Snapshot and actions
+## Observations and actions
 
-A snapshot identifies one selected app, carries bounded visible text and at most eighty accessible elements, and may include one attachment-backed screenshot. Element ids are short-lived: the model lists apps, inspects one, acts through an approval, then inspects again before relying on another id. A provider never receives unstructured model code.
+An observation identifies exactly one target and may contain bounded accessibility state, truthful-scope pixels, or both. Element ids belong only to the latest observation for one Agent and target; the tool rejects invented, expired, and cross-Agent ids, invalidates them before dispatching an approved action, and returns fresh Provider state after success. A Provider never receives unstructured model code.
 
-`dsh-computer-browser-cdp` operates a browser already exposing a local Chromium DevTools endpoint; it does not launch a browser. `dsh-computer-macos` sends fixed JXA Accessibility operations and needs macOS Accessibility permission; its screenshots additionally need Screen Recording permission. The Desktop setting selects the capability, while each screenshot or input action retains the session's one-shot approval.
+`dsh-computer-browser-cdp` operates browser-tab targets already exposed by a local Chromium DevTools endpoint; it does not launch a browser. `dsh-computer-macos` operates native applications and the complete Desktop through fixed JXA, Accessibility, Core Graphics, and `screencapture` operations. Native semantic control needs Accessibility permission, while Desktop pixels need Screen Recording permission. The Desktop setting enables the capability. Visual observations and input actions use the approval service; Desktop ACP can retain an explicit `computer` grant until the active task closes.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -24,40 +24,41 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.computer` — `ComputerRuntime`
 
-Registry and execution owner for exactly one configured local computer Provider.
+Registry and deterministic target-aware router. Providers remain stateless across calls.
 
 ```ts cordis-catalog
 /**
- * Register one local computer Provider.
- * @param provider - provider implementation identified by its stable id.
- * @returns disposer that removes the provider.
+ * Register one target-aware Provider for the lifetime of the returned disposer.
+ * @param provider - Provider whose id must be unique in this runtime.
+ * @returns a disposer that removes exactly this Provider registration.
  */
 register(provider: ComputerProvider): () => void
 
 /**
- * List apps exposed by the selected Provider.
- * @param signal - cancellation signal for provider work.
- * @returns visible app identifiers and labels.
+ * List currently visible targets from every usable Provider.
+ * @param kind - Optional target category filter applied to Providers and results.
+ * @param signal - Optional cancellation signal forwarded to every selected Provider.
+ * @returns the combined current target list.
  */
-listApps(signal?: AbortSignal): Promise<readonly ComputerApp[]>
+async listTargets(kind?: ComputerTargetKind, signal?: AbortSignal): Promise<readonly ComputerTarget[]>
 
 /**
- * Inspect one selected app.
- * @param app - Provider app id returned by {@link listApps}.
- * @param includeScreenshot - whether the snapshot includes pixels.
- * @param signal - cancellation signal for provider work.
- * @returns a bounded current app snapshot.
+ * Observe a named target directly; discovery is not a prerequisite.
+ * @param target - Exact target to route by category.
+ * @param mode - Requested semantic, visual, or combined state.
+ * @param signal - Optional cancellation signal forwarded to the selected Provider.
+ * @returns fresh bounded state for the target.
  */
-inspect(app: string, includeScreenshot: boolean, signal?: AbortSignal): Promise<ComputerSnapshot>
+observe(target: ComputerTarget, mode: ComputerObservationMode = 'accessibility', signal?: AbortSignal): Promise<ComputerObservation>
 
 /**
- * Perform one bounded app action through the selected Provider.
- * @param app - Provider app id returned by {@link listApps}.
- * @param action - fixed input operation to perform.
- * @param signal - cancellation signal for provider work.
- * @returns the app snapshot after the action.
+ * Perform one bounded action through the target's Provider.
+ * @param target - Exact target to route by category.
+ * @param action - Input operation to perform.
+ * @param signal - Optional cancellation signal forwarded to the selected Provider.
+ * @returns fresh Provider-produced state after the action settles.
  */
-act(app: string, action: ComputerAction, signal?: AbortSignal): Promise<ComputerSnapshot>
+perform(target: ComputerTarget, action: ComputerAction, signal?: AbortSignal): Promise<ComputerObservation>
 ```
 
 Source: [`packages/computer/computer/src/index.ts`](../../packages/computer/computer/src/index.ts)

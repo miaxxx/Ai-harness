@@ -17,6 +17,7 @@ Desktop 会话可以使用文件系统、Shell 和 Web 搜索工具，但在任�
 - `dsh-computer-macos` 对选中的应用使用固定 JXA 辅助功能操作，绝不把模型文本解释为 JXA。macOS 将辅助功能和屏幕录制权限授予 ACP Runtime 进程，截图捕获与活动轮次共用同一个取消信号。
 - `dsh-tool-computer` 会为每次截图、点击、输入、按键与滚动通过 `ctx.approval` 请求授权。仅文本检查保持只读。截图经过 `ctx.attachments`，因此其模型可见像素是持久化工具结果内容。
 - Desktop 在用户于主模型设置中启用前保持 Computer Use 关闭。本机 DevTools 端点优先于 macOS 可视化控制；每个改变状态的操作仍进入现有 ACP 授权 UI。Renderer 会挂载 `computer` 与其他 ACP 工具共用的通用工具卡片表层，并把提示词失败保留在会话快照中，使被拒绝的请求保持可见。
+- 本地附件不是 Computer Use 目标。Desktop persona、Skill 摘要和 `computer` schema 会让内联图片使用模型视觉，让带路径的图片、文件或文件夹使用文件系统、`read_image` 或文档工具。只有请求需要实时应用、浏览器或桌面状态时才使用 Computer Use。
 
 ## 考虑过的替代方案
 

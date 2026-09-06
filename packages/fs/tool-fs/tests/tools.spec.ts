@@ -37,6 +37,7 @@ const testToolSignal = new AbortController().signal
 /** An in-memory fake provider; a test can arm a rejection on any primitive. */
 class FakeFs extends FileSystem {
   files = new Map<string, string>()
+  directories = new Map<string, FsDirEntry[]>()
   rejectWith?: FsError
   writeIntents: (FsWriteIntent | undefined)[] = []
   editIntents: ({ version: FsVersion } | undefined)[] = []
@@ -55,6 +56,7 @@ class FakeFs extends FileSystem {
   }
   override async stat(target: FsTarget): Promise<FsInfo | undefined> {
     this.throwIfArmed()
+    if (this.directories.has(target.targetKey)) return { version: FsVersion('v1'), type: 'directory' }
     const content = this.files.get(target.targetKey)
     if (content === undefined) return undefined
     return { version: FsVersion('v1'), type: 'file', size: content.length }
@@ -78,8 +80,9 @@ class FakeFs extends FileSystem {
     }
     return bytes
   }
-  override async listDir(_target: FsTarget): Promise<FsDirEntry[]> {
-    return []
+  override async listDir(target: FsTarget): Promise<FsDirEntry[]> {
+    this.throwIfArmed()
+    return this.directories.get(target.targetKey) ?? []
   }
   override async writeText(target: FsTarget, content: string, expected?: FsWriteIntent): Promise<FsWriteOutcome> {
     this.throwIfArmed()
@@ -151,14 +154,16 @@ describe('session cwd resolution', () => {
 })
 
 describe('registration', () => {
-  it('registers read, write, and edit', async () => {
+  it('registers directory listing, read, write, and edit', async () => {
     const { ctx } = await setup()
-    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['edit', 'read', 'write'])
+    expect(ctx.tools.schemas().map(s => s.name).sort()).toEqual(['edit', 'list_directory', 'read', 'write'])
   })
 
   it('declares read parallel-safe while write/edit remain exclusive', async () => {
     const { ctx } = await setup()
     expect(ctx.tools.executionMode({ signal: testToolSignal, callId: CallId('read-safe'), name: 'read', arguments: { file_path: 'a.txt' } }))
+      .toEqual({ kind: 'parallel' })
+    expect(ctx.tools.executionMode({ signal: testToolSignal, callId: CallId('list-safe'), name: 'list_directory', arguments: { directory_path: '.' } }))
       .toEqual({ kind: 'parallel' })
     expect(ctx.tools.executionMode({ signal: testToolSignal, callId: CallId('write-exclusive'), name: 'write', arguments: { file_path: 'a.txt', content: 'x' } }))
       .toEqual({ kind: 'exclusive' })
@@ -170,6 +175,7 @@ describe('registration', () => {
     const { ctx } = await setup()
     const prompt = renderPrompt(await ctx.systemPrompt.assemble())
     expect(prompt).toContain('Use the read tool')
+    expect(prompt).toContain('use list_directory for a directory')
     expect(prompt).toContain('Use the write tool')
     expect(prompt).toContain('Use the edit tool')
   })
@@ -191,13 +197,51 @@ describe('registration', () => {
     const fiber = await ctx.plugin(ToolFs)
     // Each tool contributes BOTH a schema and a prompt section; disposal must
     // withdraw both, not just the schemas.
-    expect(ctx.tools.schemas()).toHaveLength(3)
+    expect(ctx.tools.schemas()).toHaveLength(4)
     const sectionNames = (a: { sections: { name: string }[] }) => a.sections.map(s => s.name).sort()
-    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:edit', 'tool:read', 'tool:write'])
+    expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity', 'tool:attached-resources', 'tool:edit', 'tool:read', 'tool:write'])
     await fiber.dispose()
     expect(ctx.tools.schemas()).toHaveLength(0)
     // Only the system-prompt plugin's own built-in sections remain.
     expect(sectionNames(await ctx.systemPrompt.assemble())).toEqual(['deployment:persona', 'harness:identity'])
+  })
+})
+
+describe('list_directory tool', () => {
+  it('returns one bounded page of direct children', async () => {
+    const { ctx, fs } = await setup()
+    fs.directories.set('key:assets', [
+      { name: 'images', type: 'directory', target: { targetKey: FsTargetKey('key:assets/images'), displayPath: '/abs/assets/images' } },
+      { name: 'readme.md', type: 'file', size: 12, target: { targetKey: FsTargetKey('key:assets/readme.md'), displayPath: '/abs/assets/readme.md' } },
+      { name: 'video.mov', type: 'file', size: 400, target: { targetKey: FsTargetKey('key:assets/video.mov'), displayPath: '/abs/assets/video.mov' } },
+    ])
+
+    const result = await call(ctx, 'list_directory', { directory_path: 'assets', offset: 2, limit: 1 })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected directory-list success')
+    expect(result.value).toEqual({
+      path: '/abs/assets',
+      offset: 2,
+      entries: [{ name: 'readme.md', path: '/abs/assets/readme.md', type: 'file', size: 12 }],
+      totalEntries: 3,
+    })
+    expect(text(result)).toContain('<type>directory</type>')
+    expect(text(result)).toContain('{"name":"readme.md","path":"/abs/assets/readme.md","type":"file","size":12}')
+    expect(ctx.tools.get('list_directory')?.presentCall?.({ directory_path: 'assets' })).toEqual({
+      card: 'generic',
+      title: 'List assets',
+      kind: 'read',
+      locations: [{ path: 'assets' }],
+    })
+  })
+
+  it('rejects a regular file and invalid pagination', async () => {
+    const { ctx, fs } = await setup()
+    fs.files.set('key:file.txt', 'content')
+    await expect(call(ctx, 'list_directory', { directory_path: 'file.txt' }))
+      .resolves.toMatchObject({ isError: true, error: { info: { code: 'FS_NOT_DIRECTORY' } } })
+    await expect(call(ctx, 'list_directory', { directory_path: '.', offset: 0 }))
+      .resolves.toMatchObject({ isError: true })
   })
 })
 

@@ -27,7 +27,9 @@ const limits = {
   settleMs: boundedInt('DSH_COMPUTER_SETTLE_MS', 120, 0, 2000),
 }
 
-function run(file: string, args: readonly string[], options: { signal?: AbortSignal; maxBuffer?: number } = {}): Promise<{ stdout: string }> {
+function run(
+  file: string, args: readonly string[], options: { signal?: AbortSignal; maxBuffer?: number } = {},
+): Promise<{ stdout: string }> {
   return new Promise((resolve, reject) => {
     execFile(file, args, options, (error, stdout) => {
       if (error !== null) reject(new Error(error.message, { cause: error }))
@@ -55,7 +57,16 @@ async function settle(signal?: AbortSignal): Promise<void> {
   })
 }
 
-interface JxaElement { id: string; role: string; label: string; value?: string; enabled: boolean; focused: boolean; bounds?: { x: number; y: number; width: number; height: number }; actions: string[] }
+interface JxaElement {
+  id: string
+  role: string
+  label: string
+  value?: string
+  enabled: boolean
+  focused: boolean
+  bounds?: { x: number; y: number; width: number; height: number }
+  actions: string[]
+}
 interface JxaSnapshot { name: string; title?: string; text: string; elements: JxaElement[]; partial: boolean }
 interface JxaApp { id: string; name: string }
 function jxa<T>(script: string, signal?: AbortSignal): Promise<T> {
@@ -64,7 +75,7 @@ function jxa<T>(script: string, signal?: AbortSignal): Promise<T> {
 }
 const appsScript = [
   "const e=Application('System Events'); ",
-  "JSON.stringify(e.applicationProcesses.whose({backgroundOnly:false})().filter(p=>p.visible()).map(p=>({id:p.name(),name:p.name()})))",
+  'JSON.stringify(e.applicationProcesses.whose({backgroundOnly:false})().filter(p=>p.visible()).map(p=>({id:p.name(),name:p.name()})))',
 ].join('')
 function traversal(app: string, observationId: string): string {
   return `const p=Application('System Events').applicationProcesses.byName(${JSON.stringify(app)}); if(!p.exists())throw new Error('Target not found'); const w=p.windows()[0]; if(!w)throw new Error('Window unavailable'); const maxDepth=${limits.maxDepth},maxNodes=${limits.maxNodes},maxText=${limits.maxTextLength}; const nodes=[]; let partial=false; const safe=(f,d)=>{try{return f()}catch{return d}}; const clean=v=>String(v??'').slice(0,512); function visit(x,d){if(nodes.length>=maxNodes){partial=true;return} nodes.push(x); if(d>=maxDepth)return; const children=safe(()=>x.UIElements(),[]); for(const c of children){if(nodes.length>=maxNodes){partial=true;break} visit(c,d+1)}} visit(w,0); const elements=nodes.map((x,i)=>{const pos=safe(()=>x.position(),null),size=safe(()=>x.size(),null); return {id:${JSON.stringify(observationId)}+':'+i,role:clean(safe(()=>x.role(),'')),label:clean(safe(()=>x.name()||x.description(),'')),value:clean(safe(()=>x.value(),'')),enabled:Boolean(safe(()=>x.enabled(),true)),focused:Boolean(safe(()=>x.focused(),false)),bounds:pos&&size?{x:Number(pos[0]),y:Number(pos[1]),width:Number(size[0]),height:Number(size[1])}:undefined,actions:safe(()=>x.actions().map(a=>clean(a.name())),[])}}); const text=elements.map(x=>[x.label,x.value].filter(Boolean).join(': ')).filter(Boolean).join('\\n').slice(0,maxText); JSON.stringify({name:p.name(),title:safe(()=>w.name(),undefined),text,elements,partial})`
@@ -80,10 +91,10 @@ function modifierNames(modifiers: readonly string[]): string {
   return JSON.stringify(names)
 }
 function coreGraphics(): string {
-  return `ObjC.import('Cocoa'); const nil=$(); const post=(type,x,y,button)=>{const e=$.CGEventCreateMouseEvent(nil,type,{x,y},button); $.CGEventPost($.kCGHIDEventTap,e); $.CFRelease(e)}; const mouseClick=(x,y,right,count)=>{const down=right?$.kCGEventRightMouseDown:$.kCGEventLeftMouseDown,up=right?$.kCGEventRightMouseUp:$.kCGEventLeftMouseUp,button=right?$.kCGMouseButtonRight:$.kCGMouseButtonLeft; for(let i=0;i<count;i++){post(down,x,y,button);post(up,x,y,button)}}; `
+  return 'ObjC.import(\'Cocoa\'); const nil=$(); const post=(type,x,y,button)=>{const e=$.CGEventCreateMouseEvent(nil,type,{x,y},button); $.CGEventPost($.kCGHIDEventTap,e); $.CFRelease(e)}; const mouseClick=(x,y,right,count)=>{const down=right?$.kCGEventRightMouseDown:$.kCGEventLeftMouseDown,up=right?$.kCGEventRightMouseUp:$.kCGEventLeftMouseUp,button=right?$.kCGMouseButtonRight:$.kCGMouseButtonLeft; for(let i=0;i<count;i++){post(down,x,y,button);post(up,x,y,button)}}; '
 }
 function actionScript(app: string | undefined, action: ComputerAction): string {
-  const process = app === undefined ? "const p=Application('System Events').applicationProcesses.whose({frontmost:true})()[0]; if(!p)throw new Error('Target not found'); " : `const p=Application('System Events').applicationProcesses.byName(${JSON.stringify(app)}); if(!p.exists())throw new Error('Target not found'); p.frontmost=true; `
+  const process = app === undefined ? '' : `const p=Application('System Events').applicationProcesses.byName(${JSON.stringify(app)}); if(!p.exists())throw new Error('Target not found'); p.frontmost=true; `
   const nodes = `const w=p.windows()[0]; if(!w)throw new Error('Window unavailable'); const nodes=[]; function visit(x,d){if(nodes.length>=${limits.maxNodes})return; nodes.push(x); if(d>=${limits.maxDepth})return; let children=[];try{children=x.UIElements()}catch{}; for(const c of children)visit(c,d+1)} visit(w,0); `
   if (action.kind === 'click') {
     if (action.point !== undefined) return process + coreGraphics() + `mouseClick(${action.point.x},${action.point.y},${action.button === 'right'},${action.count}); JSON.stringify({ok:true})`
@@ -96,21 +107,25 @@ function actionScript(app: string | undefined, action: ComputerAction): string {
   if (action.kind === 'scroll' && action.elementId === undefined) {
     const dx = action.direction === 'left' ? -action.amount : action.direction === 'right' ? action.amount : 0
     const dy = action.direction === 'up' ? action.amount : action.direction === 'down' ? -action.amount : 0
-    return process + `ObjC.import('Cocoa');const e=$.CGEventCreateScrollWheelEvent($(),$.kCGScrollEventUnitPixel,2,${dy},${dx});$.CGEventPost($.kCGHIDEventTap,e);$.CFRelease(e);JSON.stringify({ok:true})`
+    const location = action.point === undefined ? '' : `$.CGEventSetLocation(e,{x:${action.point.x},y:${action.point.y}});`
+    return process + `ObjC.import('Cocoa');const e=$.CGEventCreateScrollWheelEvent($(),$.kCGScrollEventUnitPixel,2,${dy},${dx});${location}$.CGEventPost($.kCGHIDEventTap,e);$.CFRelease(e);JSON.stringify({ok:true})`
   }
-  const index = elementIndex('elementId' in action && action.elementId !== undefined ? action.elementId : '')
+  const index = elementIndex(action.elementId ?? '')
   if (action.kind === 'set_value') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');x.value=${JSON.stringify(action.value)};JSON.stringify({ok:true})`
   if (action.kind === 'type_text') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');x.focused=true;Application('System Events').keystroke(${JSON.stringify(action.text)});JSON.stringify({ok:true})`
   if (action.kind === 'paste') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');x.focused=true;const host=Application.currentApplication();host.includeStandardAdditions=true;const old=host.theClipboard();try{host.setTheClipboardTo(${JSON.stringify(action.text)});Application('System Events').keystroke('v',{using:'command down'})}finally{host.setTheClipboardTo(old)};JSON.stringify({ok:true})`
-  if (action.kind === 'scroll') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');const a=x.actions.byName(${JSON.stringify(`AXScroll${action.direction[0]!.toUpperCase()}${action.direction.slice(1)}`)});if(!a.exists())throw new Error('Action unsupported');for(let i=0;i<Math.max(1,Math.round(${action.amount}/100));i++)a.perform();JSON.stringify({ok:true})`
-  if (action.kind === 'secondary_action') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');const a=x.actions.byName('AXShowMenu');if(!a.exists())throw new Error('Action unsupported');a.perform();JSON.stringify({ok:true})`
-  throw computerError('ACTION_UNSUPPORTED', `Unsupported macOS action ${(action as { kind: string }).kind}.`)
+  if (action.kind === 'scroll') return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');const a=x.actions.byName(${JSON.stringify(`AXScroll${action.direction.charAt(0).toUpperCase()}${action.direction.slice(1)}`)});if(!a.exists())throw new Error('Action unsupported');for(let i=0;i<Math.max(1,Math.round(${action.amount}/100));i++)a.perform();JSON.stringify({ok:true})`
+  return process + nodes + `const x=nodes[${index}];if(!x)throw new Error('Element expired');const a=x.actions.byName('AXShowMenu');if(!a.exists())throw new Error('Action unsupported');a.perform();JSON.stringify({ok:true})`
 }
 async function screenshotDesktop(signal?: AbortSignal): Promise<Uint8Array> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-computer-'))
   const path = join(directory, 'desktop.png')
   try {
-    await run('/usr/sbin/screencapture', ['-x', '-t', 'png', path], signal === undefined ? {} : { signal }).catch(error => { throw computerError('CAPTURE_FAILED', 'Desktop capture failed.', error) })
+    await run('/usr/sbin/screencapture', ['-x', '-t', 'png', path], signal === undefined ? {} : { signal }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/not authorized|permission|screen recording/i.test(message)) throw computerError('COMPUTER_PERMISSION_REQUIRED', 'Desktop capture requires Screen Recording permission.', error)
+      throw computerError('CAPTURE_FAILED', 'Desktop capture failed.', error)
+    })
     return new Uint8Array(await readFile(path))
   } finally { await rm(directory, { recursive: true, force: true }) }
 }
@@ -126,7 +141,10 @@ async function observe(target: ComputerTarget, mode: ComputerObservationMode, si
   if (mode !== 'accessibility') throw computerError('WINDOW_UNAVAILABLE', 'Window-scoped macOS capture is unavailable; refusing to mislabel a full-screen capture as an app window.')
   const value = await jxa<JxaSnapshot>(traversal(target.id, id), signal)
   const elements: ComputerElement[] = value.elements.map(element => ({ ...element }))
-  return { id, target: appTarget(value.name), ...(value.title === undefined ? {} : { title: value.title }), accessibility: { text: value.text, elements, ...(value.partial ? { partial: true } : {}) } }
+  return {
+    id, target: appTarget(value.name), ...(value.title === undefined ? {} : { title: value.title }),
+    accessibility: { text: value.text, elements, ...(value.partial ? { partial: true } : {}) },
+  }
 }
 
 /** Register target-aware macOS control. */
@@ -142,7 +160,7 @@ export function apply(ctx: Context): void {
       if (target.kind === 'browser-tab') throw computerError('ACTION_UNSUPPORTED', 'The macOS provider does not support browser-tab targets.')
       await jxa<{ ok: true }>(actionScript(target.kind === 'app' ? target.id : undefined, action), signal)
       await settle(signal)
-      return observe(target, 'accessibility', signal)
+      return observe(target, target.kind === 'desktop' ? 'visual' : 'accessibility', signal)
     },
   }
   ctx.computer.register(provider)

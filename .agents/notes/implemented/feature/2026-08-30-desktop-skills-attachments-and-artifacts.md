@@ -14,7 +14,7 @@ The Desktop main process exposes narrow operations for Skill import and removal,
 
 Selected attachments are copied into the Session artifact area before their opaque ids reach the prompt call. Images become durable ACP image blocks through the Runtime's local attachment store and reach the configured vision-capable OpenAI-compatible model as image input; ordinary supported files become ACP resource links. The Desktop message adapter projects the durable bracketed resource-link text as a file capsule and omits its local URI from the visible transcript. The Renderer never receives file bytes or arbitrary read access. Selecting either an attachment or a Skill never writes a canned task prompt into the draft.
 
-For each prompt, the main process compares supported ordinary files in the Workspace before and after the turn. Created or changed files are copied to `<workspace>/.dsh/artifacts/<session>/turn-NNNN/` and recorded in `manifest.json`. The Desktop adapter projects those copies as successful edit locations, so the existing deliverables accumulator places them after the closing response. Desktop-only controls add native Save As and ZIP export.
+For each prompt, the main process compares supported ordinary files in the Workspace before and after the turn. Created or changed files are copied to `<workspace>/.dsh/artifacts/<session>/turn-NNNN/` and recorded in `manifest.json`. The Desktop adapter projects those copies as successful edit locations, so the existing deliverables accumulator places them after the closing response. Desktop-only controls add native Save As and ZIP export. Captured user-facing artifacts feed the Desktop preview capability described in [Desktop in-app browser and artifact preview](2026-09-04-desktop-in-app-browser-and-artifact-preview.md).
 
 ## Alternatives considered
 
@@ -30,5 +30,5 @@ Focused tests exercise Skill source precedence and removal, ordinary attachment 
 
 - The new UI shares the Skills registry, input menu, ACP prompt path, and deliverables projection instead of duplicating them.
 - Renderer authority remains a fixed set of user-mediated operations.
-- Attachment and captured artifact files are limited to images and ordinary text/code/Markdown/HTML/JSON/CSV-family formats, with bounded file size and scan count.
-- DOCX, XLSX, PDF, and PPTX generation remains a separate capability.
+- Attachments remain limited to images and ordinary text/code/Markdown/HTML/JSON/CSV-family formats. Artifact capture additionally recognizes PDF, DOCX, XLSX, and PPTX outputs, with bounded file size and scan count.
+- Binary office-format generation remains a separate capability.

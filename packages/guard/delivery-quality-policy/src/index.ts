@@ -22,7 +22,7 @@ export const DELIVERY_QUALITY_ORDER = 120
 export const DELIVERY_QUALITY_PROMPT = `Before claiming a task complete, compare the authoritative current state with the user's requested outcome and applicable project instructions. If the current state already satisfies the request, stop without making unnecessary changes. Continue only while fresh evidence shows the outcome remains unsatisfied.
 
 Use evidence proportional to the work performed:
-- For read-only questions or research, a relevant answer grounded in the authoritative information or requested sources is completion evidence; do not mutate state merely to manufacture verification.
+- For read-only questions or research, a relevant answer grounded in the authoritative information or requested sources is completion evidence; when the question concerns an attached resource, inspect that resource with the applicable read or listing tool before answering instead of inferring from its name. Do not mutate state merely to manufacture verification.
 - For code or file mutations, inspect the final changed files or diff and run the relevant tests, typecheck, build, or other deterministic checks that can establish the requested behavior.
 - For external or GUI mutations, require a fresh post-action observation of the external state showing the requested change. A successful action call by itself is not evidence that the external outcome occurred.
 - For produced or edited artifacts, final acceptance is mandatory. When the session skill catalog provides \`delivery-verification\`, load and follow it for the applicable type-specific checks. Render, open, recalculate, or otherwise inspect the final artifact when that is the authoritative verification path.

@@ -15,8 +15,28 @@ const IMAGE_MEDIA_TYPES: readonly ImageMediaType[] = [
   'image/gif',
 ]
 
-/** Canonical RFC 4648 base64, excluding whitespace and URL-safe aliases. */
-const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+/** Check the RFC 4648 alphabet without a regexp stack proportional to image size. */
+function hasCanonicalBase64Alphabet(value: string): boolean {
+  if (value.length % 4 !== 0) return false
+  let contentLength = value.length
+  if (value.endsWith('=')) contentLength -= 1
+  if (contentLength > 0 && value[contentLength - 1] === '=') contentLength -= 1
+  for (let index = 0; index < contentLength; index += 1) {
+    const code = value.charCodeAt(index)
+    if (
+      (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122)
+      || (code >= 48 && code <= 57)
+      || code === 43
+      || code === 47
+    ) continue
+    return false
+  }
+  for (let index = contentLength; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 61) return false
+  }
+  return value.length - contentLength <= 2
+}
 
 /** Content-admission failure category used by the protocol handler. */
 export type AcpContentFailureKind = 'invalid' | 'internal'
@@ -49,7 +69,7 @@ function decodeImage(block: Extract<AcpContentBlock, { type: 'image' }>): SaveIm
   if (mediaType === undefined) {
     throw new AcpContentError('image mimeType must be image/png, image/jpeg, image/webp, or image/gif', 'invalid')
   }
-  if (!CANONICAL_BASE64.test(block.data)) {
+  if (!hasCanonicalBase64Alphabet(block.data)) {
     throw new AcpContentError('image data must be canonical base64', 'invalid')
   }
   const data = Buffer.from(block.data, 'base64')
@@ -106,7 +126,13 @@ export async function supportsAcpImagePrompts(
 
 /** Render one baseline resource link into the core's current text vocabulary. */
 function resourceLinkText(block: Extract<AcpContentBlock, { type: 'resource_link' }>): string {
-  return `\n[resource_link name=${JSON.stringify(block.name)} uri=${JSON.stringify(block.uri)}]\n`
+  const attributes = [
+    `name=${JSON.stringify(block.name)}`,
+    `uri=${JSON.stringify(block.uri)}`,
+    ...(block.mimeType === undefined ? [] : [`mime_type=${JSON.stringify(block.mimeType)}`]),
+    ...(block.size === undefined ? [] : [`size=${block.size}`]),
+  ]
+  return `\n[resource_link ${attributes.join(' ')}]\n`
 }
 
 /**

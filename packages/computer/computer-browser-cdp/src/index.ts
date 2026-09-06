@@ -10,7 +10,13 @@ const endpoint = process.env.DSH_BROWSER_CDP_URL
 export const name = 'computer-browser-cdp'
 export const inject = ['computer']
 
-interface Target { readonly id: string; readonly title: string; readonly url: string; readonly type: string; readonly webSocketDebuggerUrl?: string }
+interface Target {
+  readonly id: string
+  readonly title: string
+  readonly url: string
+  readonly type: string
+  readonly webSocketDebuggerUrl?: string
+}
 interface ConnectedTarget extends Target { readonly webSocketDebuggerUrl: string }
 interface CdpResponse { readonly id?: number; readonly result?: Record<string, unknown>; readonly error?: { readonly message: string } }
 interface CdpConnection { send(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>; close(): void }
@@ -41,9 +47,9 @@ async function connect(target: ConnectedTarget, signal?: AbortSignal): Promise<C
   let abortHandshake: (() => void) | undefined
   try {
     await new Promise<void>((resolve, reject) => {
-      abortHandshake = () => reject(signal?.reason instanceof Error ? signal.reason : new Error('Browser inspection cancelled.'))
-      socket.addEventListener('open', () => resolve(), { once: true })
-      socket.addEventListener('error', () => reject(new Error('Browser DevTools connection failed.')), { once: true })
+      abortHandshake = () =>{  reject(signal?.reason instanceof Error ? signal.reason : new Error('Browser inspection cancelled.')) }
+      socket.addEventListener('open', () =>{  resolve() }, { once: true })
+      socket.addEventListener('error', () =>{  reject(new Error('Browser DevTools connection failed.')) }, { once: true })
       signal?.addEventListener('abort', abortHandshake, { once: true })
     })
   } catch (error) {
@@ -55,9 +61,9 @@ async function connect(target: ConnectedTarget, signal?: AbortSignal): Promise<C
   const fail = (error: Error) => { for (const call of pending.values()) call.reject(error); pending.clear() }
   const abort = () => { fail(signal?.reason instanceof Error ? signal.reason : new Error('Browser inspection cancelled.')); socket.close() }
   signal?.addEventListener('abort', abort, { once: true })
-  socket.addEventListener('error', () => fail(new Error('Browser DevTools connection failed.')))
-  socket.addEventListener('close', () => fail(new Error('Browser DevTools connection closed.')))
-  socket.addEventListener('message', event => {
+  socket.addEventListener('error', () =>{  fail(new Error('Browser DevTools connection failed.')) })
+  socket.addEventListener('close', () =>{  fail(new Error('Browser DevTools connection closed.')) })
+  socket.addEventListener('message', (event) => {
     const response = JSON.parse(String(event.data)) as CdpResponse
     if (response.id === undefined) return
     const call = pending.get(response.id)
@@ -70,7 +76,10 @@ async function connect(target: ConnectedTarget, signal?: AbortSignal): Promise<C
     send(method, params = {}) {
       signal?.throwIfAborted()
       const id = nextId++
-      return new Promise<Record<string, unknown>>((resolve, reject) => { pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })) })
+      return new Promise<Record<string, unknown>>((resolve, reject) => {
+        pending.set(id, { resolve, reject })
+        socket.send(JSON.stringify({ id, method, params }))
+      })
     },
     close() { signal?.removeEventListener('abort', abort); fail(new Error('Browser DevTools connection closed.')); socket.close() },
   }
@@ -104,7 +113,10 @@ async function snapshot(target: Target, connection: CdpConnection, mode: Compute
       visual = { image: { data: Uint8Array.from(Buffer.from(encoded, 'base64')), mediaType: 'image/png', name: 'browser-tab.png' }, scope: 'browser-tab' }
     } catch (error) { throw computerError('CAPTURE_FAILED', 'Browser tab capture failed.', error) }
   }
-  return { id, target: computerTarget(target), title: target.title, ...(accessibility === undefined ? {} : { accessibility }), ...(visual === undefined ? {} : { visual }) }
+  return {
+    id, target: computerTarget(target), title: target.title,
+    ...(accessibility === undefined ? {} : { accessibility }), ...(visual === undefined ? {} : { visual }),
+  }
 }
 function modifiers(values: readonly string[]): number { return values.reduce((sum, value) => sum | (value === 'alt' ? 1 : value === 'control' ? 2 : value === 'meta' ? 4 : 8), 0) }
 async function performAction(connection: CdpConnection, action: ComputerAction): Promise<void> {
@@ -131,7 +143,7 @@ async function performAction(connection: CdpConnection, action: ComputerAction):
   const selected = chosenElement(elementIndex(id))
   const head = `(()=>{const element=${selected};if(!element)throw new Error('Element expired');element.scrollIntoView({block:'center'});`
   if (action.kind === 'click') {
-    const body = action.button === 'right' ? `element.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2}))` : `for(let i=0;i<${action.count};i++)element.click()`
+    const body = action.button === 'right' ? 'element.dispatchEvent(new MouseEvent(\'contextmenu\',{bubbles:true,button:2}))' : `for(let i=0;i<${action.count};i++)element.click()`
     await evaluate(connection, `${head}${body}})()`); return
   }
   if (action.kind === 'set_value') {
@@ -147,8 +159,7 @@ async function performAction(connection: CdpConnection, action: ComputerAction):
     const dy = action.direction === 'up' ? -action.amount : action.direction === 'down' ? action.amount : 0
     await evaluate(connection, `${head}(element.scrollHeight>element.clientHeight||element.scrollWidth>element.clientWidth?element:window).scrollBy({left:${dx},top:${dy},behavior:'instant'})})()`); return
   }
-  if (action.kind === 'secondary_action') { await evaluate(connection, `${head}element.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2}))})()`); return }
-  throw computerError('ACTION_UNSUPPORTED', `Unsupported browser action ${(action as { kind: string }).kind}.`)
+  await evaluate(connection, `${head}element.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,button:2}))})()`)
 }
 
 export function apply(ctx: Context): void {

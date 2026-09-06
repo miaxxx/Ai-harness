@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-03-desktop-window-drag-and-path-paste.md
+2026-09-03-desktop-window-drag-and-path-paste.md: f2c29e43e418dcbaf32acd4d4e3afc1ab57d031c
+2026-09-03-desktop-window-drag-and-path-paste.zh.md: 130c6f01189dbb96e9855d2e5336b1b9c2262266

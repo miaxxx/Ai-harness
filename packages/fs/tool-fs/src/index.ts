@@ -1,5 +1,5 @@
 /**
- * Model-facing read, read_image, write, and edit tools over `ctx.fs`. This package owns schemas, validation,
+ * Model-facing directory listing, read, read_image, write, and edit tools over `ctx.fs`. This package owns schemas, validation,
  * read windows, formatting, and observation events, never a concrete provider. An optional
  * event policy supplies mutation guards; without one the tools use unconditional provider calls.
  * @module @deepseek-ai/dsh-tool-fs
@@ -14,6 +14,7 @@ import { applyEditTool } from './edit.ts'
 import { applyReadImageTool } from './read-image.ts'
 import { READ_MAX_BYTES, READ_MAX_LINE_LENGTH } from './read-render.ts'
 import { FsSandboxController } from './sandbox.ts'
+import { applyListDirectoryTool, LIST_DIRECTORY_LIMIT } from './list-directory.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'tool-fs'
@@ -23,6 +24,8 @@ export const inject = ['tools', 'fs', 'systemPrompt']
 
 /** Plugin config (all optional — `Config` supplies the defaults). */
 export interface Config {
+  /** Default and maximum number of direct children returned by one directory-list call. */
+  listDirectoryLimit?: number
   /** Default and maximum number of lines returned by one `read` call. */
   readLimit?: number
   /** Maximum characters returned for a single line before truncation. */
@@ -34,6 +37,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  listDirectoryLimit: z.number().default(LIST_DIRECTORY_LIMIT),
   readLimit: z.number().default(READ_LIMIT),
   readMaxLineLength: z.number().default(READ_MAX_LINE_LENGTH),
   readMaxBytes: z.number().default(READ_MAX_BYTES),
@@ -54,10 +58,17 @@ function assertPositiveInteger(name: string, value: number): void {
 export function apply(ctx: Context, config: Config): void {
   // schemastery (Config) has already filled every defaulted field.
   const resolved = config as ResolvedConfig
+  assertPositiveInteger('listDirectoryLimit', resolved.listDirectoryLimit)
   assertPositiveInteger('readLimit', resolved.readLimit)
   assertPositiveInteger('readMaxLineLength', resolved.readMaxLineLength)
   assertPositiveInteger('readMaxBytes', resolved.readMaxBytes)
   assertPositiveInteger('readStreamMinSize', resolved.readStreamMinSize)
+  ctx.effect(() => ctx.systemPrompt.section({
+    name: 'tool:attached-resources',
+    order: 100,
+    text: 'User messages may contain `[resource_link ...]` metadata for an attached local resource. When the user asks what an attached resource contains, inspect that exact path before answering: use list_directory for a directory, read for a text file, or read_image for a supported image. Each list_directory entry includes an authoritative path; pass that path unchanged to follow-up tools instead of joining or normalizing its name. Do not infer contents from a name or URI.',
+  }), 'toolFs.attachedResourcesSection()')
+  applyListDirectoryTool(ctx, resolved.listDirectoryLimit)
   applyReadTool(ctx, {
     limit: resolved.readLimit,
     maxLineLength: resolved.readMaxLineLength,

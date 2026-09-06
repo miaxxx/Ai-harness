@@ -1,6 +1,5 @@
-# Code Mode image overlay: mounts the worker runtime and durable attachment
-# store so a nested read_image result can cross the generic rich-result bridge.
-# The live config selects the shipped vision route for manual use.
+# Code Mode image overlay: the worker runtime carries nested read_image
+# results through the rich-result bridge using the base attachment store.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -22,7 +21,5 @@
 
             Verify your work by running the code or tests. Keep answers brief and factual.
       - insert:
-          - id: attachment-local
-            name: '@deepseek-ai/dsh-attachment-local'
           - id: code-runtime
             name: '@deepseek-ai/dsh-code-runtime-worker-thread'

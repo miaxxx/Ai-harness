@@ -21,10 +21,21 @@ type Args = {
   target?: string
   observation?: 'accessibility' | 'visual' | 'both'
   elementId?: string
-  x?: number; y?: number; toX?: number; toY?: number
-  button?: 'left' | 'right'; double?: boolean
-  text?: string; value?: string; key?: string; modifiers?: Array<'alt' | 'control' | 'meta' | 'shift'>
-  direction?: 'up' | 'down' | 'left' | 'right'; amount?: number
+  x?: number
+  y?: number
+  toX?: number
+  toY?: number
+  button?: 'left' | 'right'
+  double?: boolean
+  text?: string
+  value?: string
+  key?: string
+  modifiers?: Array<'alt' | 'command' | 'cmd' | 'control' | 'ctrl' | 'meta' | 'option' | 'shift'>
+  direction?: 'up' | 'down' | 'left' | 'right'
+  amount?: number
+}
+function modifiers(values: NonNullable<Args['modifiers']>): Array<'alt' | 'control' | 'meta' | 'shift'> {
+  return values.map(value => value === 'command' || value === 'cmd' ? 'meta' : value === 'option' ? 'alt' : value === 'ctrl' ? 'control' : value)
 }
 function need(value: string | undefined, field: string): string { if (value === undefined || value.trim() === '') throw new Error(`computer: ${field} is required for this action`); return value }
 function present(value: string | undefined, field: string): string { if (value === undefined) throw new Error(`computer: ${field} is required for this action`); return value }
@@ -33,12 +44,12 @@ function target(args: Args): ComputerTarget {
   const kind = args.targetKind ?? 'app'
   if (kind === 'desktop') return { kind, id: 'desktop', name: 'Desktop' }
   const id = need(args.target, 'target')
-  return kind === 'browser-tab' ? { kind, id, name: id } : { kind, id, name: id }
+  return { kind, id, name: id }
 }
 function targetKey(value: ComputerTarget): string { return `${value.kind}:${value.id}` }
 function scopedElement(value: string | undefined, observation: ComputerObservation | undefined): string {
   const id = need(value, 'elementId')
-  if (observation === undefined || !id.startsWith(`${observation.id}:`)) throw computerError('ELEMENT_EXPIRED', 'elementId must come from the latest observation for this target.')
+  if (observation?.accessibility?.elements.some(element => element.id === id) !== true) throw computerError('ELEMENT_EXPIRED', 'elementId must come from the latest observation for this target.')
   return id
 }
 function semanticIdentity(element: NonNullable<ComputerObservation['accessibility']>['elements'][number]): string {
@@ -88,7 +99,7 @@ function actionFrom(args: Args, current: ComputerObservation | undefined): Compu
   if (args.action === 'set_value') return { kind: 'set_value', elementId: scopedElement(args.elementId, current), value: present(args.value, 'value') }
   if (args.action === 'type_text') return { kind: 'type_text', elementId: scopedElement(args.elementId, current), text: need(args.text, 'text') }
   if (args.action === 'paste') return { kind: 'paste', elementId: scopedElement(args.elementId, current), text: need(args.text, 'text') }
-  if (args.action === 'key') return { kind: 'key', key: need(args.key, 'key'), modifiers: args.modifiers ?? [] }
+  if (args.action === 'key') return { kind: 'key', key: need(args.key, 'key'), modifiers: modifiers(args.modifiers ?? []) }
   if (args.action === 'scroll') {
     const elementId = args.elementId === undefined ? undefined : scopedElement(args.elementId, current)
     const point = elementId === undefined && args.x !== undefined && args.y !== undefined ? { x: args.x, y: args.y } : undefined
@@ -98,19 +109,36 @@ function actionFrom(args: Args, current: ComputerObservation | undefined): Compu
   throw computerError('ACTION_UNSUPPORTED', `Unsupported action ${args.action}.`)
 }
 
-interface CachedObservation { value: ComputerObservation; observedAt: number }
+interface CachedObservation { value: ComputerObservation; observedAt: number; timeout: ReturnType<typeof setTimeout> }
+
+function cacheable(value: ComputerObservation): ComputerObservation {
+  return {
+    id: value.id,
+    target: value.target,
+    ...(value.title === undefined ? {} : { title: value.title }),
+    ...(value.accessibility === undefined ? {} : { accessibility: value.accessibility }),
+  }
+}
 
 /** Register the single computer tool. Runtime state is limited to recent observations per agent and target. */
 export function apply(ctx: Context): void {
   const observations = new Map<string, Map<string, CachedObservation>>()
+  const forget = (agentId: string | undefined, value: ComputerTarget): void => {
+    if (agentId === undefined) return
+    const agent = observations.get(agentId)
+    const cached = agent?.get(targetKey(value))
+    if (cached === undefined) return
+    clearTimeout(cached.timeout)
+    agent?.delete(targetKey(value))
+    if (agent?.size === 0) observations.delete(agentId)
+  }
   const latest = (agentId: string | undefined, value: ComputerTarget): ComputerObservation | undefined => {
     if (agentId === undefined) return undefined
     const agent = observations.get(agentId)
     const cached = agent?.get(targetKey(value))
     if (cached === undefined) return undefined
     if (Date.now() - cached.observedAt > OBSERVATION_CACHE_TTL_MS) {
-      agent?.delete(targetKey(value))
-      if (agent?.size === 0) observations.delete(agentId)
+      forget(agentId, value)
       return undefined
     }
     return cached.value
@@ -119,17 +147,40 @@ export function apply(ctx: Context): void {
     if (agentId === undefined) return
     let agent = observations.get(agentId)
     if (agent === undefined) { agent = new Map(); observations.set(agentId, agent) }
-    agent.set(targetKey(value.target), { value, observedAt: Date.now() })
+    const key = targetKey(value.target)
+    const previous = agent.get(key)
+    if (previous !== undefined) clearTimeout(previous.timeout)
+    const observationId = value.id
+    const timeout = setTimeout(() => {
+      const current = agent.get(key)
+      if (current?.value.id !== observationId) return
+      agent.delete(key)
+      if (agent.size === 0) observations.delete(agentId)
+    }, OBSERVATION_CACHE_TTL_MS)
+    timeout.unref()
+    agent.set(key, { value: cacheable(value), observedAt: Date.now(), timeout })
   }
   const persisted = async (value: ComputerObservation): Promise<RenderValue & { id: string }> => {
-    if (value.visual === undefined) return value as unknown as RenderValue & { id: string }
+    if (value.visual === undefined) return value
     const image = await ctx.attachments.saveImage(value.visual.image)
-    return { ...value, visual: { scope: value.visual.scope, image } } as unknown as RenderValue & { id: string }
+    return { ...value, visual: { scope: value.visual.scope, image } }
   }
+
+  ctx.effect(() => () => {
+    for (const agent of observations.values()) for (const cached of agent.values()) clearTimeout(cached.timeout)
+    observations.clear()
+  }, 'toolComputer.observationCache()')
 
   ctx.tools.register(defineTool({
     name: 'computer',
-    description: 'Observe or operate desktop, native-app, and browser-tab targets. Prefer purpose-built APIs/CLI first. Observe the named target directly; list only for discovery. Prefer accessibility state and element actions, using visual/coordinates only when semantic state is insufficient. Every mutation returns fresh state; never reuse an element id after an action.',
+    description: [
+      'Observe or operate live desktop, native-app, and browser-tab state.',
+      'Never use this tool merely to inspect an attachment.',
+      'Use inline vision, filesystem, read_image, or document tools for attached images, files, and folders.',
+      'Prefer purpose-built APIs/CLI first. Observe the named target directly; list only for discovery.',
+      'Prefer accessibility state and element actions, using visual/coordinates only when semantic state is insufficient.',
+      'Every mutation returns fresh state; never reuse an element id after an action.',
+    ].join(' '),
     parameters: {
       action: { type: 'string', required: true, enum: ['list', 'observe', 'click', 'drag', 'set_value', 'type_text', 'paste', 'key', 'scroll', 'secondary_action'] },
       targetKind: { type: 'string', enum: ['app', 'browser-tab', 'desktop'], description: 'Target kind; defaults to app.' },
@@ -138,7 +189,7 @@ export function apply(ctx: Context): void {
       elementId: { type: 'string', description: 'Element id from the latest observation for this agent and target.' },
       x: { type: 'number' }, y: { type: 'number' }, toX: { type: 'number' }, toY: { type: 'number' },
       button: { type: 'string', enum: ['left', 'right'] }, double: { type: 'boolean' },
-      text: { type: 'string' }, value: { type: 'string' }, key: { type: 'string' }, modifiers: { type: 'array', items: { type: 'string', enum: ['alt', 'control', 'meta', 'shift'] } },
+      text: { type: 'string' }, value: { type: 'string' }, key: { type: 'string' }, modifiers: { type: 'array', items: { type: 'string', enum: ['alt', 'command', 'cmd', 'control', 'ctrl', 'meta', 'option', 'shift'] } },
       direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] }, amount: { type: 'number' },
     },
     output: { schema: { type: 'object', additionalProperties: true, properties: {} }, render: (_args, value) => render(value as never) },
@@ -165,6 +216,7 @@ export function apply(ctx: Context): void {
       const action = actionFrom(args, previous)
       const outcome = await approval.request({ agent: exec.agent, toolName: 'computer', callId: exec.callId, reason: `Allow ${args.action} in ${selected.name}.`, signal: exec.signal })
       if (outcome !== 'allowed-once') throw new Error(`computer: ${args.action} in ${selected.name} was not approved`)
+      forget(agentId, selected)
       const next = await ctx.computer.perform(selected, action, exec.signal)
       const diff = semanticDiff(previous, next)
       remember(agentId, next)

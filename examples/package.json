@@ -30,6 +30,7 @@
     "@deepseek-ai/dsh-compaction-basic": "workspace:*",
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:*",
     "@deepseek-ai/dsh-credentials-local": "workspace:*",
+    "@deepseek-ai/dsh-delivery-quality-policy": "workspace:*",
     "@deepseek-ai/dsh-e2b": "workspace:*",
     "@deepseek-ai/dsh-fs-e2b": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
@@ -119,7 +120,7 @@
     "@deepseek-ai/dsh-user-questions": "workspace:*",
     "@deepseek-ai/dsh-web": "workspace:*",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
-    "@deepseek-ai/dsh-web-search-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-web-search-you": "workspace:*",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*"
   }

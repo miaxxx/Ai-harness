@@ -318,6 +318,29 @@ export function InputBar({
   })
   /* oxlint-enable typescript/no-unnecessary-condition */
 
+  // The textarea stores display text so native IME and undo remain reliable,
+  // but a reference is one editor object: carets cannot sit inside its range
+  // and a selection touching it owns the complete occurrence.
+  const atomicSelection = (selection: { start: number; end: number }): { start: number; end: number } => {
+    if (input === undefined) return selection
+    if (selection.start === selection.end) {
+      const occurrence = input.occurrences.find(o => o.offset < selection.start && selection.start < o.offset + o.length)
+      if (occurrence === undefined) return selection
+      const end = occurrence.offset + occurrence.length
+      const caret = selection.start - occurrence.offset < occurrence.length / 2 ? occurrence.offset : end
+      return { start: caret, end: caret }
+    }
+    let { start, end } = selection
+    for (const occurrence of input.occurrences) {
+      const occurrenceEnd = occurrence.offset + occurrence.length
+      if (occurrence.offset < end && occurrenceEnd > start) {
+        start = Math.min(start, occurrence.offset)
+        end = Math.max(end, occurrenceEnd)
+      }
+    }
+    return { start, end }
+  }
+
   // The machine's occurrence math needs the edit's real range, and a controlled
   // textarea's change event carries only the resulting string. `beforeinput`
   // fires while the element still holds the pre-edit selection, which is
@@ -363,22 +386,40 @@ export function InputBar({
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
     // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
+    if (!composing && !machineBusy && !locked && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      const selection = selectionOf(e.currentTarget)
+      if (selection.start === selection.end) {
+        const occurrence = input.occurrences.find(o => e.key === 'ArrowLeft'
+          ? o.offset < selection.start && selection.start <= o.offset + o.length
+          : o.offset <= selection.start && selection.start < o.offset + o.length)
+        if (occurrence !== undefined) {
+          e.preventDefault()
+          const caret = e.key === 'ArrowLeft' ? occurrence.offset : occurrence.offset + occurrence.length
+          restoreCaret(e.currentTarget, caret)
+          keyboard.track(draft, caret)
+          return
+        }
+      }
+    }
     if (!composing && !machineBusy && !locked
       && (e.key === 'Backspace' || e.key === 'Delete')) {
       const selection = selectionOf(e.currentTarget)
-      if (selection.start === selection.end) {
-        const occurrence = input.occurrences.find(o => e.key === 'Backspace'
+      const touched = input.occurrences.filter(o => o.offset < selection.end && o.offset + o.length > selection.start)
+      const occurrence = selection.start === selection.end
+        ? input.occurrences.find(o => e.key === 'Backspace'
           ? o.offset + o.length === selection.start
           : o.offset === selection.start)
-        if (occurrence !== undefined) {
-          e.preventDefault()
-          const start = occurrence.offset
-          const end = occurrence.offset + occurrence.length
-          keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
-          restoreCaret(e.currentTarget, start)
-          keyboard.track(keyboard.snapshot.draft, start)
-          return
-        }
+        : undefined
+      if (occurrence !== undefined || touched.length > 0) {
+        e.preventDefault()
+        const start = occurrence?.offset ?? touched.reduce((value, item) => Math.min(value, item.offset), selection.start)
+        const end = occurrence === undefined
+          ? touched.reduce((value, item) => Math.max(value, item.offset + item.length), selection.end)
+          : occurrence.offset + occurrence.length
+        keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
+        restoreCaret(e.currentTarget, start)
+        keyboard.track(keyboard.snapshot.draft, start)
+        return
       }
     }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -541,7 +582,13 @@ export function InputBar({
     // Any caret/selection gesture ends a live paste attempt (the machine
     // cannot observe DOM selection). Cheap no-op when none is live.
     if (keyboard !== undefined && keyboard.snapshot.paste !== undefined) keyboard.invalidatePaste()
-    void e
+    if (keyboard === undefined) return
+    const el = e.currentTarget
+    const selection = selectionOf(el)
+    const snapped = atomicSelection(selection)
+    if (snapped.start === selection.start && snapped.end === selection.end) return
+    el.setSelectionRange(snapped.start, snapped.end)
+    keyboard.track(draft, snapped.end)
   }
 
   // Button presses steal focus from the textarea; suppress at mousedown so
@@ -631,15 +678,13 @@ export function InputBar({
             data-invalid={chip.invalid || undefined}
             title={chip.label}
           >
-            {chip.appearance === undefined
-              ? chip.text[0]
-              : (
-                <span className={css.chipTrigger}>
-                  <span className={css.chipTriggerGlyph}>{chip.text[0]}</span>
-                  <ReferenceIcon kind={chip.appearance} size={16} className={css.chipIcon} />
-                </span>
+            <span className={css.chipAdvance} aria-hidden>{chip.text}</span>
+            <span className={css.chipVisual} data-reference-visual aria-hidden>
+              {chip.appearance !== undefined && (
+                <ReferenceIcon kind={chip.appearance} size={14} className={css.chipIcon} />
               )}
-            <span>{chip.text.slice(1)}</span>
+              <span>{chip.appearance === undefined ? chip.text : chip.text.slice(1)}</span>
+            </span>
           </span>,
         )
         cursor = chip.offset + chip.length
@@ -774,7 +819,7 @@ export function InputBar({
           </div>
         </div>
         {activityLabel !== null && (
-          <div className={css.activity} role="status" aria-live="polite">
+          <div className={css.activity} data-composer-activity role="status" aria-live="polite">
             <span className={css.activityDot} aria-hidden />
             {activityLabel}
           </div>

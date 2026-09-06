@@ -10,18 +10,24 @@ class FakeSocket {
   readonly sent: Array<{ id: number; method: string; params: Record<string, unknown> }> = []
   readonly listeners = new Map<string, Array<{ listener: Listener; once: boolean }>>()
   closed = false
-  constructor(readonly url: string) { sockets.push(this); queueMicrotask(() => this.emit('open')) }
+  constructor(readonly url: string) { sockets.push(this); queueMicrotask(() =>{  this.emit('open') }) }
   addEventListener(type: string, listener: Listener, options?: { once?: boolean }): void {
-    const entries = this.listeners.get(type) ?? []; entries.push({ listener, once: options?.once === true }); this.listeners.set(type, entries)
+    const entries = this.listeners.get(type) ?? []
+    entries.push({ listener, once: options?.once === true })
+    this.listeners.set(type, entries)
   }
-  removeEventListener(type: string, listener: Listener): void { this.listeners.set(type, (this.listeners.get(type) ?? []).filter(entry => entry.listener !== listener)) }
+  removeEventListener(type: string, listener: Listener): void {
+    this.listeners.set(type, (this.listeners.get(type) ?? []).filter(entry => entry.listener !== listener))
+  }
   emit(type: string, event: { data?: string } = {}): void {
-    const entries = [...(this.listeners.get(type) ?? [])]; this.listeners.set(type, entries.filter(entry => !entry.once)); for (const entry of entries) entry.listener(event)
+    const entries = [...(this.listeners.get(type) ?? [])]
+    this.listeners.set(type, entries.filter(entry => !entry.once))
+    for (const entry of entries) entry.listener(event)
   }
   send(text: string): void {
     const request = JSON.parse(text) as { id: number; method: string; params: Record<string, unknown> }; this.sent.push(request)
     const plan = responseFor(request); if (plan.skip === true) return
-    queueMicrotask(() => this.emit('message', { data: JSON.stringify({ id: request.id, ...(plan.result === undefined ? {} : { result: plan.result }), ...(plan.error === undefined ? {} : { error: plan.error }) }) }))
+    queueMicrotask(() =>{  this.emit('message', { data: JSON.stringify({ id: request.id, ...(plan.result === undefined ? {} : { result: plan.result }), ...(plan.error === undefined ? {} : { error: plan.error }) }) }) })
   }
   close(): void { if (this.closed) return; this.closed = true; this.emit('close') }
 }

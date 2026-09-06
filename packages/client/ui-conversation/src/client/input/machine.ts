@@ -29,7 +29,7 @@ const REFERENCE_PLACEHOLDER_RE = /[\uE100-\uE11D\uFFFC]/gu
  * Build the inline draft text whose leading marker is decorated as the
  * reference icon in the backdrop.
  * @param reference - reference insertion with its cached display projection.
- * @returns display text with one marker glyph followed by the complete label.
+ * @returns display text whose advance exactly matches the native textarea glyphs.
  */
 export function referenceDraftText(reference: Pick<ReferenceInsert, 'label'>): string {
   return `@${reference.label}`
@@ -307,19 +307,22 @@ export class InputMachine {
 
   /**
    * Shared reference-insertion transaction: replace [span) with one inline
-   * occurrence (insert-ref and paste-upgrade both land here). A separating
-   * space follows the reference unless one is already next.
-   * @returns the inserted length (display text plus optional gap).
+   * occurrence (insert-ref and paste-upgrade both land here). Whitespace already
+   * adjacent to the replaced span is preserved; otherwise one symmetric separator
+   * is inserted on each occupied side of the reference.
+   * @returns the inserted length, including any separators.
    */
   private replaceSpanWithChip(reference: ReferenceInsert, span: TokenSpan): number {
     this.pushTxn()
     this.typingRun = undefined
+    const head = this.draft.slice(0, span.start)
     const tail = this.draft.slice(span.end)
-    const gap = tail.length === 0 || tail[0] !== ' ' ? ' ' : ''
+    const leadingGap = head.length > 0 && !/\s$/u.test(head) ? ' ' : ''
+    const trailingGap = tail.length === 0 || !/^\s/u.test(tail) ? ' ' : ''
     const displayText = referenceDraftText(reference)
-    const inserted = displayText + gap
+    const inserted = leadingGap + displayText + trailingGap
     this.reconcile({ start: span.start, end: span.end, insertedLength: inserted.length })
-    this.withMinted([this.mint(reference, span.start, displayText.length)])
+    this.withMinted([this.mint(reference, span.start + leadingGap.length, displayText.length)])
     this.adopt(this.draft.slice(0, span.start) + inserted + tail)
     this.watchClaim()
     return inserted.length

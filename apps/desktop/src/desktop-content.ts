@@ -16,6 +16,9 @@ const BASIC_EXTENSIONS = new Set([
 const IMAGE_TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
 }
+const ARTIFACT_EXTENSIONS = new Set([
+  ...BASIC_EXTENSIONS, ...Object.keys(IMAGE_TYPES), '.svg', '.pdf', '.docx', '.xlsx', '.pptx',
+])
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const SCAN_LIMIT = 12_000
 const ARTIFACT_LIMIT = 100
@@ -23,12 +26,17 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024
 
 interface FileStamp { size: number; mtimeMs: number }
 
-function mediaType(path: string): string {
+export function desktopMediaType(path: string): string {
   const extension = extname(path).toLowerCase()
-  return IMAGE_TYPES[extension] ?? ({
+  const known = IMAGE_TYPES[extension] ?? ({
     '.md': 'text/markdown', '.markdown': 'text/markdown', '.html': 'text/html', '.htm': 'text/html',
     '.json': 'application/json', '.jsonl': 'application/jsonl', '.csv': 'text/csv', '.tsv': 'text/tab-separated-values',
-  } as Record<string, string>)[extension] ?? 'text/plain'
+    '.svg': 'image/svg+xml', '.pdf': 'application/pdf',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  } as Record<string, string>)[extension]
+  return known ?? (BASIC_EXTENSIONS.has(extension) ? 'text/plain' : 'application/octet-stream')
 }
 
 function safeSessionName(sessionId: string): string {
@@ -98,7 +106,7 @@ async function snapshotFiles(workspace: string): Promise<Map<string, FileStamp>>
       if (entry.name === '.git' || entry.name === '.dsh' || entry.name === 'node_modules' || entry.name === 'dist-electron') continue
       const path = join(directory, entry.name)
       if (entry.isDirectory()) await visit(path)
-      else if (entry.isFile() && BASIC_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+      else if (entry.isFile() && ARTIFACT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
         const info = await stat(path)
         if (info.size <= MAX_FILE_BYTES) found.set(path, { size: info.size, mtimeMs: info.mtimeMs })
       }
@@ -122,6 +130,8 @@ function run(command: string, args: readonly string[], cwd?: string): Promise<vo
 /** Stateful Desktop content store; privileged paths never cross into arbitrary Renderer operations. */
 export class DesktopContentStore {
   private readonly attachments = new Map<string, Map<string, DesktopAttachment>>()
+  private readonly ownedAttachments = new Set<string>()
+  private readonly pathAttachments = new Set<string>()
   private readonly artifacts = new Map<string, DesktopArtifact[]>()
   private readonly roots = new Map<string, string>()
   private readonly turns = new Map<string, number>()
@@ -188,20 +198,72 @@ export class DesktopContentStore {
       const destination = join(root, `${id}-${basename(source)}`)
       await cp(source, destination)
       const row: DesktopAttachment = {
-        id, name: basename(source), path: destination, mediaType: mediaType(source),
+        id, name: basename(source), path: destination, mediaType: desktopMediaType(source),
         kind: imageType === undefined ? 'file' : 'image', size: info.size,
       }
       session.set(id, row)
+      this.ownedAttachments.add(id)
       added.push(row)
     }
     return added
+  }
+
+  /** Keep pasted source paths available to the next prompt without copying their contents. */
+  async referenceAttachments(sessionId: string, cwd: string, paths: readonly string[]): Promise<DesktopAttachment[]> {
+    this.sessionRoot(sessionId, cwd)
+    const session = this.attachments.get(sessionId) ?? new Map<string, DesktopAttachment>()
+    this.attachments.set(sessionId, session)
+    const added: DesktopAttachment[] = []
+    for (const source of paths) {
+      const path = resolve(source)
+      const info = await stat(path)
+      if (!info.isFile() && !info.isDirectory()) throw new Error(`Clipboard item is not a file or folder: ${basename(path)}`)
+      const id = randomUUID()
+      const imageType = info.isFile() ? IMAGE_TYPES[extname(path).toLowerCase()] : undefined
+      const row: DesktopAttachment = {
+        id,
+        name: basename(path),
+        path,
+        mediaType: info.isDirectory() ? 'inode/directory' : desktopMediaType(path),
+        kind: info.isDirectory() ? 'directory' : imageType === undefined ? 'file' : 'image',
+        size: info.isDirectory() ? 0 : info.size,
+      }
+      session.set(id, row)
+      this.pathAttachments.add(id)
+      added.push(row)
+    }
+    return added
+  }
+
+  /** Persist one pathless clipboard bitmap and expose its new path to the next prompt. */
+  async stageClipboardImage(sessionId: string, cwd: string, data: Uint8Array): Promise<DesktopAttachment> {
+    const root = join(this.sessionRoot(sessionId, cwd), 'inputs')
+    await mkdir(root, { recursive: true })
+    const id = randomUUID()
+    const path = join(root, `${id}-clipboard.png`)
+    await writeFile(path, data)
+    const row: DesktopAttachment = {
+      id,
+      name: 'clipboard.png',
+      path,
+      mediaType: 'image/png',
+      kind: 'image',
+      size: data.byteLength,
+    }
+    const session = this.attachments.get(sessionId) ?? new Map<string, DesktopAttachment>()
+    session.set(id, row)
+    this.attachments.set(sessionId, session)
+    this.ownedAttachments.add(id)
+    this.pathAttachments.add(id)
+    return row
   }
 
   async removeAttachment(sessionId: string, id: string): Promise<void> {
     const row = this.attachments.get(sessionId)?.get(id)
     if (row === undefined) return
     this.attachments.get(sessionId)?.delete(id)
-    await rm(row.path, { force: true })
+    this.pathAttachments.delete(id)
+    if (this.ownedAttachments.delete(id)) await rm(row.path, { force: true })
   }
 
   async promptBlocks(sessionId: string, ids: readonly string[]): Promise<ContentBlock[]> {
@@ -210,7 +272,7 @@ export class DesktopContentStore {
     for (const id of ids) {
       const row = session?.get(id)
       if (row === undefined) throw new Error('One selected attachment is no longer available')
-      if (row.kind === 'image') {
+      if (row.kind === 'image' && !this.pathAttachments.has(id)) {
         blocks.push({ type: 'image', mimeType: row.mediaType, data: (await readFile(row.path)).toString('base64') })
       } else {
         blocks.push({ type: 'resource_link', name: row.name, uri: pathToFileURL(row.path).href, mimeType: row.mediaType, size: row.size })
@@ -221,7 +283,11 @@ export class DesktopContentStore {
 
   consumeAttachments(sessionId: string, ids: readonly string[]): void {
     const session = this.attachments.get(sessionId)
-    for (const id of ids) session?.delete(id)
+    for (const id of ids) {
+      session?.delete(id)
+      this.ownedAttachments.delete(id)
+      this.pathAttachments.delete(id)
+    }
   }
 
   snapshot(cwd: string): Promise<Map<string, FileStamp>> { return snapshotFiles(resolve(cwd)) }
@@ -248,7 +314,9 @@ export class DesktopContentStore {
       const destination = join(turnRoot, sourceRelative)
       await mkdir(resolve(destination, '..'), { recursive: true })
       await cp(source, destination)
-      rows.push({ name: basename(source), path: destination, relativePath: sourceRelative, mediaType: mediaType(source), size: stamp.size })
+      rows.push({
+        name: basename(source), path: destination, relativePath: sourceRelative, mediaType: desktopMediaType(source), size: stamp.size,
+      })
     }
     const all = [...(this.artifacts.get(sessionId) ?? []), ...rows]
     this.artifacts.set(sessionId, all)

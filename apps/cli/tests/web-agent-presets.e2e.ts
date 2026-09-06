@@ -232,7 +232,8 @@ describe('the shipped Web composition', () => {
     try {
       const names = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
       expect(names).toEqual(expect.arrayContaining([
-        'code-development', 'delivery-verification', 'document-work', 'spreadsheet-work', 'web-research',
+        'code-development', 'delivery-verification', 'document-work', 'evidence-grounded-frontend-system',
+        'spreadsheet-work', 'web-research',
       ]))
     } finally {
       await handle.dispose()

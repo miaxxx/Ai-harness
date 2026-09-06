@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { projectDesktopAssistant, projectDesktopUserText } from '../src/desktop-message-projection.ts'
+import {
+  accumulateDesktopAssistantBlocks,
+  projectDesktopAssistant,
+  projectDesktopUserText,
+} from '../src/desktop-message-projection.ts'
 
 describe('Desktop message projection', () => {
   it('projects an ACP resource link as a file-chip token without its URI', () => {
     const projected = projectDesktopUserText(
-      '请处理\n[resource_link name="writing-block.md" uri="file:///Users/miao/.dsh/artifacts/input.md"]\n',
+      '请处理\n[resource_link name="writing-block.md" uri="file:///Users/miao/.dsh/artifacts/input.md" mime_type="text/markdown" size=12]\n',
     )
     expect(projected).toBe('请处理\n@"writing-block.md"\n')
     expect(projected).not.toContain('file:///')
@@ -39,5 +43,28 @@ describe('Desktop message projection', () => {
       type: 'assistant/message',
       data: { message: { content: blocks } },
     }])
+  })
+
+  it('starts an empty assistant accumulator after a tool group', () => {
+    const blocks = accumulateDesktopAssistantBlocks(
+      [{ type: 'text', text: '工具调用前的答复' }],
+      [{ type: 'text', text: '工具返回后的答复' }],
+      true,
+    )
+
+    expect(blocks).toEqual([{ type: 'text', text: '工具返回后的答复' }])
+  })
+
+  it('coalesces reasoning and text fragments within one model step', () => {
+    const blocks = accumulateDesktopAssistantBlocks(
+      [{ type: 'reasoning', text: '先检查' }],
+      [{ type: 'reasoning', text: '，再验证' }, { type: 'text', text: '完成' }],
+      false,
+    )
+
+    expect(blocks).toEqual([
+      { type: 'reasoning', text: '先检查，再验证' },
+      { type: 'text', text: '完成' },
+    ])
   })
 })

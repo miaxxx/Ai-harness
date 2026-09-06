@@ -12,13 +12,13 @@ The shipped presets are centered on coding compositions, while general research,
 
 The product exposes Code and Work as the two primary task presets. Code keeps Code Mode tool presentation and the full development tool composition. Work uses native tool presentation and a compact composition of web search, filesystem, shell, jobs, compaction, goals, questions, todos, and the skill loader. New installations default to Code; existing user settings continue to override the composition default.
 
-Both presets mount the same trusted bundled root at `apps/cli/config/skills/`. It contains four dependency-light skills: `code-development`, `web-research`, `document-work`, and `spreadsheet-work`. Their descriptions select them from the user's task, so there is no mode router and no requirement that every turn load every skill.
+Both presets mount the same trusted bundled root at `apps/cli/config/skills/`. Its task-specific authoring and acceptance Skills use descriptions to select themselves from the user's request, so there is no mode router and no requirement that every turn load every Skill. `document-work` owns document format selection, while `evidence-grounded-frontend-system` owns the design, implementation, and verification of HTML/CSS and browser artifacts.
 
 Desktop uses an ACP Runtime instead of the Web preset host. Its supervisor sets `DSH_DESKTOP_CODE_WORK_ENABLED` and the packaged bundled-skill path, and the ACP composition conditionally mounts the same skill catalog and its loader plus DeepSeek-backed web search. The packaging step copies the shared directory into the standalone Runtime. Generic ACP and snapshot runs do not set the product flag, so their persona and tool catalog remain unchanged.
 
 The same Desktop product flag mounts the persisted goal domain, its same-session continuation driver, and model-facing goal tools. Routine requests run without a goal. A substantial request with at least three independently verifiable work items uses one goal and a three-to-seven-item `todo_write` list; the parent agent continues until it verifies the complete objective, reports a concrete blocker, or the user cancels. Delegation is limited by prompt policy to two independent children at once, while the existing subagent depth limit prevents recursive delegation. ACP plan updates feed the Desktop's existing Todo panel instead of introducing a second task store.
 
-The skills use capabilities already supplied by the active preset. Document and spreadsheet guidance prefers a dedicated tool when one exists and falls back to portable Markdown, HTML, CSV, or TSV rather than depending on an office SDK. Code guidance uses LSP when the deployment has configured a language server and otherwise falls back to search and source inspection; the shipped app does not install a language server merely to make the tool name appear.
+The Skills use capabilities already supplied by the active preset. Document work preserves an explicit output format, technical stack, or existing file format; a new document with none defaults to one standalone HTML file with inline CSS and JavaScript. An unavailable requested format fails visibly instead of silently becoming HTML. Spreadsheet guidance prefers a dedicated tool and otherwise uses portable CSV or TSV rather than depending on an office SDK. Frontend guidance requires no framework or build chain for default HTML but honors an explicitly requested stack. Code guidance uses LSP when the deployment has configured a language server and otherwise falls back to search and source inspection; the shipped app does not install a language server merely to make the tool name appear.
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ The skills use capabilities already supplied by the active preset. Document and 
 
 **Use plan mode or a dynamic workflow for every substantial Desktop task.** Plan mode stops for review before execution, while the product requirement is to plan and execute in one user turn. Dynamic workflows add a script-authored orchestration layer for work that the existing same-session goal, todo, and subagent tools already cover.
 
-**Install language servers and office libraries with the presets.** That would turn a lightweight composition change into platform-specific dependency management. LSP and richer office formats remain capability-driven: use them when the host supplies them, and degrade explicitly when it does not.
+**Install language servers and office libraries with the presets.** That would turn a lightweight composition change into platform-specific dependency management. LSP and richer office formats remain capability-driven: use them when the host supplies them, and report an unavailable requested format instead of silently substituting another one.
 
 ## Consequences
 

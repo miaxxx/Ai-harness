@@ -2,14 +2,14 @@
 
 English | [中文](README.zh.md)
 
-The **model-facing filesystem tools** — `read`, `read_image`, `write`, `edit` — and their **executor**. This is the consumer layer of the filesystem stack: it owns tool names, JSON schemas, argument validation, prompt sections, **read windowing**, and result formatting. It reads/writes/edits through the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)) **directly**. The freshness/observation policy is contributed by a separate plugin ([`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)) through the `fs/*` event gate; the tool is not method-coupled to it. Under a confining provider, the shared sandbox-policy service is required for per-session execution and the tool exposes escalation for filesystem mutations.
+The **model-facing filesystem tools** — `list_directory`, `read`, `read_image`, `write`, `edit` — and their **executor**. This is the consumer layer of the filesystem stack: it owns tool names, JSON schemas, argument validation, prompt sections, bounded listing/read windows, and result formatting. It calls the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)) directly. The freshness/observation policy is contributed by a separate plugin ([`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)) through the `fs/*` event gate; the tool is not method-coupled to it. Under a confining provider, the shared sandbox-policy service is required for per-session execution and the tool exposes escalation for filesystem mutations.
 
 ```ts ignore-check
 // Default deployment: a ctx.fs provider, the policy plugin, then the tools.
 await ctx.plugin(LocalFileSystem, { cwd: process.cwd() }) // @deepseek-ai/dsh-fs-local
 await ctx.plugin(FsPolicy)                             // @deepseek-ai/dsh-fs-observation-policy (policy gate)
 await ctx.plugin(LocalAttachmentStore, { dshHome })       // optional — enables durable read_image results
-await ctx.plugin(ToolFs)                                  // this package — read/write/edit, plus read_image with attachments
+await ctx.plugin(ToolFs)                                  // this package — list/read/write/edit, plus read_image with attachments
 ```
 
 `@deepseek-ai/dsh-fs-observation-policy` is **optional**: omit it and the tools run against the bare provider (unconditional write/overwrite/edit, no observed-state). A deployment that loads these tools is expected to also load it, so the behavior is read-before-write/edit.
@@ -22,6 +22,7 @@ All keys are optional; the defaults are the shipped read caps.
 
 | Key | Default | Meaning |
 |---|---|---|
+| `listDirectoryLimit` | `200` | Default and maximum direct children returned by one `list_directory` call. |
 | `readLimit` | `2000` | Default and maximum lines returned by one `read` call (the tool schema advertises it as the `limit` default). |
 | `readMaxLineLength` | `2000` | Characters kept per line before truncation (the suffix names the cap). |
 | `readMaxBytes` | `51200` | Byte cap on one `read` call's selected lines; overflow ends the window with a "capped" footer. |
@@ -31,6 +32,7 @@ All keys are optional; the defaults are the shipped read caps.
 
 | Tool | Arguments | Behavior |
 |---|---|---|
+| `list_directory` | `directory_path`, `offset?`, `limit?` | Returns one bounded page of direct children with authoritative path, type, and available byte size. It is non-recursive; `offset` is 1-based and `limit` defaults to and caps at `listDirectoryLimit` (200). |
 | `read` | `file_path`, `offset?`, `limit?` | Line-numbered UTF-8 content with a pagination footer. `offset` is 1-based; `limit` defaults to and caps at the configured `readLimit` (2000). |
 | `read_image` | `file_path` | Reads a PNG/JPEG/WebP/GIF file through the bounded byte seam, persists it through `ctx.attachments.saveImage`, and returns an image block beside a small metadata envelope. Harness validates and downscales large supported images before the next model request, so the model can read the source directly without first creating a thumbnail. It succeeds only when the exact routed model declares image input. |
 | `write` | `file_path`, `content` | Create or fully replace a file. With the policy plugin: overwriting an existing file requires a prior `read` at the unchanged version; creating a new file does not. Without it: unconditional. |
@@ -38,12 +40,13 @@ All keys are optional; the defaults are the shipped read caps.
 
 Field names are snake_case to match Claude Code and existing harness tool schemas.
 
-Structured successes are `read` → `{ path, offset, lines: [{ number, text }], totalLines }`, `read_image` → `{ path, image: { attachmentId, mediaType, bytes, width, height, name?, originalDimensions?: { width, height } } }`, `write` → `{ path, operation: 'create' | 'update', before: string | null, after }`, and `edit` → `{ path, before, after }`. `originalDimensions` appears only when normalization downscaled the submitted raster and records its orientation-applied input size. Native renderers preserve the line-numbered read and mutation acknowledgements below. `write`/`edit` derive replayable diff-card metadata, and `read` derives a replayable read-card window `{ path, offset, lines, totalLines, lang? }`; execution-local structured values are not added to `tool/result`, while image renderers emit the durable image blocks that the result logs.
+Structured successes are `list_directory` → `{ path, offset, entries: [{ name, path, type, size? }], totalEntries }`, `read` → `{ path, offset, lines: [{ number, text }], totalLines }`, `read_image` → `{ path, image: { attachmentId, mediaType, bytes, width, height, name?, originalDimensions?: { width, height } } }`, `write` → `{ path, operation: 'create' | 'update', before: string | null, after }`, and `edit` → `{ path, before, after }`. A directory entry's `path` is the provider-resolved value for follow-up tools; callers must not reconstruct it from `name`, because filenames may contain significant whitespace. `originalDimensions` appears only when normalization downscaled the submitted raster and records its orientation-applied input size. Native renderers preserve the line-numbered read and mutation acknowledgements below. `write`/`edit` derive replayable diff-card metadata, and `read` derives a replayable read-card window `{ path, offset, lines, totalLines, lang? }`; execution-local structured values are not added to `tool/result`, while image renderers emit the durable image blocks that the result logs.
 
 ## The tool is the executor; policy is an event gate
 
 The tools do **not** inject a policy service or inspect any cache. Each tool resolves the path via `ctx.fs.resolve(path, { cwd, signal })` — passing the calling agent's session cwd (`exec.agent.session.header.cwd`) so a relative path resolves against the session's workspace, matching `dsh-tool-bash`, and forwarding tool cancellation through resolution (see [the per-session cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.md)) — then:
 
+- **list_directory** — one `ctx.fs.stat`, one `ctx.fs.listDir`, then slices the requested bounded page and emits `fs/observed`. It never reads child contents. (1 stat.)
 - **read** — one `ctx.fs.stat` (type + size routing + version), then `readText`/`streamText`, then builds the line window, then emits `fs/observed` with a plain `ctx.emit`. (1 stat.)
 - **read_image** — validates the argument, extension, attachment availability, deployment media types, and the image-capable route before any I/O; then one `ctx.fs.stat` (recording an `absent` observation for a missing target, like `read`), a bounded `ctx.fs.readBytes` capped at the smaller of `imageLimits.maxImageBytes` and `imageLimits.maxMessageImageBytes` (the result is one message carrying one image), `attachments.saveImage` (content-addressed, so the image block references a durably committed object by the time `tool/result` is appended), and finally `fs/observed`. (1 stat.)
 - **write** — `ctx.waterfall('fs/write-intent', target, exec, () => undefined)` for the optional guard, then `ctx.fs.writeText(target, content, intent)`, then `fs/observed`. (0 stat.)
@@ -55,7 +58,7 @@ When `ctx.fs.sandboxMode` reports confinement, write/edit advertise `sandbox_per
 
 ## `fs/observed` is fire-and-forget
 
-`fs/observed` fires AFTER the read/read_image/write/edit already succeeded, via a plain `ctx.emit`. A listener is contractually a synchronous, side-effect-only recorder (`@deepseek-ai/dsh-fs-observation-policy`'s is a `WeakMap.set`); the tool does not guard the emit, so a listener that throws would surface as the tool's `isError` result — async or fallible observation does not belong on this event.
+`fs/observed` fires AFTER list_directory/read/read_image/write/edit already succeeded, via a plain `ctx.emit`. A listener is contractually a synchronous, side-effect-only recorder (`@deepseek-ai/dsh-fs-observation-policy`'s is a `WeakMap.set`); the tool does not guard the emit, so a listener that throws would surface as the tool's `isError` result — async or fallible observation does not belong on this event.
 
 `read` opts into concurrent scheduling because its only mutation is the synchronous version recorder. Recorder races fail closed when a later `write` or `edit` re-checks the version under its target lock; both mutation tools remain exclusive. See the [parallel tool-call Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md).
 
@@ -67,7 +70,7 @@ The package root exports only the Cordis plugin contract (`name`, `inject`, `Con
 
 #### What the model sees
 
-Every request in this plugin's registration scope receives the independently registered read, write, and edit guidance below. Scoped tool restrictions can hide schemas without removing these sections.
+Every request in this plugin's registration scope receives attachment-resource, read, write, and edit guidance. The attachment section requires `list_directory`, `read`, or `read_image` evidence before the model describes a linked resource. Scoped tool restrictions can hide schemas without removing these sections.
 
 ##### Read guidance
 
@@ -99,7 +102,7 @@ Prefix-stable while the plugin scope and guidance text are unchanged. Tool restr
 
 #### What the model sees
 
-The model sees the generated [`read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
+The model sees the generated [`list_directory`, `read`, `read_image`, `write`, and `edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs), with snake_case arguments. The image tool appears only while a durable attachment store is mounted; its schema is route-independent, and the strict gate refuses at execution. Scoped tool restrictions can remove any definition for one agent.
 
 #### Token effect
 
@@ -109,11 +112,11 @@ Fixed schema cost on every request in that tool view.
 
 Prefix-stable while the visible tool definitions and order are unchanged. Registration lifecycle or scoped restrictions may invalidate reuse from the first changed schema token.
 
-### Read result
+### Directory-list and read results
 
 #### What the model sees
 
-A successful read is exactly `<path><displayPath></path>`, newline, `<type>file</type>`, newline, `<content>`, numbered lines as `<lineNumber>: <text>`, a blank line, one footer, and `</content>`. The footer is exactly `(Output capped. Showing lines <start>-<end>. Use offset=<next> to continue.)`, `(Showing lines <start>-<end> of <total>. Use offset=<next> to continue.)`, or `(End of file - total <total> lines)`. A long line ends exactly `... (line truncated to <max> chars)`. A missing read still returns `FS_NOT_FOUND`, but it records confirmed absence for the calling session; after an externally deleted file is re-read, a retried `write` can safely recreate it through the provider's no-replace guard.
+A successful directory listing returns the resolved path, `<type>directory</type>`, and one bounded entry page containing each child as JSON with its exact name, provider-resolved path, type, and available byte size. JSON quoting preserves significant whitespace for follow-up calls. A successful read is exactly `<path><displayPath></path>`, newline, `<type>file</type>`, newline, `<content>`, numbered lines as `<lineNumber>: <text>`, a blank line, one footer, and `</content>`. The footer is exactly `(Output capped. Showing lines <start>-<end>. Use offset=<next> to continue.)`, `(Showing lines <start>-<end> of <total>. Use offset=<next> to continue.)`, or `(End of file - total <total> lines)`. A long line ends exactly `... (line truncated to <max> chars)`. A missing read still returns `FS_NOT_FOUND`, but it records confirmed absence for the calling session; after an externally deleted file is re-read, a retried `write` can safely recreate it through the provider's no-replace guard.
 
 #### Token effect
 
@@ -167,7 +170,6 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
-- **No model-facing directory listing ships** — `ctx.fs.listDir` serves provider code such as skill discovery, while the sibling [`dsh-tool-fs-search`](../tool-fs-search/) package supplies ripgrep-backed `glob` and `grep` rather than extending the filesystem seam.
 - **`read` handles UTF-8 text files only** — images use the separate extension-routed `read_image` tool; PDF, audio, and video remain deferred. A directory target is `FS_NOT_REGULAR_FILE`.
 - **Extension-declared media type** — the extension selects the declared type and the attachment store's magic-byte validation stays authoritative; a correctly formatted image under a wrong extension is refused with the rename remedy rather than sniffed.
 - **No inline image preview on the tool-result card** — UI surfaces render the image result generically (the durable reference, not pixels); inline rendering is deferred to the UI packages.

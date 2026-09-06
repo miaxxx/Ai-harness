@@ -1,12 +1,13 @@
 {
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../../../tsconfig.base.client.json",
   "compilerOptions": {
-    "composite": false,
-    "declaration": false,
-    "declarationMap": false,
-    "incremental": false,
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "rewriteRelativeImportExtensions": false,
+    "types": ["node"]
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "../src/css-modules.d.ts"],
+  "references": [
+    { "path": "../tsconfig.renderer.json" },
+    { "path": "../tsconfig.main.json" }
+  ]
 }

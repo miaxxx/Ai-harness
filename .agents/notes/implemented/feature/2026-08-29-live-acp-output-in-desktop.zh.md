@@ -12,7 +12,7 @@ Desktop 只接收已提交的 ACP 消息和工具更新，模型的文本与推�
 
 ACP bridge 现在会在请求进行时，把文本增量作为 `agent_message_chunk`、推理增量作为标准 `agent_thought_chunk` 转发。它记录已经发送到协议上的文本块，避免已提交的 assistant 消息再次重复它们；只有在完成时才出现的块，例如图片或只有 block-end 的文本，仍通过已提交消息发送。
 
-Desktop 会在每个 ACP message 内合并相邻的文本或推理增量，而不是为每个增量创建一个展示块。ACP 活动期间，Desktop 适配器把累计的 assistant blocks 投影为 `assistant/chunk` 事件；完成后，再把同一组累计推理与正文投影为最终消息。这样 Think 披露在生成期间保持流式状态，后到且使用不同 ACP message id 的正文也不会替换先前推理。实时 Think 披露会展开并显示完整推理文字，同时仍允许用户手动收起。用户配置的 OpenAI 兼容主模型声明 `off` 和 `high` 两档推理能力，并以 `high` 运行，使其推理流可以进入 ACP。适配器会在 ACP 报告请求结束前保持合成回合为打开状态，使工具调用持续显示为运行中。共享输入框会显示本地化状态：尚未知道工具前显示思考中，随后显示当前工具名。输入区的表面和文字层具有明确的隔离与不透明底色，textarea 和原生光标位于装饰层之上。
+Desktop 会在每个 ACP message 内合并相邻的文本或推理增量，而不是为每个增量创建一个展示块。ACP 活动期间，Desktop 适配器把累计的 assistant blocks 投影为 `assistant/chunk` 事件；完成后，再把同一组累计推理与正文投影为最终消息。ACP 不携带显式的模型 step 边界，因此工具组之后出现 assistant 消息时，Desktop 会关闭当前合成 step，并以空的 blocks 累积器开始这段回复。同一模型 step 内的推理和正文仍会合并，而工具调用前产生的内容不会在工具返回后再次投影。实时 Think 披露会展开并显示完整推理文字，同时仍允许用户手动收起。当模型的准确 catalog 条目与端点都支持时，已配置模型可以输出推理；Desktop 不会跨不兼容模型强制使用同一种 effort。适配器会在 ACP 报告请求结束前保持合成回合为打开状态，使工具调用持续显示为运行中。共享输入框会显示本地化状态：尚未知道工具前显示思考中，随后显示当前工具名。输入区的表面和文字层具有明确的隔离与不透明底色，textarea 和原生光标位于装饰层之上。
 
 只有 durable source 为人类用户时，ACP 才会把 user-role 消息投影到产品对话中。插件生成的运行时上下文、system reminder 和 skill 指令仍提供给模型，但不会显示为 assistant 或 user 对话内容。
 

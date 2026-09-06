@@ -53,11 +53,12 @@ async function harness(): Promise<Harness> {
 function execute(ctx: Context, arguments_: Record<string, unknown>, agentId?: string) {
   return ctx.tools.execute({ name: 'computer', arguments: arguments_, signal, callId: 'computer-test' as never, ...(agentId === undefined ? {} : { agent: { id: agentId } as never }) })
 }
-afterEach(async () => { vi.restoreAllMocks(); await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())) })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())) })
 
 describe('computer tool', () => {
   it('lists targets and observes a named app directly without a discovery round trip', async () => {
     const { ctx } = await harness()
+    expect(ctx.tools.get('computer')?.description).toContain('Never use this tool merely to inspect an attachment')
     expect(await execute(ctx, { action: 'list' })).toMatchObject({ isError: false, value: { targets: [{ kind: 'desktop' }, { kind: 'app', name: 'Editor' }] } })
     expect(await execute(ctx, { action: 'observe', targetKind: 'app', target: 'Editor' }, 'agent-a')).toMatchObject({ isError: false, value: { target: { id: 'Editor' }, accessibility: { text: 'state-1' } } })
   })
@@ -84,12 +85,28 @@ describe('computer tool', () => {
   })
 
   it('expires cached element ids after the bounded observation window', async () => {
+    vi.useFakeTimers()
     const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const { ctx } = await harness()
     const observed = await execute(ctx, { action: 'observe', target: 'Editor' }, 'agent-a')
     const elementId = (observed.value as { accessibility: { elements: Array<{ id: string }> } }).accessibility.elements[0]!.id
     vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
     clock.mockReturnValue(31_001)
+    await vi.advanceTimersByTimeAsync(30_001)
+    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
+    vi.useRealTimers()
+  })
+
+  it('rejects invented current-generation ids and invalidates state after a failed mutation', async () => {
+    const { ctx } = await harness()
+    const observed = await execute(ctx, { action: 'observe', target: 'Editor' }, 'agent-a')
+    const observation = observed.value as { id: string; accessibility: { elements: Array<{ id: string }> } }
+    vi.spyOn(ctx, 'get').mockReturnValue({ request: vi.fn().mockResolvedValue('allowed-once') })
+    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId: `${observation.id}:99` }, 'agent-a')).toMatchObject({ isError: true })
+    const provider = ctx.computer as unknown as { perform: typeof ctx.computer.perform }
+    vi.spyOn(provider, 'perform').mockRejectedValueOnce(new Error('action failed after dispatch'))
+    const elementId = observation.accessibility.elements[0]!.id
+    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
     expect(await execute(ctx, { action: 'click', target: 'Editor', elementId }, 'agent-a')).toMatchObject({ isError: true })
   })
 
@@ -101,18 +118,19 @@ describe('computer tool', () => {
       return (result.value as { accessibility: { elements: Array<{ id: string }> } }).accessibility.elements[0]!.id
     }
     let id = await observe()
-    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId: id, button: 'right', double: true }, 'agent-a')).toMatchObject({ isError: false, value: { diff: expect.any(String) } })
+    expect(await execute(ctx, { action: 'click', target: 'Editor', elementId: id, button: 'right', double: true }, 'agent-a')).toMatchObject({ isError: false, value: { diff: expect.any(String) as unknown } })
     id = await observe(); await execute(ctx, { action: 'set_value', target: 'Editor', elementId: id, value: '' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'type_text', target: 'Editor', elementId: id, text: 't' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'paste', target: 'Editor', elementId: id, text: 'p' }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'scroll', target: 'Editor', elementId: id, direction: 'left', amount: 120 }, 'agent-a')
     id = await observe(); await execute(ctx, { action: 'secondary_action', target: 'Editor', elementId: id }, 'agent-a')
     await execute(ctx, { action: 'drag', target: 'Editor', x: 1, y: 2, toX: 3, toY: 4 }, 'agent-a')
-    await execute(ctx, { action: 'key', target: 'Editor', key: 'Return', modifiers: ['meta'] }, 'agent-a')
+    await execute(ctx, { action: 'key', target: 'Editor', key: 'Return', modifiers: ['command', 'option', 'ctrl'] }, 'agent-a')
     await execute(ctx, { action: 'scroll', target: 'Editor', x: 5, y: 6, direction: 'down' }, 'agent-a')
     expect(actions.map(action => action.kind)).toEqual(['click', 'set_value', 'type_text', 'paste', 'scroll', 'secondary_action', 'drag', 'key', 'scroll'])
     expect(actions[0]).toMatchObject({ kind: 'click', button: 'right', count: 2 })
     expect(actions[1]).toEqual(expect.objectContaining({ kind: 'set_value', value: '' }))
+    expect(actions[7]).toEqual(expect.objectContaining({ kind: 'key', modifiers: ['meta', 'alt', 'control'] }))
   })
 
   it('renders target lists, full observations, diffs, images, and call metadata', async () => {

@@ -230,12 +230,12 @@ describe('ACP product protocol boundary', () => {
       sessionId,
       prompt: [
         { type: 'text', text: 'summarize' },
-        { type: 'resource_link', name: 'notes.txt', uri: 'file:///tmp/notes.txt' },
+        { type: 'resource_link', name: 'notes.txt', uri: 'file:///tmp/notes.txt', mimeType: 'text/plain', size: 12 },
       ],
     })
     expect(harness.adapter.requests[0]?.messages.at(-1)?.content).toEqual([{
       type: 'text',
-      text: 'summarize\n[resource_link name="notes.txt" uri="file:///tmp/notes.txt"]\n',
+      text: 'summarize\n[resource_link name="notes.txt" uri="file:///tmp/notes.txt" mime_type="text/plain" size=12]\n',
     }])
   })
 

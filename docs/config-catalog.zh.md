@@ -550,14 +550,14 @@ export interface ToolResultPruneConfig {
 ## `@deepseek-ai/dsh-computer`
 
 ```ts config-catalog
-/** Provider-selection settings for local computer control. */
+/** Optional runtime routing preferences for Computer providers. */
 export interface ComputerRuntimeConfig {
-  /** Provider id selected for this composition. Omit only when one usable provider is mounted. */
+  /** Provider id used only to break ties when multiple available Providers support the same target kind. */
   readonly provider?: string
 }
 ```
 
-来源：[`packages/computer/computer/src/index.ts:12`](../packages/computer/computer/src/index.ts)
+来源：[`packages/computer/computer/src/index.ts:18`](../packages/computer/computer/src/index.ts)
 
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -2590,6 +2590,8 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config (all optional — `Config` supplies the defaults). */
 export interface Config {
+  /** Default and maximum number of direct children returned by one directory-list call. */
+  listDirectoryLimit?: number
   /** Default and maximum number of lines returned by one `read` call. */
   readLimit?: number
   /** Maximum characters returned for a single line before truncation. */
@@ -2601,7 +2603,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-fs/src/index.ts:25`](../packages/fs/tool-fs/src/index.ts)
+来源：[`packages/fs/tool-fs/src/index.ts:26`](../packages/fs/tool-fs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs-search"></a>
 
@@ -3225,6 +3227,28 @@ export interface Config {
 ```
 
 来源：[`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-you"></a>
+
+## `@deepseek-ai/dsh-web-search-you`
+
+需要：`web`
+
+```ts config-catalog
+/** Optional deployment fields for the You.com search endpoint. */
+export interface Config {
+  /** Literal API key; prefer {@link apiKeyEnv} so secrets stay out of configuration files. */
+  apiKey?: string
+  /** Credential reference resolved for each search. Defaults to `YDC_API_KEY`. */
+  apiKeyEnv?: string
+  /** Endpoint base; `/search` is appended. */
+  baseURL?: string
+  /** Default count sent when a request has no `maxResults`. */
+  numResults?: number
+}
+```
+
+来源：[`packages/web/web-search-you/src/index.ts:24`](../packages/web/web-search-you/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 

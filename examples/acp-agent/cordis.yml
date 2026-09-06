@@ -25,19 +25,29 @@
   disabled: !!js process.env.DSH_DESKTOP_MODEL_ENABLED !== 'true'
   config:
     providers:
-      desktop-primary:
+      openai:
         displayName: Desktop Primary Model
         apiKeyEnv: DSH_DESKTOP_MODEL_API_KEY
         api: !!js process.env.DSH_DESKTOP_MODEL_API ?? 'openai-completions'
         baseURL: https://api.openai.com/v1
         baseURLEnv: DSH_DESKTOP_MODEL_BASE_URL
-        reasoning: high
-        models:
-          - id: !!js process.env.DSH_DESKTOP_MODEL_ID
-            input: [text, image]
-            reasoningEfforts:
-              off:
-              high: high
+        # Unknown gateway models start conservatively; known OpenAI model ids
+        # still inherit exact context, output, and effort metadata from pi-ai.
+        defaultContextWindow: 32768
+        defaultMaxTokens: !!js Number(process.env.DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS ?? 8192)
+        compat:
+          supportsDeveloperRole: false
+          supportsStrictMode: false
+          supportsStore: false
+          supportsUsageInStreaming: false
+        models: !!js >-
+          [{
+            id: process.env.DSH_DESKTOP_MODEL_ID,
+            input: process.env.DSH_DESKTOP_MODEL_INPUT === 'text,image' ? ['text', 'image'] : ['text'],
+            ...(process.env.DSH_DESKTOP_MODEL_CONTEXT_WINDOW === undefined
+              ? {}
+              : { contextWindow: Number(process.env.DSH_DESKTOP_MODEL_CONTEXT_WINDOW) })
+          }]
 
 # The default composition confines bash AND the filesystem tools to the
 # workspace and asks before a wider retry. Snapshot runs select
@@ -75,7 +85,7 @@
 - id: acp-agent
   name: '@deepseek-ai/dsh-acp-demo'
   config:
-    provider: !!js "process.env.DSH_DESKTOP_MODEL_ENABLED === 'true' ? 'desktop-primary' : 'deepseek-official'"
+    provider: !!js "process.env.DSH_DESKTOP_MODEL_ENABLED === 'true' ? 'openai' : 'deepseek-official'"
     model: !!js process.env.DSH_DESKTOP_MODEL_ID ?? 'deepseek-v4-pro'
     persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
     persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
@@ -86,7 +96,7 @@
     # The loop resolves {{model}} and each ACP session's client-supplied {{cwd}}.
     persona: !!js >-
       process.env.DSH_DESKTOP_CODE_WORK_ENABLED === 'true'
-        ? `You are Orbis AI, a general-purpose Code and Work assistant powered by the {{model}} model. Your working directory is {{cwd}}. Finish the user's requested outcome instead of merely describing a possible next step. Infer whether each request is development, research, document, or spreadsheet work and load only the relevant Skills. Answer routine single-step requests directly. For a substantial task with at least three independently verifiable work items, or when the user explicitly asks for a plan or sustained execution, begin with a one- or two-sentence visible update, create one same-session goal, and maintain a concise todo list of three to seven outcome-focused items. Keep todo status current as work progresses. Continue until the complete objective is achieved and verified; do not report success while planned work remains. Delegate only bounded work that can proceed independently, start no more than two children at once, keep integrating work in the parent, and verify child results before relying on them. Mark a goal complete only after gathering evidence for the whole objective. Report a blocker only when work cannot make meaningful progress without user input or an external state change. Your shell and filesystem tools run under a file sandbox; a sandbox denial is policy, not a command bug. Final answers must be concise enough to scan but complete enough to state the outcome, verification, deliverables, and any unresolved blocker.`
+        ? `You are Orbis AI, a general-purpose Code and Work assistant powered by the {{model}} model. Your working directory is {{cwd}}. Finish the user's requested outcome instead of merely describing a possible next step. Infer whether each request is development, research, document, or spreadsheet work and load only the relevant Skills. An attachment is already model input or a local resource, not desktop state: inspect inline images directly; use list_directory for an attached directory, read for a text attachment, read_image for a path-backed image, or the relevant document tool. When list_directory returns child paths, pass those exact paths unchanged to follow-up tools; never reconstruct them from display names. When the user asks what an attachment contains, inspect it before answering and never infer its contents from the displayed name. Never load computer-use or call computer merely to inspect an attachment; use it only when the user asks to operate an application, browser, or desktop, or when the requested evidence exists only in a live GUI. Answer routine single-step requests directly. For a substantial task with at least three independently verifiable work items, or when the user explicitly asks for a plan or sustained execution, begin with a one- or two-sentence visible update, create one same-session goal, and maintain a concise todo list of three to seven outcome-focused items. Keep todo status current as work progresses. Continue until the complete objective is achieved and verified; do not report success while planned work remains. Delegate only bounded work that can proceed independently, start no more than two children at once, keep integrating work in the parent, and verify child results before relying on them. Mark a goal complete only after gathering evidence for the whole objective. Report a blocker only when work cannot make meaningful progress without user input or an external state change. Your shell and filesystem tools run under a file sandbox; a sandbox denial is policy, not a command bug. Final answers must be concise enough to scan but complete enough to state the outcome, verification, deliverables, and any unresolved blocker.`
         : 'You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug. Verify your work by running the code or tests. Keep answers brief and factual.'
 
 # Desktop image prompts are persisted as content-addressed bytes, then resolved
@@ -249,6 +259,9 @@
 - id: repeat-tool-reminder
   name: '@deepseek-ai/dsh-repeat-tool-reminder'
 
+- id: delivery-quality-policy
+  name: '@deepseek-ai/dsh-delivery-quality-policy'
+
 # The filesystem stack rides the SAME sandbox policy as bash: dsh-fs-sandbox
 # replaces dsh-fs-local behind ctx.fs and fences write/edit by the effective
 # mode (read-only denies, workspace-write contains to the workspace + temp
@@ -280,21 +293,20 @@
   name: '@deepseek-ai/dsh-tool-skill'
   disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true' && process.env.DSH_DESKTOP_COMPUTER_USE_ENABLED !== 'true'
 
-# Work requests get the same DeepSeek-backed search capability as the Web
-# product. The credential resolves on the request, so a deployment without a
-# DeepSeek search key receives an explicit provider error rather than a hidden
-# fallback to an unrelated service.
+# Work requests use You.com's structured web-and-news search. A deployment
+# without YDC_API_KEY receives an explicit provider error rather than a hidden
+# fallback to another search service.
 - id: web
   name: '@deepseek-ai/dsh-web'
   disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
   config:
-    searchProvider: deepseek-official
+    searchProvider: you
 
-- id: web-search-deepseek
-  name: '@deepseek-ai/dsh-web-search-deepseek'
+- id: web-search-you
+  name: '@deepseek-ai/dsh-web-search-you'
   disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
   config:
-    apiKeyEnv: DEEPSEEK_API_KEY
+    apiKeyEnv: YDC_API_KEY
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-29-code-work-modes-and-shared-skills.md
-2026-08-29-code-work-modes-and-shared-skills.md: 52e55157f83dae4a930d54780bc43a7f2058555e
-2026-08-29-code-work-modes-and-shared-skills.zh.md: d5f566a9b43a2b7ce5aed502c55a0ac1413fc2b2
+2026-08-29-code-work-modes-and-shared-skills.md: 8c2ea0f6cbbef01f10578ec250bf50c76ef9732c
+2026-08-29-code-work-modes-and-shared-skills.zh.md: 564d4a83ceff4177814d536d4108db2c99b5df85

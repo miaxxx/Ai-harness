@@ -157,6 +157,21 @@ describe('MessageItem arms', () => {
     expect(skill?.querySelector('svg')).not.toBeNull()
   })
 
+  it('renders a structured Skill beside CJK text without relying on slash-token spacing', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'text', text: '使用<skill>spreadsheet-work</skill>处理附件' }] as never,
+        source: null,
+      }} />,
+    )
+    const skill = view.container.querySelector('[data-ref-chip="skill"]')
+    expect(skill?.textContent).toBe('spreadsheet-work')
+    expect(view.container.textContent).toContain('使用spreadsheet-work处理附件')
+  })
+
   it('user bubbles expose clock / copy and neither branch nor edit; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
