@@ -144,6 +144,10 @@ export class ObisBridgeClient {
     return this.request('POST', `/v1/harness/actions/${encodeURIComponent(action)}/propose`, input, options)
   }
 
+  executeProposal(proposalId: string, input: { environmentId: string; runId: string; expectedVersion: number }, options: RequestOptions = {}): Promise<JsonRecord> {
+    return this.request('POST', `/v1/harness/proposals/${encodeURIComponent(proposalId)}/execute`, input, options)
+  }
+
   getTask(taskId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/tasks/${encodeURIComponent(taskId)}?${params}`, undefined, options)
