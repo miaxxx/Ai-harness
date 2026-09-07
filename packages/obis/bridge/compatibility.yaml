@@ -1,0 +1,10 @@
+bridge: 0.1.0-rc.0
+supports:
+  ohp: ">=1.0 <2.0"
+testedHarness:
+  version: ">=0.1.0 <0.3.0"
+requiredCapabilities:
+  - agent
+  - tools
+  - skills
+  - session

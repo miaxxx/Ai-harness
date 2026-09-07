@@ -1,0 +1,23 @@
+{
+  "name": "@deepseek-ai/dsh-obis-bridge",
+  "description": "OHP client and governed enterprise capability bridge for OBIS",
+  "version": "0.1.0-rc.0",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miaxxx/Ai-harness.git",
+    "directory": "packages/obis/bridge"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": { "types": "./lib/types/client.d.ts", "default": "./lib/client.js" },
+    "./tools": { "types": "./lib/types/tools.d.ts", "default": "./lib/tools.js" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/**/*.js", "lib/types/**/*.d.ts", "compatibility.yaml", "README.md"],
+  "license": "MIT"
+}
