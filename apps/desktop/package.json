@@ -11,7 +11,7 @@
     "directory": "apps/desktop"
   },
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/enterprise-main.js",
   "files": [
     "dist"
   ],
