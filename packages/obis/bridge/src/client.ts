@@ -6,6 +6,7 @@ import type {
   JsonRecord,
   OhpCapabilities,
   OhpErrorBody,
+  OhpRunEvent,
 } from './types.ts'
 
 export class ObisBridgeError extends Error {
@@ -46,6 +47,22 @@ function isOhpError(value: unknown): value is OhpErrorBody {
   const error = (value as Record<string, unknown>).error
   return !!error && typeof error === 'object' && !Array.isArray(error)
     && typeof (error as Record<string, unknown>).message === 'string'
+}
+
+function parseOhpEvent(value: unknown): OhpRunEvent | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== 'string' || typeof record.type !== 'string' || typeof record.runId !== 'string'
+    || typeof record.occurredAt !== 'string' || typeof record.correlationId !== 'string') return undefined
+  return value as OhpRunEvent
+}
+
+function eventData(frame: string): string | undefined {
+  const lines = frame.split('\n')
+  const values = lines
+    .filter(line => line.startsWith('data:'))
+    .map(line => line.slice(5).replace(/^ /, ''))
+  return values.length ? values.join('\n') : undefined
 }
 
 export class ObisBridgeClient {
@@ -162,5 +179,71 @@ export class ObisBridgeClient {
   getSkill(skillId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/skills/${encodeURIComponent(skillId)}?${params}`, undefined, options)
+  }
+
+  async *streamAgentRunEvents(
+    runId: string,
+    environmentId: string,
+    options: RequestOptions & { afterId?: string } = {},
+  ): AsyncGenerator<OhpRunEvent, void, void> {
+    const token = await this.options.tokenProvider()
+    const params = new URLSearchParams({ environmentId })
+    if (options.afterId) params.set('after', options.afterId)
+    const headers = new Headers({ Accept: 'text/event-stream', 'OHP-Version': '1.0' })
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    const correlationId = options.correlationId ?? this.options.correlationIdProvider?.()
+    if (correlationId) headers.set('X-Correlation-Id', correlationId)
+    if (options.capabilityLease) headers.set('OHP-Capability-Lease', options.capabilityLease)
+    headers.set('OHP-Agent-Run', options.agentRunId ?? runId)
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/agent-runs/${encodeURIComponent(runId)}/events?${params}`, {
+      method: 'GET', headers, ...(options.signal ? { signal: options.signal } : {}),
+    })
+    if (!response.ok) {
+      const responseCorrelationId = response.headers.get('x-correlation-id') ?? undefined
+      const text = await response.text()
+      let payload: unknown
+      try { payload = text ? JSON.parse(text) as unknown : undefined }
+      catch { payload = undefined }
+      if (isOhpError(payload)) {
+        throw new ObisBridgeError(
+          response.status,
+          String(payload.error.code ?? 'OHP_REQUEST_FAILED'),
+          payload.error.message,
+          payload.error.correlationId || responseCorrelationId,
+          payload.error.retryable === true,
+          payload.error.details,
+        )
+      }
+      throw new ObisBridgeError(response.status, 'OHP_REQUEST_FAILED', `OBIS event stream failed with ${response.status}.`, responseCorrelationId)
+    }
+    if (!response.body) throw new ObisBridgeError(502, 'OHP_INVALID_RESPONSE', 'OBIS event stream returned no body.')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        buffer += decoder.decode(value, { stream: !done }).replaceAll('\r\n', '\n')
+        let boundary = buffer.indexOf('\n\n')
+        while (boundary >= 0) {
+          const frame = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          const data = eventData(frame)
+          if (data) {
+            let parsed: unknown
+            try { parsed = JSON.parse(data) as unknown }
+            catch { throw new ObisBridgeError(502, 'OHP_INVALID_RESPONSE', 'OBIS event stream returned invalid JSON event data.') }
+            const event = parseOhpEvent(parsed)
+            if (!event) throw new ObisBridgeError(502, 'OHP_INVALID_RESPONSE', 'OBIS event stream returned an invalid OHP event.')
+            yield event
+          }
+          boundary = buffer.indexOf('\n\n')
+        }
+        if (done) break
+      }
+    } finally {
+      reader.releaseLock()
+    }
   }
 }
