@@ -7,6 +7,9 @@
   "include": [
     "src/renderer.tsx",
     "src/product-runtime.ts",
+    "src/desktop-obis-identity-ui.ts",
+    "src/desktop-obis-identity-shared.ts",
+    "src/desktop-obis-identity.css.d.ts",
     "src/desktop-brand.tsx",
     "src/desktop-model-settings.tsx",
     "src/desktop-web-search-settings.tsx",
