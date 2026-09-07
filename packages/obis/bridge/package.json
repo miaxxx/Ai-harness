@@ -15,9 +15,18 @@
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./client": { "types": "./lib/types/client.d.ts", "default": "./lib/client.js" },
     "./tools": { "types": "./lib/types/tools.d.ts", "default": "./lib/tools.js" },
+    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": ["lib/**/*.js", "lib/types/**/*.d.ts", "compatibility.yaml", "README.md"],
-  "license": "MIT"
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
+  }
 }
