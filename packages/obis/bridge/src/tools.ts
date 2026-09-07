@@ -82,20 +82,23 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
       name: 'obis_propose_action',
       description: 'Create a governed enterprise action proposal. This does not directly execute the production mutation.',
       mutating: true,
-      execute: (input, context) => {
+      execute: async (input, context) => {
         if (!context.runId) throw new TypeError('obis_propose_action requires an AgentRun binding.')
-        if (typeof input.action !== 'string' || typeof input.expectedVersion !== 'number') throw new TypeError('obis_propose_action requires action and expectedVersion.')
+        if (typeof input.action !== 'string') throw new TypeError('obis_propose_action requires action.')
         const actionInput = input.input
         if (!actionInput || typeof actionInput !== 'object' || Array.isArray(actionInput)) throw new TypeError('obis_propose_action input must be an object.')
+        const expectedVersion = typeof input.expectedVersion === 'number'
+          ? input.expectedVersion
+          : (await client.getAgentRun(context.runId, context.environmentId, governedOptions(context))).version
         return client.proposeAction(input.action, {
           environmentId: context.environmentId,
           runId: context.runId,
-          expectedVersion: input.expectedVersion,
+          expectedVersion,
           ...(typeof input.targetId === 'string' ? { targetId: input.targetId } : {}),
           ...(typeof input.expectedObjectVersion === 'number' ? { expectedObjectVersion: input.expectedObjectVersion } : {}),
           input: actionInput as JsonRecord,
         }, governedOptions(context, {
-          idempotencyKey: context.idempotencyKey ?? `${context.runId}:${input.action}:${input.expectedVersion}`,
+          idempotencyKey: context.idempotencyKey ?? `${context.runId}:${input.action}:${expectedVersion}`,
         }))
       },
     },
