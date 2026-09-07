@@ -40,6 +40,12 @@ interface MeResponse {
   membership: DesktopObisMembership
 }
 
+class ObisHttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
+}
+
 function storePath(): string {
   return join(app.getPath('userData'), 'obis-enterprise.json')
 }
@@ -142,8 +148,12 @@ function decrypted(value: string | undefined): string | undefined {
 }
 
 function withoutSession(stored: StoredObisIdentity): StoredObisIdentity {
-  const { encryptedAccessToken: _access, encryptedRefreshToken: _refresh, sessionId: _session, expiresAt: _expires, refreshExpiresAt: _refreshExpires, user: _user, membership: _membership, ...profile } = stored
-  return profile
+  return {
+    version: STORE_VERSION,
+    baseURL: stored.baseURL,
+    tenantId: stored.tenantId,
+    deviceId: stored.deviceId,
+  }
 }
 
 function apiError(payload: unknown, status: number): string {
@@ -155,6 +165,16 @@ function apiError(payload: unknown, status: number): string {
     if (typeof error === 'string') return error
   }
   return `OBIS request failed with ${status}`
+}
+
+function isTokenPair(value: unknown): value is TokenPair {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const row = value as Partial<TokenPair>
+  return typeof row.sessionId === 'string'
+    && typeof row.accessToken === 'string'
+    && typeof row.refreshToken === 'string'
+    && typeof row.expiresAt === 'string'
+    && typeof row.refreshExpiresAt === 'string'
 }
 
 async function requestJson<T>(stored: StoredObisIdentity, path: string, input: {
@@ -172,7 +192,9 @@ async function requestJson<T>(stored: StoredObisIdentity, path: string, input: {
     ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
   })
   const payload = await response.json().catch(() => undefined) as T
-  if (!response.ok && !(input.allowAccepted && response.status === 202)) throw new Error(apiError(payload, response.status))
+  if (!response.ok && !(input.allowAccepted && response.status === 202)) {
+    throw new ObisHttpError(response.status, apiError(payload, response.status))
+  }
   return { status: response.status, value: payload }
 }
 
@@ -200,9 +222,12 @@ async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIden
       method: 'POST',
       body: { refreshToken },
     })
+    if (!isTokenPair(refreshed.value)) throw new Error('OBIS refresh returned an invalid token envelope')
     return attachIdentity(stored, refreshed.value)
   } catch (error) {
-    await writeStored(withoutSession(stored))
+    if (error instanceof ObisHttpError && (error.status === 401 || error.status === 403)) {
+      await writeStored(withoutSession(stored))
+    }
     throw error
   }
 }
@@ -222,7 +247,14 @@ async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
       // Rotate with the refresh credential below.
     }
   }
-  return publicStatus(await refreshStored(stored))
+  try {
+    return publicStatus(await refreshStored(stored))
+  } catch (error) {
+    if (error instanceof ObisHttpError && (error.status === 401 || error.status === 403)) {
+      return publicStatus(await readStored())
+    }
+    throw error
+  }
 }
 
 function trustedSender(event: Electron.IpcMainInvokeEvent): boolean {
@@ -272,7 +304,8 @@ function installIdentityIpc(): void {
       { method: 'POST', body: { tenantId: stored.tenantId, deviceCode: deviceCode.trim(), deviceId: stored.deviceId }, allowAccepted: true },
     )
     if (response.status === 202) return response.value as DesktopObisDeviceExchange
-    const identity = publicStatus(await attachIdentity(stored, response.value as TokenPair))
+    if (!isTokenPair(response.value)) throw new Error('OBIS device exchange returned an invalid token envelope')
+    const identity = publicStatus(await attachIdentity(stored, response.value))
     return { status: 'authenticated', identity }
   })
   ipcMain.handle('dsh:obis-identity-refresh', async (event) => {
@@ -294,7 +327,7 @@ function installIdentityIpc(): void {
     }
     if (accessToken) {
       try { await requestJson(stored, '/v1/auth/logout', { method: 'POST', accessToken }) }
-      catch { /* Local credential destruction still wins if the server is unreachable. */ }
+      catch { /* Explicit sign-out always destroys local credentials, even if the server is unreachable. */ }
     }
     const cleared = withoutSession(stored)
     await writeStored(cleared)
