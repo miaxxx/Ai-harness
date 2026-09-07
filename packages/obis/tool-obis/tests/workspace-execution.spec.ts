@@ -239,8 +239,7 @@ describe('OBIS governed workspace behavior', () => {
     expect(execution?.headers.get('idempotency-key')).toBe('execute:call-propose:proposal-1')
     expect(execution?.headers.get('ohp-capability-lease')).toBe('lease-1')
 
-    const approvalEvents = (agent.session.events as Array<{ type: string; data: Record<string, unknown> }>)
-      .filter(event => event.type.startsWith('approval/'))
+    const approvalEvents = agent.session.events.filter(event => event.type.startsWith('approval/'))
     expect(approvalEvents.map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
     expect(approvalEvents[1]?.data).toMatchObject({ outcome: 'allowed-once' })
   })
