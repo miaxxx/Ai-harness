@@ -99,7 +99,7 @@ export class ObisBridgeClient {
   }
 
   capabilities(signal?: AbortSignal): Promise<OhpCapabilities> {
-    return this.request('GET', '/v1/harness/capabilities', undefined, { signal })
+    return this.request('GET', '/v1/harness/capabilities', undefined, signal ? { signal } : {})
   }
 
   registerInstallation(input: HarnessRegistration, options: RequestOptions = {}): Promise<{ installation: HarnessInstallation; compatibility: CompatibilityResult }> {
