@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-07-obis-cross-repo-compatibility.md
-2026-09-07-obis-cross-repo-compatibility.md: 2ac9fc1e33f26e0fc4a3a9c011ec83d0c298136f
-2026-09-07-obis-cross-repo-compatibility.zh.md: 6d61f0402a52c4d79e7f9c63d489ca71d0765c50
+2026-09-07-obis-cross-repo-compatibility.md: f68011ae1391d355df23c8e321c75713a62db6e8
+2026-09-07-obis-cross-repo-compatibility.zh.md: 88bbe23cfc57656fac89e399bdc6208f553aa9f1
