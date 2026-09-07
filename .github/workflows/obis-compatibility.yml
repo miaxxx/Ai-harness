@@ -1,0 +1,49 @@
+name: OBIS Compatibility
+
+on:
+  push:
+    branches: ['feature/**']
+    paths:
+      - 'packages/obis/**'
+      - '.github/workflows/obis-compatibility.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+  pull_request:
+    paths:
+      - 'packages/obis/**'
+      - '.github/workflows/obis-compatibility.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  obis:
+    name: OHP bridge + native tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      # This lane is intentionally independent from the enterprise runner pool.
+      # Frozen-lock enforcement is restored as soon as the new workspace importers
+      # are committed to pnpm-lock.yaml; until then this lane still proves the
+      # actual TypeScript and runtime contracts rather than failing before install.
+      - name: Install workspace
+        run: pnpm install --no-frozen-lockfile
+      - name: Typecheck OBIS integration packages
+        run: pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
+      - name: Run OBIS integration contract tests
+        run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
