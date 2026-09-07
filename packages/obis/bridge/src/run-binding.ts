@@ -6,7 +6,6 @@ export interface ObisRunBindingInput {
   agentId: string
   goal: string
   autonomy?: string
-  taskId?: string
   harnessSessionId: string
   installationId?: string
 }
@@ -16,16 +15,16 @@ export interface ObisRunBindingInput {
  * Harness-owned; only its opaque identifier is attached to enterprise trace metadata.
  */
 export async function bindObisRun(client: ObisBridgeClient, input: ObisRunBindingInput, options: RequestOptions): Promise<AgentRunBinding> {
+  const runKey = options.idempotencyKey ?? `harness-session:${input.harnessSessionId}`
   const run = await client.createAgentRun({
     environmentId: input.environmentId,
     agentId: input.agentId,
     goal: input.goal,
     ...(input.autonomy ? { autonomy: input.autonomy } : {}),
-    ...(input.taskId ? { taskId: input.taskId } : {}),
-  }, options)
+  }, { ...options, idempotencyKey: runKey })
   return client.attachAgentRun(run.id, {
     environmentId: input.environmentId,
     harnessSessionId: input.harnessSessionId,
     ...(input.installationId ? { installationId: input.installationId } : {}),
-  }, { ...options, idempotencyKey: `${options.idempotencyKey}:attach` })
+  }, { ...options, idempotencyKey: `${runKey}:attach` })
 }
