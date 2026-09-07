@@ -5,7 +5,20 @@
     "outDir": "lib/types/main",
     "types": ["node"]
   },
-  "include": ["src/main.ts", "src/preload.ts", "src/shared.ts", "src/desktop-content.ts", "src/desktop-prompt.ts", "src/desktop-model-capabilities.ts", "src/desktop-model-storage.ts", "src/desktop-web-search-storage.ts"],
+  "include": [
+    "src/enterprise-main.ts",
+    "src/main.ts",
+    "src/preload.ts",
+    "src/shared.ts",
+    "src/desktop-obis-identity-main.ts",
+    "src/desktop-obis-identity-preload.ts",
+    "src/desktop-obis-identity-shared.ts",
+    "src/desktop-content.ts",
+    "src/desktop-prompt.ts",
+    "src/desktop-model-capabilities.ts",
+    "src/desktop-model-storage.ts",
+    "src/desktop-web-search-storage.ts"
+  ],
   "references": [
     { "path": "../../packages/acp/acp-client" },
     { "path": "../../packages/mcp/mcp-user-config" }
