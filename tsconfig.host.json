@@ -316,6 +316,8 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
+    { "path": "./packages/obis/bridge" },
+    { "path": "./packages/obis/tool-obis" },
     { "path": "./apps/cli" },
     { "path": "./apps/vscode" }
   ]
