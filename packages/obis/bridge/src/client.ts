@@ -243,6 +243,7 @@ export class ObisBridgeClient {
         if (done) break
       }
     } finally {
+      try { await reader.cancel() } catch { /* stream may already be aborted by the caller */ }
       reader.releaseLock()
     }
   }
