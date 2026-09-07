@@ -45,5 +45,16 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Typecheck OBIS integration packages
         run: pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
+      - name: Build public runtime entries
+        run: |
+          pnpm exec tsdown --no-config --no-clean --format esm --platform node --target es2024 \
+            --out-dir packages/obis/bridge/lib \
+            packages/obis/bridge/lib/types/index.js \
+            packages/obis/bridge/lib/types/client.js \
+            packages/obis/bridge/lib/types/tools.js
+          pnpm exec tsdown --no-config --no-clean --format esm --platform node --target es2024 \
+            --out-dir packages/obis/tool-obis/lib \
+            packages/obis/tool-obis/lib/types/index.js \
+            packages/obis/tool-obis/lib/types/invariant.js
       - name: Run OBIS integration contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
