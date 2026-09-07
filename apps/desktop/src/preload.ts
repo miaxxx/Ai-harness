@@ -2,6 +2,7 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { DesktopAttachmentPaste, DesktopBridge, DesktopRendererFrame } from './shared.ts'
+import './desktop-obis-identity-preload.ts'
 
 const pendingFrames: DesktopRendererFrame[] = []
 const listeners = new Set<(frame: DesktopRendererFrame) => void>()
