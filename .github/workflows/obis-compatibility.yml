@@ -37,24 +37,18 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
-      # This lane is intentionally independent from the enterprise runner pool.
-      # Frozen-lock enforcement is restored as soon as the new workspace importers
-      # are committed to pnpm-lock.yaml; until then this lane still proves the
-      # actual TypeScript and runtime contracts rather than failing before install.
-      - name: Install workspace
-        run: pnpm install --no-frozen-lockfile
+      - name: Install workspace from committed lockfile
+        run: pnpm install --frozen-lockfile
       - name: Typecheck OBIS integration packages
         run: pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
-      - name: Build public runtime entries
+      - name: Materialize package runtime entries
         run: |
-          pnpm exec tsdown --no-config --no-clean --format esm --platform node --target es2024 \
-            --out-dir packages/obis/bridge/lib \
-            packages/obis/bridge/lib/types/index.js \
-            packages/obis/bridge/lib/types/client.js \
-            packages/obis/bridge/lib/types/tools.js
-          pnpm exec tsdown --no-config --no-clean --format esm --platform node --target es2024 \
-            --out-dir packages/obis/tool-obis/lib \
-            packages/obis/tool-obis/lib/types/index.js \
-            packages/obis/tool-obis/lib/types/invariant.js
+          # The repository's normal tsdown workspace build uses fixedExtension=false
+          # and publishes lib/*.js. For this narrow lane, TypeScript has already
+          # emitted the same ESM modules under lib/types; copy the complete runtime
+          # module sets to the declared package entry location rather than creating
+          # a second bundler configuration.
+          cp packages/obis/bridge/lib/types/*.js packages/obis/bridge/lib/
+          cp packages/obis/tool-obis/lib/types/*.js packages/obis/tool-obis/lib/
       - name: Run OBIS integration contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
