@@ -1,3 +1,4 @@
+import { mountDesktopEnterpriseIdentity } from './desktop-obis-identity-ui.ts'
 import { mountDesktopProduct } from './product-runtime.ts'
 import './renderer.css'
 
@@ -19,7 +20,7 @@ function renderBootFailure(root: HTMLElement, error: unknown): void {
 const root = document.getElementById('root')
 if (root === null) throw new Error('desktop renderer: missing #root')
 
-void mountDesktopProduct(root).catch((error: unknown) => {
+void mountDesktopEnterpriseIdentity(root, () => mountDesktopProduct(root)).catch((error: unknown) => {
   console.error('[desktop-product] boot failed:', error)
   renderBootFailure(root, error)
 })
