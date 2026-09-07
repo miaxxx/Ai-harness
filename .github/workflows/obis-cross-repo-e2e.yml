@@ -1,0 +1,133 @@
+name: OBIS cross-repo compatibility
+
+on:
+  push:
+    branches:
+      - feature/obis-harness-unified-p0
+    paths:
+      - 'packages/obis/**'
+      - 'tests/obis-cross-repo.e2e.ts'
+      - 'tests/obis-e2e/**'
+      - '.github/workflows/obis-cross-repo-e2e.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: P0 candidate × candidate
+            obis_ref: feature/obis-harness-unified-p0
+            suite: full
+          - name: OBIS main × Harness candidate baseline
+            obis_ref: main
+            suite: expected-incompatible
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: obis
+          POSTGRES_PASSWORD: obis
+          POSTGRES_DB: obis_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U obis -d obis_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout Harness candidate
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Checkout OBIS matrix ref
+        uses: actions/checkout@v6
+        with:
+          repository: miaxxx/obis-dev
+          ref: ${{ matrix.obis_ref }}
+          path: _compat/obis
+          persist-credentials: false
+
+      - name: Assert main baseline compatibility state
+        if: matrix.suite == 'expected-incompatible'
+        shell: bash
+        run: |
+          if [[ -f _compat/obis/00-contracts/ohp/ohp-1.0.openapi.yaml ]]; then
+            echo "::error::OBIS main now carries OHP 1.0. Promote this matrix cell from expected-incompatible to the full suite."
+            exit 1
+          fi
+          echo "OBIS main does not yet carry the P0 OHP contract; expected until the P0 branch merges."
+          echo "### OBIS main × Harness candidate" >> "$GITHUB_STEP_SUMMARY"
+          echo "Expected incompatible baseline: OHP 1.0 is not on OBIS main yet." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up pnpm
+        if: matrix.suite == 'full'
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        if: matrix.suite == 'full'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Harness workspace
+        if: matrix.suite == 'full'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build OBIS Harness bridge and native tool adapter
+        if: matrix.suite == 'full'
+        shell: bash
+        run: |
+          pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
+          cp packages/obis/bridge/lib/types/*.js packages/obis/bridge/lib/
+          cp packages/obis/tool-obis/lib/types/*.js packages/obis/tool-obis/lib/
+
+      - name: Install OBIS Kernel dependencies
+        if: matrix.suite == 'full'
+        run: npm install --prefix _compat/obis/10-kernel --no-audit --no-fund
+
+      - name: Typecheck OBIS Kernel under Harness runner
+        if: matrix.suite == 'full'
+        run: npm --prefix _compat/obis/10-kernel run typecheck
+
+      - name: Run P0 live compatibility scenarios
+        if: matrix.suite == 'full'
+        env:
+          OBIS_DATABASE_URL: postgresql://obis:obis@127.0.0.1:5432/obis_e2e
+          OBIS_E2E_KERNEL_DIR: _compat/obis/10-kernel
+          OBIS_E2E_KERNEL_PORT: '4317'
+        run: pnpm exec tsx tests/obis-cross-repo.e2e.ts
+
+      - name: Record covered P0 scenarios
+        if: matrix.suite == 'full' && success()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### OBIS × AI Harness P0 live compatibility
+          - Login: signed local OIDC → OBIS token
+          - Context: native Harness tool → OHP context.read
+          - Query: governed query before/after mutation
+          - Skill: OHP skill.discover
+          - Proposal: model-visible `obis_propose_action`
+          - Approval: native Harness one-shot human approval
+          - Execute: adapter-internal OHP proposal.execute only
+          - Task: governed task.read after execution
+          - Restart/resume: PostgreSQL AgentRun + Task + Harness binding continuity
+          - Network interruption: committed response loss + idempotent replay
+          - Policy denial: OHP_FORBIDDEN fail-closed query
+          - Protocol mismatch: unsupported OHP-Version rejected
+          EOF
