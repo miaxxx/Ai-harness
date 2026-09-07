@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { defineTool, type JsonValue, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import {
   ObisBridgeClient,
@@ -117,15 +117,14 @@ export function apply(ctx: Context, input: Config): void {
       description: definition.description,
       parameters: schemas[toolName],
       output,
-      execute: async (args, exec) => definition.execute(args as JsonRecord, toolContext(config, exec)),
+      execute: async (args, exec) => await definition.execute(args as JsonRecord, toolContext(config, exec)) as JsonValue,
     }))
   }
 
-  ctx.systemPrompt.register({
-    id: 'tool:obis',
-    section: 'tools',
+  ctx.systemPrompt.section({
+    name: 'tool:obis',
     order: 145,
-    render: () => [
+    text: [
       'OBIS is the enterprise authority. Use obis_* tools for enterprise facts and governed operations.',
       'Never treat a proposed enterprise action as executed. Production mutation occurs only after OBIS policy, confirmation and approval gates complete.',
       'Use named governed queries for enterprise object reads; do not infer missing enterprise facts from local files or model memory.',
