@@ -11,6 +11,7 @@ import CredentialProvider, {
 } from '@deepseek-ai/dsh-credentials'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as toolObis from '../src/index.ts'
 
 class TestCredentialProvider extends CredentialProvider {
@@ -57,6 +58,8 @@ describe('tool-obis native composition', () => {
     await toolFiber
     const credentialFiber = ctx.plugin(TestCredentialProvider)
     await credentialFiber
+    const approvalFiber = ctx.plugin(ApprovalService)
+    await approvalFiber
 
     const obisFiber = ctx.plugin(toolObis, {
       baseUrl: 'https://obis.example.test',
@@ -91,6 +94,7 @@ describe('tool-obis native composition', () => {
     const dispose = ctx.tools.register(placeholder('obis_context'))
     dispose()
 
+    await approvalFiber.dispose()
     await credentialFiber.dispose()
     await toolFiber.dispose()
     await promptFiber.dispose()
@@ -104,6 +108,8 @@ describe('tool-obis native composition', () => {
     await toolFiber
     const credentialFiber = ctx.plugin(TestCredentialProvider)
     await credentialFiber
+    const approvalFiber = ctx.plugin(ApprovalService)
+    await approvalFiber
 
     const fiber = ctx.plugin(toolObis, {
       baseUrl: 'https://obis.example.test',
@@ -115,6 +121,7 @@ describe('tool-obis native composition', () => {
     const dispose = ctx.tools.register(placeholder('obis_context'))
     dispose()
 
+    await approvalFiber.dispose()
     await credentialFiber.dispose()
     await toolFiber.dispose()
     await promptFiber.dispose()
