@@ -1,9 +1,10 @@
-import type { ObisBridgeClient } from './client.ts'
+import type { ObisBridgeClient, RequestOptions } from './client.ts'
 import type { JsonRecord } from './types.ts'
 
 export interface ObisToolContext {
   environmentId: string
   runId?: string
+  capabilityLease?: string
   signal?: AbortSignal
   idempotencyKey?: string
 }
@@ -13,6 +14,15 @@ export interface ObisToolDefinition<TInput extends JsonRecord = JsonRecord> {
   description: string
   mutating: boolean
   execute(input: TInput, context: ObisToolContext): Promise<unknown>
+}
+
+function governedOptions(context: ObisToolContext, extra: RequestOptions = {}): RequestOptions {
+  return {
+    ...extra,
+    ...(context.runId ? { agentRunId: context.runId } : {}),
+    ...(context.capabilityLease ? { capabilityLease: context.capabilityLease } : {}),
+    ...(context.signal ? { signal: context.signal } : {}),
+  }
 }
 
 /**
@@ -28,7 +38,7 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
       execute: (input, context) => client.resolveContext(context.environmentId, {
         ...(input.focus && typeof input.focus === 'object' && !Array.isArray(input.focus) ? { focus: input.focus as JsonRecord } : {}),
         ...(typeof input.maxSymbols === 'number' ? { maxSymbols: input.maxSymbols } : {}),
-      }, { signal: context.signal }),
+      }, governedOptions(context)),
     },
     {
       name: 'obis_query',
@@ -40,7 +50,18 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
           ...(typeof input.id === 'string' ? { id: input.id } : {}),
           ...(input.where && typeof input.where === 'object' && !Array.isArray(input.where) ? { where: input.where as JsonRecord } : {}),
           ...(typeof input.limit === 'number' ? { limit: input.limit } : {}),
-        }, { signal: context.signal })
+        }, governedOptions(context))
+      },
+    },
+    {
+      name: 'obis_get_object',
+      description: 'Read one enterprise object through a named governed query. This never bypasses OBIS query policy or projection.',
+      mutating: false,
+      execute: (input, context) => {
+        if (typeof input.query !== 'string' || typeof input.id !== 'string') {
+          throw new TypeError('obis_get_object requires query and id.')
+        }
+        return client.executeQuery(context.environmentId, input.query, { id: input.id, limit: 1 }, governedOptions(context))
       },
     },
     {
@@ -49,7 +70,12 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
       mutating: false,
       execute: (input, context) => {
         if (typeof input.query !== 'string') throw new TypeError('obis_search_knowledge requires query.')
-        return client.searchKnowledge(context.environmentId, input.query, typeof input.limit === 'number' ? input.limit : 20, { signal: context.signal })
+        return client.searchKnowledge(
+          context.environmentId,
+          input.query,
+          typeof input.limit === 'number' ? input.limit : 20,
+          governedOptions(context),
+        )
       },
     },
     {
@@ -68,7 +94,9 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
           ...(typeof input.targetId === 'string' ? { targetId: input.targetId } : {}),
           ...(typeof input.expectedObjectVersion === 'number' ? { expectedObjectVersion: input.expectedObjectVersion } : {}),
           input: actionInput as JsonRecord,
-        }, { idempotencyKey: context.idempotencyKey ?? `${context.runId}:${input.action}:${input.expectedVersion}`, signal: context.signal })
+        }, governedOptions(context, {
+          idempotencyKey: context.idempotencyKey ?? `${context.runId}:${input.action}:${input.expectedVersion}`,
+        }))
       },
     },
     {
@@ -77,7 +105,7 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
       mutating: false,
       execute: (input, context) => {
         if (typeof input.taskId !== 'string') throw new TypeError('obis_get_task requires taskId.')
-        return client.getTask(input.taskId, context.environmentId, { signal: context.signal })
+        return client.getTask(input.taskId, context.environmentId, governedOptions(context))
       },
     },
   ]
