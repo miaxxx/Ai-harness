@@ -17,6 +17,22 @@ function mockClient() {
     const body = text ? JSON.parse(text) as unknown : undefined
     seen.push({ url: request.url, method: request.method, headers: request.headers, body })
 
+    if (request.url.includes('/v1/agent-runs/run-1/events?')) {
+      const first = {
+        id: 'event-1', type: 'planning', runId: 'run-1', occurredAt: '2026-09-07T00:00:00.000Z',
+        correlationId: 'corr-1', data: { harnessSessionId: 'session-1' },
+      }
+      const second = {
+        id: 'event-2', type: 'run.completed', runId: 'run-1', occurredAt: '2026-09-07T00:00:01.000Z',
+        correlationId: 'corr-2',
+      }
+      return new Response([
+        'retry: 5000\n\n',
+        `id: event-1\nevent: planning\ndata: ${JSON.stringify(first)}\n\n`,
+        ': keepalive\n\n',
+        `id: event-2\nevent: run.completed\ndata: ${JSON.stringify(second)}\n\n`,
+      ].join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
     if (request.url.endsWith('/v1/harness/knowledge/search')) {
       return new Response(JSON.stringify({ items: [{ id: 'doc-1', title: 'Policy' }] }), {
         status: 200,
@@ -87,5 +103,25 @@ describe('OBIS OHP bridge', () => {
     expect(seen[0]?.url).toBe('https://obis.test/v1/harness/queries/GetOrder/execute')
     expect(seen[0]?.url.includes('/objects/')).toBe(false)
     expect(seen[0]?.body).toEqual({ environmentId: 'production', id: 'order-1', limit: 1 })
+  })
+
+  it('streams normalized OHP events without exposing Harness SessionEvent', async () => {
+    const { client, seen } = mockClient()
+    const events = []
+    for await (const event of client.streamAgentRunEvents('run-1', 'production', {
+      afterId: 'event-0',
+      capabilityLease: 'lease-1',
+      agentRunId: 'run-1',
+    })) events.push(event)
+
+    expect(events.map(event => event.type)).toEqual(['planning', 'run.completed'])
+    expect(events[0]?.data).toEqual({ harnessSessionId: 'session-1' })
+    const request = seen[0]
+    expect(request?.url).toContain('/v1/agent-runs/run-1/events?')
+    expect(request?.url).toContain('environmentId=production')
+    expect(request?.url).toContain('after=event-0')
+    expect(request?.headers.get('accept')).toBe('text/event-stream')
+    expect(request?.headers.get('ohp-capability-lease')).toBe('lease-1')
+    expect(request?.headers.get('ohp-agent-run')).toBe('run-1')
   })
 })
