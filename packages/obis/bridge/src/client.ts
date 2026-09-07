@@ -32,6 +32,8 @@ export interface ObisBridgeClientOptions {
 export interface RequestOptions {
   idempotencyKey?: string
   correlationId?: string
+  capabilityLease?: string
+  agentRunId?: string
   signal?: AbortSignal
 }
 
@@ -65,6 +67,8 @@ export class ObisBridgeClient {
     const correlationId = options.correlationId ?? this.options.correlationIdProvider?.()
     if (correlationId) headers.set('X-Correlation-Id', correlationId)
     if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey)
+    if (options.capabilityLease) headers.set('OHP-Capability-Lease', options.capabilityLease)
+    if (options.agentRunId) headers.set('OHP-Agent-Run', options.agentRunId)
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
       headers,
@@ -118,11 +122,12 @@ export class ObisBridgeClient {
     return this.request('POST', `/v1/harness/queries/${encodeURIComponent(query)}/execute`, { environmentId, ...input }, options)
   }
 
-  searchKnowledge(environmentId: string, query: string, limit = 20, options: RequestOptions = {}): Promise<JsonRecord[]> {
-    return this.request('POST', '/v1/harness/knowledge/search', { environmentId, query, limit }, options)
+  async searchKnowledge(environmentId: string, query: string, limit = 20, options: RequestOptions = {}): Promise<JsonRecord[]> {
+    const result = await this.request<{ items: JsonRecord[] }>('POST', '/v1/harness/knowledge/search', { environmentId, query, limit }, options)
+    return result.items
   }
 
-  createAgentRun(input: { environmentId: string; agentId: string; goal: string; autonomy?: string; taskId?: string }, options: RequestOptions = {}): Promise<AgentRunBinding> {
+  createAgentRun(input: { environmentId: string; agentId: string; goal: string; autonomy?: string }, options: RequestOptions = {}): Promise<AgentRunBinding> {
     return this.request('POST', '/v1/agent-runs', input, options)
   }
 
@@ -144,9 +149,10 @@ export class ObisBridgeClient {
     return this.request('GET', `/v1/harness/tasks/${encodeURIComponent(taskId)}?${params}`, undefined, options)
   }
 
-  listSkills(environmentId: string, options: RequestOptions = {}): Promise<JsonRecord[]> {
+  async listSkills(environmentId: string, options: RequestOptions = {}): Promise<JsonRecord[]> {
     const params = new URLSearchParams({ environmentId })
-    return this.request('GET', `/v1/harness/skills?${params}`, undefined, options)
+    const result = await this.request<{ items: JsonRecord[] }>('GET', `/v1/harness/skills?${params}`, undefined, options)
+    return result.items
   }
 
   getSkill(skillId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
