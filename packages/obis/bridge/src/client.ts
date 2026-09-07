@@ -98,58 +98,58 @@ export class ObisBridgeClient {
     return this.request('GET', '/v1/harness/capabilities', undefined, { signal })
   }
 
-  registerInstallation(input: HarnessRegistration, options?: RequestOptions): Promise<{ installation: HarnessInstallation; compatibility: CompatibilityResult }> {
-    return this.request('POST', '/v1/harness/installations', input, undefined, options)
+  registerInstallation(input: HarnessRegistration, options: RequestOptions = {}): Promise<{ installation: HarnessInstallation; compatibility: CompatibilityResult }> {
+    return this.request('POST', '/v1/harness/installations', input, options)
   }
 
-  heartbeat(installationId: string, input: Partial<Pick<HarnessRegistration, 'harnessVersion' | 'bridgeVersion' | 'protocolVersions' | 'capabilities'>>, options?: RequestOptions): Promise<{ installation: HarnessInstallation; compatibility: CompatibilityResult }> {
-    return this.request('POST', `/v1/harness/installations/${encodeURIComponent(installationId)}/heartbeat`, input, undefined, options)
+  heartbeat(installationId: string, input: Partial<Pick<HarnessRegistration, 'harnessVersion' | 'bridgeVersion' | 'protocolVersions' | 'capabilities'>>, options: RequestOptions = {}): Promise<{ installation: HarnessInstallation; compatibility: CompatibilityResult }> {
+    return this.request('POST', `/v1/harness/installations/${encodeURIComponent(installationId)}/heartbeat`, input, options)
   }
 
-  resolveContext(environmentId: string, input: { focus?: JsonRecord; maxSymbols?: number } = {}, options?: RequestOptions): Promise<JsonRecord> {
-    return this.request('POST', '/v1/harness/context/resolve', { environmentId, ...input }, undefined, options)
+  resolveContext(environmentId: string, input: { focus?: JsonRecord; maxSymbols?: number } = {}, options: RequestOptions = {}): Promise<JsonRecord> {
+    return this.request('POST', '/v1/harness/context/resolve', { environmentId, ...input }, options)
   }
 
-  evaluateQuery(environmentId: string, query: string, input: { id?: string; where?: JsonRecord; limit?: number; context?: JsonRecord } = {}, options?: RequestOptions): Promise<JsonRecord> {
-    return this.request('POST', `/v1/harness/queries/${encodeURIComponent(query)}/evaluate`, { environmentId, ...input }, undefined, options)
+  evaluateQuery(environmentId: string, query: string, input: { id?: string; where?: JsonRecord; limit?: number; context?: JsonRecord } = {}, options: RequestOptions = {}): Promise<JsonRecord> {
+    return this.request('POST', `/v1/harness/queries/${encodeURIComponent(query)}/evaluate`, { environmentId, ...input }, options)
   }
 
-  executeQuery(environmentId: string, query: string, input: { id?: string; where?: JsonRecord; limit?: number; context?: JsonRecord } = {}, options?: RequestOptions): Promise<JsonRecord> {
-    return this.request('POST', `/v1/harness/queries/${encodeURIComponent(query)}/execute`, { environmentId, ...input }, undefined, options)
+  executeQuery(environmentId: string, query: string, input: { id?: string; where?: JsonRecord; limit?: number; context?: JsonRecord } = {}, options: RequestOptions = {}): Promise<JsonRecord> {
+    return this.request('POST', `/v1/harness/queries/${encodeURIComponent(query)}/execute`, { environmentId, ...input }, options)
   }
 
-  searchKnowledge(environmentId: string, query: string, limit = 20, options?: RequestOptions): Promise<JsonRecord[]> {
-    return this.request('POST', '/v1/harness/knowledge/search', { environmentId, query, limit }, undefined, options)
+  searchKnowledge(environmentId: string, query: string, limit = 20, options: RequestOptions = {}): Promise<JsonRecord[]> {
+    return this.request('POST', '/v1/harness/knowledge/search', { environmentId, query, limit }, options)
   }
 
-  createAgentRun(input: { environmentId: string; agentId: string; goal: string; autonomy?: string; taskId?: string }, options: RequestOptions): Promise<AgentRunBinding> {
-    return this.request('POST', '/v1/agent-runs', input, undefined, options)
+  createAgentRun(input: { environmentId: string; agentId: string; goal: string; autonomy?: string; taskId?: string }, options: RequestOptions = {}): Promise<AgentRunBinding> {
+    return this.request('POST', '/v1/agent-runs', input, options)
   }
 
-  attachAgentRun(runId: string, input: { environmentId: string; harnessSessionId: string; installationId?: string }, options: RequestOptions): Promise<AgentRunBinding> {
-    return this.request('POST', `/v1/agent-runs/${encodeURIComponent(runId)}/attach`, input, undefined, options)
+  attachAgentRun(runId: string, input: { environmentId: string; harnessSessionId: string; installationId?: string }, options: RequestOptions = {}): Promise<AgentRunBinding> {
+    return this.request('POST', `/v1/agent-runs/${encodeURIComponent(runId)}/attach`, input, options)
   }
 
-  getAgentRun(runId: string, environmentId: string, options?: RequestOptions): Promise<AgentRunBinding> {
+  getAgentRun(runId: string, environmentId: string, options: RequestOptions = {}): Promise<AgentRunBinding> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/agent-runs/${encodeURIComponent(runId)}?${params}`, undefined, options)
   }
 
-  proposeAction(action: string, input: { environmentId: string; runId: string; expectedVersion: number; targetId?: string; expectedObjectVersion?: number; input: JsonRecord }, options: RequestOptions): Promise<JsonRecord> {
-    return this.request('POST', `/v1/harness/actions/${encodeURIComponent(action)}/propose`, input, undefined, options)
+  proposeAction(action: string, input: { environmentId: string; runId: string; expectedVersion: number; targetId?: string; expectedObjectVersion?: number; input: JsonRecord }, options: RequestOptions = {}): Promise<JsonRecord> {
+    return this.request('POST', `/v1/harness/actions/${encodeURIComponent(action)}/propose`, input, options)
   }
 
-  getTask(taskId: string, environmentId: string, options?: RequestOptions): Promise<JsonRecord> {
+  getTask(taskId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/tasks/${encodeURIComponent(taskId)}?${params}`, undefined, options)
   }
 
-  listSkills(environmentId: string, options?: RequestOptions): Promise<JsonRecord[]> {
+  listSkills(environmentId: string, options: RequestOptions = {}): Promise<JsonRecord[]> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/skills?${params}`, undefined, options)
   }
 
-  getSkill(skillId: string, environmentId: string, options?: RequestOptions): Promise<JsonRecord> {
+  getSkill(skillId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/skills/${encodeURIComponent(skillId)}?${params}`, undefined, options)
   }
