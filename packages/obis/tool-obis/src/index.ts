@@ -163,7 +163,7 @@ export function apply(ctx: Context, input: Config): void {
     if (current) return current
     const pending = (async () => {
       const run = config.runId
-        ? await client.getAgentRun(config.runId, config.environmentId, { signal: undefined })
+        ? await client.getAgentRun(config.runId, config.environmentId)
         : await client.createAgentRun({
             environmentId: config.environmentId,
             agentId: config.agentId,
