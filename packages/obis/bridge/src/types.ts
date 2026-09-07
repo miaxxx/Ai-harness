@@ -36,6 +36,20 @@ export interface CompatibilityResult {
   updateRequired: boolean
   warnings: string[]
   selectedProtocolVersion?: string
+  missingCapabilities?: string[]
+}
+
+export interface CapabilityLease {
+  id: string
+  runId: string
+  deploymentId: string
+  tenantId: string
+  environmentId: string
+  userId: string
+  deviceId: string
+  operations: string[]
+  issuedAt: string
+  expiresAt: string
 }
 
 export interface AgentRunBinding {
@@ -44,10 +58,14 @@ export interface AgentRunBinding {
   environmentId: string
   actorId: string
   taskId: string
+  deploymentId: string
   artifactId: string
   status: string
   version: number
   autonomy: string
+  harnessSessionId?: string
+  installationId?: string
+  capabilityLease?: CapabilityLease
   [key: string]: unknown
 }
 
