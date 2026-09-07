@@ -26,13 +26,13 @@ async function main(): Promise<void> {
   const oidc = await createOidcFixture()
   let kernel: ChildProcess | undefined
   try {
-    console.log('E2E 01/12 seed durable enterprise state')
+    console.log('E2E 01/13 seed durable enterprise state')
     kernel = startKernel('legacy')
     await waitForHealth()
     await seedEnterprise()
     await stopKernel(kernel)
 
-    console.log('E2E 02/12 Login via signed local OIDC')
+    console.log('E2E 02/13 Login via signed local OIDC')
     kernel = startKernel('required', oidc)
     await waitForHealth()
     await requestJson('/v1/platform/bootstrap', {
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     const { ctx, approvals } = await mountGovernedHarness(registration.installation.id)
     const agent = fakeAgent()
 
-    console.log('E2E 03/12 Context through native Harness tool + OHP lease')
+    console.log('E2E 03/13 Context through native Harness tool + OHP lease')
     const context = await nativeTool(ctx, agent, 'e2e-context', 'obis_context', {
       focus: { objects: ['Order'], skills: ['ReviewOrder'] },
     })
@@ -79,16 +79,16 @@ async function main(): Promise<void> {
     assert.ok(attached.capabilityLease?.id)
     const governed = { agentRunId: boundRun.id, capabilityLease: attached.capabilityLease!.id }
 
-    console.log('E2E 04/12 Query through native Harness tool')
+    console.log('E2E 04/13 Query through native Harness tool')
     const before = await nativeTool(ctx, agent, 'e2e-query-before', 'obis_query', { query: 'ListOrders' })
     assert.equal(before.status, 'executed')
     assert.deepEqual(before.items, [])
 
-    console.log('E2E 05/12 Skill discovery through OHP')
+    console.log('E2E 05/13 Skill discovery through OHP')
     const skills = await client.listSkills(environmentId, governed)
     assert.ok(skills.some(skill => skill.name === 'ReviewOrder'))
 
-    console.log('E2E 06/12 Proposal + native human approval + adapter-internal execute')
+    console.log('E2E 06/13 Proposal + native human approval + adapter-internal execute')
     const action = await nativeTool(ctx, agent, 'e2e-proposal', 'obis_propose_action', {
       action: 'createOrder', targetId: 'order-e2e-1', input: { amount: 125, status: 'open' },
     })
@@ -99,25 +99,36 @@ async function main(): Promise<void> {
     assert.equal(approvals.length, 1)
     assert.equal(ctx.tools.schemas(agent).some(schema => schema.name === 'obis_execute_action'), false)
 
-    console.log('E2E 07/12 Query observes committed enterprise mutation')
+    console.log('E2E 07/13 Query observes committed enterprise mutation')
     const after = await nativeTool(ctx, agent, 'e2e-query-after', 'obis_query', { query: 'ListOrders' })
     assert.equal(after.status, 'executed')
     const items = after.items as Array<{ id: string; values: Record<string, unknown> }>
     assert.deepEqual(items.map(item => item.id), ['order-e2e-1'])
     assert.deepEqual(items[0]?.values, { amount: 125, status: 'open' })
 
-    console.log('E2E 08/12 Task read reflects completed governed work')
+    console.log('E2E 08/13 Task read reflects completed governed work')
     const completedRun = await client.getAgentRun(boundRun.id, environmentId)
     const task = await client.getTask(completedRun.taskId, environmentId, governed)
     assert.equal(task.status, 'completed')
 
-    console.log('E2E 09/12 Policy denial fails closed')
+    console.log('E2E 09/13 OHP SSE exposes normalized enterprise run events')
+    const eventTypes: string[] = []
+    for await (const event of client.streamAgentRunEvents(boundRun.id, environmentId, governed)) {
+      assert.equal(event.runId, boundRun.id)
+      eventTypes.push(event.type)
+      if (event.type === 'run.completed') break
+    }
+    for (const expected of ['run.started', 'planning', 'proposal.created', 'action.started', 'action.completed', 'run.completed']) {
+      assert.ok(eventTypes.includes(expected), `missing normalized OHP event ${expected}: ${eventTypes.join(', ')}`)
+    }
+
+    console.log('E2E 10/13 Policy denial fails closed')
     await assert.rejects(
       client.executeQuery(environmentId, 'DeniedOrders', {}, governed),
       (error: unknown) => error instanceof ObisBridgeError && error.status === 403 && error.code === 'OHP_FORBIDDEN',
     )
 
-    console.log('E2E 10/12 restart/resume keeps AgentRun, Task and Harness binding durable')
+    console.log('E2E 11/13 restart/resume keeps AgentRun, Task and Harness binding durable')
     const resumable = await client.createAgentRun({
       environmentId, agentId: 'workspace', goal: 'Resume this governed run after restart.', autonomy: 'human-approved',
     }, { idempotencyKey: 'restart-resume-run' })
@@ -139,7 +150,7 @@ async function main(): Promise<void> {
     })
     assert.ok(['open', 'running', 'waiting', 'waiting-approval'].includes(String(resumedTask.status)))
 
-    console.log('E2E 11/12 network interruption replay returns the committed idempotent AgentRun')
+    console.log('E2E 12/13 network interruption replay returns the committed idempotent AgentRun')
     const realFetch = globalThis.fetch
     let dropped = false
     const lossyClient = new ObisBridgeClient({
@@ -162,7 +173,7 @@ async function main(): Promise<void> {
     const replayedAgain = await client.createAgentRun(lossyInput, { idempotencyKey: 'network-loss-run' })
     assert.equal(replayed.id, replayedAgain.id)
 
-    console.log('E2E 12/12 OHP version mismatch is rejected before authority use')
+    console.log('E2E 13/13 OHP version mismatch is rejected before authority use')
     const mismatch = await fetch(`${kernelBaseUrl}/v1/harness/skills?environmentId=${environmentId}`, {
       headers: { authorization: `Bearer ${tokens.accessToken}`, 'OHP-Version': '9.9' },
     })
