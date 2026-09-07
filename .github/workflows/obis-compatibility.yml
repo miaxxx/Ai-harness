@@ -8,6 +8,7 @@ on:
       - '.github/workflows/obis-compatibility.yml'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - 'tsconfig.json'
       - 'tsconfig.base.json'
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - '.github/workflows/obis-compatibility.yml'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - 'tsconfig.json'
       - 'tsconfig.base.json'
 
 permissions:
@@ -39,6 +41,8 @@ jobs:
           cache: pnpm
       - name: Install workspace from committed lockfile
         run: pnpm install --frozen-lockfile
+      - name: Validate whole-repo solution graph
+        run: pnpm exec tsc -b tsconfig.json --dry --pretty false
       - name: Typecheck OBIS integration packages
         run: pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
       - name: Materialize package runtime entries
