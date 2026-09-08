@@ -2,8 +2,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
 import type {
+  DesktopApprovalDecisionInput,
+  DesktopApprovalDecisionResult,
   DesktopApprovalInbox,
   DesktopEnterpriseOverview,
+  DesktopEnvironmentOperationsState,
+  DesktopEnvironmentRuntimeState,
+  DesktopMaintenanceRequestInput,
+  DesktopMaintenanceTask,
+  DesktopMaintenanceTaskType,
   DesktopModelBudgetSummary,
   DesktopModelUsageRecord,
   DesktopOperationsSnapshot,
@@ -11,6 +18,8 @@ import type {
 } from './desktop-obis-identity-shared.ts'
 
 const APP_ORIGIN = 'dsh-app://app'
+const ENVIRONMENT_STATES = new Set<DesktopEnvironmentRuntimeState>(['active', 'draining', 'maintenance', 'disabled'])
+const MAINTENANCE_TYPES = new Set<DesktopMaintenanceTaskType>(['reconcile', 'cleanup', 'compact', 'update'])
 
 interface StoredEnterpriseIdentity {
   version: number
@@ -66,6 +75,11 @@ function requireTrusted(event: Electron.IpcMainInvokeEvent): void {
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function nonEmpty(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`)
+  return value.trim()
 }
 
 function parseStored(value: unknown): StoredEnterpriseIdentity {
@@ -175,6 +189,19 @@ async function authenticatedIdentity(): Promise<{ stored: StoredEnterpriseIdenti
   return refreshedAccessToken(stored)
 }
 
+async function authenticatedRequest<T>(path: string, init: RequestInit): Promise<T> {
+  const identity = await authenticatedIdentity()
+  try {
+    return await requestJson<T>(identity.stored, path, identity.accessToken, init)
+  } catch (error) {
+    // A server-side revocation can invalidate a token before its local expiry. Refresh
+    // once in main process; never surface refresh credentials to the renderer.
+    if (!(error instanceof EnterpriseOverviewHttpError) || error.status !== 401) throw error
+    const refreshed = await refreshedAccessToken(identity.stored)
+    return requestJson<T>(refreshed.stored, path, refreshed.accessToken, init)
+  }
+}
+
 async function section<T>(operation: () => Promise<T>): Promise<DesktopOverviewSection<T>> {
   try {
     return { available: true, value: await operation() }
@@ -219,6 +246,41 @@ async function enterpriseOverview(scope: { environmentId: string; projectId?: st
   }
 }
 
+async function decideApproval(input: DesktopApprovalDecisionInput): Promise<DesktopApprovalDecisionResult> {
+  const approvalId = nonEmpty(input.approvalId, 'Approval id')
+  const environmentId = nonEmpty(input.environmentId, 'Environment')
+  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error('Approval expectedVersion must be a positive integer')
+  if (input.decision !== 'approve' && input.decision !== 'reject') throw new Error('Approval decision must be approve or reject')
+  if (input.comment !== undefined && typeof input.comment !== 'string') throw new Error('Approval comment must be text')
+  return authenticatedRequest<DesktopApprovalDecisionResult>(`/v1/approvals/${encodeURIComponent(approvalId)}/decisions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      environmentId,
+      expectedVersion: input.expectedVersion,
+      decision: input.decision,
+      ...(input.comment?.trim() ? { comment: input.comment.trim() } : {}),
+    }),
+  })
+}
+
+async function transitionEnvironment(input: { environmentId: string; to: DesktopEnvironmentRuntimeState; reason?: string }): Promise<DesktopEnvironmentOperationsState> {
+  const environmentId = nonEmpty(input.environmentId, 'Environment')
+  if (!ENVIRONMENT_STATES.has(input.to)) throw new Error('Invalid environment runtime state')
+  return authenticatedRequest<DesktopEnvironmentOperationsState>(`/v1/management/operations/environments/${encodeURIComponent(environmentId)}/state`, {
+    method: 'PATCH',
+    body: JSON.stringify({ to: input.to, ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}) }),
+  })
+}
+
+async function requestMaintenance(input: DesktopMaintenanceRequestInput): Promise<DesktopMaintenanceTask> {
+  const environmentId = nonEmpty(input.environmentId, 'Environment')
+  if (!MAINTENANCE_TYPES.has(input.type)) throw new Error('Invalid maintenance task type')
+  return authenticatedRequest<DesktopMaintenanceTask>(`/v1/management/operations/environments/${encodeURIComponent(environmentId)}/maintenance`, {
+    method: 'POST',
+    body: JSON.stringify({ type: input.type, ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}) }),
+  })
+}
+
 function installEnterpriseOverviewIpc(): void {
   ipcMain.handle('dsh:enterprise-overview', async (event, value: unknown) => {
     requireTrusted(event)
@@ -229,6 +291,41 @@ function installEnterpriseOverviewIpc(): void {
     return enterpriseOverview({
       environmentId: row.environmentId,
       ...(typeof row.projectId === 'string' && row.projectId.trim() ? { projectId: row.projectId } : {}),
+    })
+  })
+
+  ipcMain.handle('dsh:enterprise-approval-decision', async (event, value: unknown) => {
+    requireTrusted(event)
+    const row = record(value)
+    if (!row) throw new Error('Approval decision payload is required')
+    return decideApproval({
+      approvalId: nonEmpty(row.approvalId, 'Approval id'),
+      environmentId: nonEmpty(row.environmentId, 'Environment'),
+      expectedVersion: Number(row.expectedVersion),
+      decision: row.decision as 'approve' | 'reject',
+      ...(typeof row.comment === 'string' ? { comment: row.comment } : {}),
+    })
+  })
+
+  ipcMain.handle('dsh:enterprise-environment-transition', async (event, value: unknown) => {
+    requireTrusted(event)
+    const row = record(value)
+    if (!row) throw new Error('Environment transition payload is required')
+    return transitionEnvironment({
+      environmentId: nonEmpty(row.environmentId, 'Environment'),
+      to: row.to as DesktopEnvironmentRuntimeState,
+      ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
+    })
+  })
+
+  ipcMain.handle('dsh:enterprise-maintenance-request', async (event, value: unknown) => {
+    requireTrusted(event)
+    const row = record(value)
+    if (!row) throw new Error('Maintenance request payload is required')
+    return requestMaintenance({
+      environmentId: nonEmpty(row.environmentId, 'Environment'),
+      type: row.type as DesktopMaintenanceTaskType,
+      ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
     })
   })
 }
