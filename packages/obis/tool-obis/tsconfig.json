@@ -13,6 +13,7 @@
     { "path": "../../core/tools" },
     { "path": "../../core/system-prompt" },
     { "path": "../../runtime-diagnostics/invariants" },
-    { "path": "../bridge" }
+    { "path": "../bridge" },
+    { "path": "../launch/tsconfig.host.json" }
   ]
 }
