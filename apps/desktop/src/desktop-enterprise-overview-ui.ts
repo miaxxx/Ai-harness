@@ -9,6 +9,7 @@ import type {
   DesktopOverviewSection,
   DesktopWorkloadKind,
 } from './desktop-obis-identity-shared.ts'
+import { renderIdentityGovernance } from './desktop-enterprise-identity-ui.ts'
 import './desktop-enterprise-overview.css'
 
 const WORKLOADS: readonly DesktopWorkloadKind[] = ['action', 'model', 'mcp', 'workflow', 'task', 'sync', 'agent']
@@ -350,6 +351,7 @@ export async function renderEnterpriseControlCenter(host: HTMLElement, scope: { 
   if (overview.operations.available) renderOperations(page, overview.operations.value, refresh)
   else sectionUnavailable(page, overview.operations, 'Operations')
   renderApprovals(page, overview, refresh)
+  renderIdentityGovernance(page, overview.identity)
   renderModelGovernance(page, overview)
   host.append(page)
 }
