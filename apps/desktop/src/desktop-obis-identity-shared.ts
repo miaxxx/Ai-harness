@@ -270,6 +270,48 @@ export interface DesktopMaintenanceRequestInput {
   reason?: string
 }
 
+export interface DesktopDirectoryUser {
+  user: {
+    id: string
+    displayName: string
+    primaryEmail: string
+    status: 'active' | 'invited' | 'disabled'
+    createdAt: string
+    lastLoginAt?: string
+  }
+  membership: {
+    tenantId: string
+    userId: string
+    status: 'active' | 'invited' | 'disabled'
+    roles: string[]
+    joinedAt: string
+  }
+}
+
+export interface DesktopSsoProviderSummary {
+  id: string
+  protocol: 'oidc' | 'saml'
+  displayName: string
+  enabled: boolean
+  allowJitLinkByEmail: boolean
+  defaultRoles: string[]
+  domainRules: string[]
+}
+
+export interface DesktopScimProviderSummary {
+  id: string
+  displayName: string
+  enabled: boolean
+  defaultRoles: string[]
+  groupRoleMappings: Record<string, string[]>
+}
+
+export interface DesktopIdentityGovernanceOverview {
+  users: DesktopOverviewSection<DesktopDirectoryUser[]>
+  ssoProviders: DesktopOverviewSection<DesktopSsoProviderSummary[]>
+  scimProviders: DesktopOverviewSection<DesktopScimProviderSummary[]>
+}
+
 export interface DesktopModelBudgetPolicy {
   id: string
   tenantId: string
@@ -334,6 +376,7 @@ export interface DesktopEnterpriseOverview {
   fetchedAt: string
   operations: DesktopOverviewSection<DesktopOperationsSnapshot>
   approvals: DesktopOverviewSection<DesktopApprovalInbox>
+  identity: DesktopIdentityGovernanceOverview
   modelBudget: DesktopOverviewSection<DesktopModelBudgetSummary>
   modelUsage: DesktopOverviewSection<DesktopModelUsageRecord[]>
 }
