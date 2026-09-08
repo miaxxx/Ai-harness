@@ -17,6 +17,9 @@ const bridge: DesktopObisIdentityBridge = {
   listWorkspaceDefinitions: () => ipcRenderer.invoke('dsh:obis-workspace-definitions') as ReturnType<DesktopObisIdentityBridge['listWorkspaceDefinitions']>,
   saveWorkspaceDefinition: (id, value) => ipcRenderer.invoke('dsh:obis-workspace-definition-save', id, value) as ReturnType<DesktopObisIdentityBridge['saveWorkspaceDefinition']>,
   overview: scope => ipcRenderer.invoke('dsh:enterprise-overview', scope) as ReturnType<DesktopObisIdentityBridge['overview']>,
+  decideApproval: input => ipcRenderer.invoke('dsh:enterprise-approval-decision', input) as ReturnType<DesktopObisIdentityBridge['decideApproval']>,
+  transitionEnvironment: input => ipcRenderer.invoke('dsh:enterprise-environment-transition', input) as ReturnType<DesktopObisIdentityBridge['transitionEnvironment']>,
+  requestMaintenance: input => ipcRenderer.invoke('dsh:enterprise-maintenance-request', input) as ReturnType<DesktopObisIdentityBridge['requestMaintenance']>,
 }
 
 contextBridge.exposeInMainWorld('dshEnterprise', bridge)
