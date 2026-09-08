@@ -5,6 +5,7 @@ import type {
   DesktopApprovalDecisionInput,
   DesktopApprovalDecisionResult,
   DesktopApprovalInbox,
+  DesktopDirectoryUser,
   DesktopEnterpriseOverview,
   DesktopEnvironmentOperationsState,
   DesktopEnvironmentRuntimeState,
@@ -15,6 +16,8 @@ import type {
   DesktopModelUsageRecord,
   DesktopOperationsSnapshot,
   DesktopOverviewSection,
+  DesktopScimProviderSummary,
+  DesktopSsoProviderSummary,
 } from './desktop-obis-identity-shared.ts'
 
 const APP_ORIGIN = 'dsh-app://app'
@@ -80,6 +83,45 @@ function record(value: unknown): Record<string, unknown> | undefined {
 function nonEmpty(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`)
   return value.trim()
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function roleMapping(value: unknown): Record<string, string[]> {
+  const row = record(value)
+  if (!row) return {}
+  const result: Record<string, string[]> = {}
+  for (const [key, roles] of Object.entries(row)) result[key] = stringArray(roles)
+  return result
+}
+
+function ssoSummary(value: unknown): DesktopSsoProviderSummary | undefined {
+  const row = record(value)
+  if (!row || typeof row.id !== 'string' || (row.protocol !== 'oidc' && row.protocol !== 'saml') || typeof row.displayName !== 'string') return undefined
+  return {
+    id: row.id,
+    protocol: row.protocol,
+    displayName: row.displayName,
+    enabled: row.enabled === true,
+    allowJitLinkByEmail: row.allowJitLinkByEmail === true,
+    defaultRoles: stringArray(row.defaultRoles),
+    domainRules: stringArray(row.domainRules),
+  }
+}
+
+function scimSummary(value: unknown): DesktopScimProviderSummary | undefined {
+  const row = record(value)
+  if (!row || typeof row.id !== 'string' || typeof row.displayName !== 'string') return undefined
+  // Deliberately omit secretRef and all credential material before crossing the IPC boundary.
+  return {
+    id: row.id,
+    displayName: row.displayName,
+    enabled: row.enabled === true,
+    defaultRoles: stringArray(row.defaultRoles),
+    groupRoleMappings: roleMapping(row.groupRoleMappings),
+  }
 }
 
 function parseStored(value: unknown): StoredEnterpriseIdentity {
@@ -194,8 +236,6 @@ async function authenticatedRequest<T>(path: string, init: RequestInit): Promise
   try {
     return await requestJson<T>(identity.stored, path, identity.accessToken, init)
   } catch (error) {
-    // A server-side revocation can invalidate a token before its local expiry. Refresh
-    // once in main process; never surface refresh credentials to the renderer.
     if (!(error instanceof EnterpriseOverviewHttpError) || error.status !== 401) throw error
     const refreshed = await refreshedAccessToken(identity.stored)
     return requestJson<T>(refreshed.stored, path, refreshed.accessToken, init)
@@ -226,9 +266,21 @@ async function enterpriseOverview(scope: { environmentId: string; projectId?: st
   const { stored, accessToken } = await authenticatedIdentity()
   const encodedEnvironment = encodeURIComponent(environmentId)
   const query = scopeQuery(environmentId, projectId)
-  const [operations, approvals, modelBudget, modelUsage] = await Promise.all([
+  const [operations, approvals, users, ssoProviders, scimProviders, modelBudget, modelUsage] = await Promise.all([
     section(() => requestJson<DesktopOperationsSnapshot>(stored, `/v1/management/operations/environments/${encodedEnvironment}`, accessToken)),
     section(() => requestJson<DesktopApprovalInbox>(stored, `/v1/approvals/inbox?${new URLSearchParams({ environmentId }).toString()}`, accessToken)),
+    section(async () => {
+      const payload = await requestJson<{ items: DesktopDirectoryUser[] }>(stored, '/v1/management/users', accessToken)
+      return payload.items
+    }),
+    section(async () => {
+      const payload = await requestJson<{ items: unknown[] }>(stored, '/v1/management/sso/providers', accessToken)
+      return payload.items.map(ssoSummary).filter((item): item is DesktopSsoProviderSummary => item !== undefined)
+    }),
+    section(async () => {
+      const payload = await requestJson<{ items: unknown[] }>(stored, '/v1/management/scim/providers', accessToken)
+      return payload.items.map(scimSummary).filter((item): item is DesktopScimProviderSummary => item !== undefined)
+    }),
     section(() => requestJson<DesktopModelBudgetSummary>(stored, `/v1/management/model-budget-summary?${query}`, accessToken)),
     section(async () => {
       const payload = await requestJson<{ items: DesktopModelUsageRecord[] }>(stored, `/v1/management/model-usage?${query}&limit=25`, accessToken)
@@ -241,6 +293,7 @@ async function enterpriseOverview(scope: { environmentId: string; projectId?: st
     fetchedAt: new Date().toISOString(),
     operations,
     approvals,
+    identity: { users, ssoProviders, scimProviders },
     modelBudget,
     modelUsage,
   }
