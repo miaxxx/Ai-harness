@@ -1,0 +1,59 @@
+name: Enterprise Validation Gate
+
+on:
+  push:
+    branches: ['feature/enterprise-v3.1-sprint-a']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness-validation:
+    name: Harness contracts, tests and desktop smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Validate package manager contract
+        shell: bash
+        run: |
+          test "$(node -p "require('./package.json').packageManager")" = "pnpm@11.7.0"
+          test -f pnpm-lock.yaml
+      - name: Install exact workspace graph
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: OBIS bridge and tool contract tests
+        run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
+      - name: Cross-repo fixture E2E
+        run: pnpm exec vitest run tests/obis-cross-repo.e2e.ts
+      - name: Desktop build smoke
+        run: pnpm run build:desktop
+      - name: Upload desktop build smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build-smoke-${{ github.sha }}
+          path: |
+            apps/desktop/dist
+            apps/desktop/dist-renderer
+          if-no-files-found: warn
+          retention-days: 7
