@@ -28,13 +28,16 @@ concurrency:
 
 jobs:
   obis:
-    name: OHP bridge + native tools
+    name: OHP bridge + native tools + secure launch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -44,15 +47,21 @@ jobs:
       - name: Validate whole-repo solution graph
         run: pnpm exec tsc -b tsconfig.json --dry --pretty false
       - name: Typecheck OBIS integration packages
-        run: pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
-      - name: Materialize package runtime entries
         run: |
-          # The repository's normal tsdown workspace build uses fixedExtension=false
-          # and publishes lib/*.js. For this narrow lane, TypeScript has already
-          # emitted the same ESM modules under lib/types; copy the complete runtime
-          # module sets to the declared package entry location rather than creating
-          # a second bundler configuration.
+          pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
+          pnpm exec tsc -b packages/obis/launch/tsconfig.host.json packages/obis/launch/tsconfig.client.json
+      - name: Materialize OBIS runtime entries
+        run: |
           cp packages/obis/bridge/lib/types/*.js packages/obis/bridge/lib/
           cp packages/obis/tool-obis/lib/types/*.js packages/obis/tool-obis/lib/
+          cp packages/obis/launch/lib/types/index.js packages/obis/launch/lib/index.js
+          cp packages/obis/launch/lib/types/invariant.js packages/obis/launch/lib/invariant.js
+          cp packages/obis/launch/lib/types/client/index.js packages/obis/launch/lib/client.js
+      - name: Verify OBIS package entry contracts
+        run: |
+          node -e "await import('@deepseek-ai/dsh-obis-bridge')"
+          node -e "await import('@deepseek-ai/dsh-tool-obis')"
+          node -e "await import('@deepseek-ai/dsh-obis-launch')"
+          node -e "await import('@deepseek-ai/dsh-obis-launch/invariant')"
       - name: Run OBIS integration contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
