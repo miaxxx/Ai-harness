@@ -270,22 +270,30 @@ export interface DesktopMaintenanceRequestInput {
   reason?: string
 }
 
+export type DesktopDirectoryAccountStatus = 'active' | 'invited' | 'disabled'
+
 export interface DesktopDirectoryUser {
   user: {
     id: string
     displayName: string
     primaryEmail: string
-    status: 'active' | 'invited' | 'disabled'
+    status: DesktopDirectoryAccountStatus
     createdAt: string
     lastLoginAt?: string
   }
   membership: {
     tenantId: string
     userId: string
-    status: 'active' | 'invited' | 'disabled'
+    status: DesktopDirectoryAccountStatus
     roles: string[]
     joinedAt: string
   }
+}
+
+export interface DesktopDirectoryUserUpdateInput {
+  userId: string
+  roles: string[]
+  status: DesktopDirectoryAccountStatus
 }
 
 export interface DesktopSsoProviderSummary {
@@ -400,6 +408,7 @@ export interface DesktopObisIdentityBridge {
   decideApproval(input: DesktopApprovalDecisionInput): Promise<DesktopApprovalDecisionResult>
   transitionEnvironment(input: DesktopEnvironmentTransitionInput): Promise<DesktopEnvironmentOperationsState>
   requestMaintenance(input: DesktopMaintenanceRequestInput): Promise<DesktopMaintenanceTask>
+  updateDirectoryUser(input: DesktopDirectoryUserUpdateInput): Promise<DesktopDirectoryUser>
 }
 
 declare global {
