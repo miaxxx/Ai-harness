@@ -2,6 +2,7 @@ import type {
   DesktopApprovalSummary,
   DesktopEnterpriseOverview,
   DesktopEnvironmentRuntimeState,
+  DesktopMaintenanceTaskType,
   DesktopModelBudgetState,
   DesktopModelUsageRecord,
   DesktopOperationsSnapshot,
@@ -11,6 +12,7 @@ import type {
 import './desktop-enterprise-overview.css'
 
 const WORKLOADS: readonly DesktopWorkloadKind[] = ['action', 'model', 'mcp', 'workflow', 'task', 'sync', 'agent']
+const MAINTENANCE_TYPES: readonly DesktopMaintenanceTaskType[] = ['reconcile', 'cleanup', 'compact', 'update']
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -62,6 +64,27 @@ function metric(label: string, value: string, detail?: string, tone?: string): H
   return card
 }
 
+function actionButton(label: string, tone: 'primary' | 'danger' | 'quiet' = 'quiet'): HTMLButtonElement {
+  const button = text(el('button', `enterprise-control-action is-${tone}`), label) as HTMLButtonElement
+  button.type = 'button'
+  return button
+}
+
+async function executeAction(button: HTMLButtonElement, operation: () => Promise<void>): Promise<void> {
+  if (button.disabled) return
+  button.disabled = true
+  const previous = button.textContent
+  button.textContent = 'Working…'
+  try {
+    await operation()
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : String(error))
+  } finally {
+    button.disabled = false
+    button.textContent = previous
+  }
+}
+
 function operationsMetrics(snapshot: DesktopOperationsSnapshot): HTMLElement[] {
   const activeKinds = WORKLOADS.filter(kind => (snapshot.usage.active[kind] ?? 0) > 0)
   const rateKinds = WORKLOADS.filter(kind => (snapshot.usage.startsThisMinute[kind] ?? 0) > 0)
@@ -87,10 +110,32 @@ function budgetMetric(overview: DesktopEnterpriseOverview): HTMLElement {
   return metric('MODEL SPEND', money(spent), limit > 0 ? `${money(limit)} configured monthly budget` : 'No active budget policy', states.some(item => item.warning) ? 'attention' : undefined)
 }
 
-function renderOperations(host: HTMLElement, snapshot: DesktopOperationsSnapshot): void {
+function allowedTransitions(state: DesktopEnvironmentRuntimeState): DesktopEnvironmentRuntimeState[] {
+  if (state === 'active') return ['draining', 'disabled']
+  if (state === 'draining') return ['active', 'maintenance', 'disabled']
+  if (state === 'maintenance') return ['active', 'disabled']
+  return ['active']
+}
+
+function renderOperations(host: HTMLElement, snapshot: DesktopOperationsSnapshot, refresh: () => Promise<void>): void {
   const panel = el('section', 'enterprise-control-panel')
   const head = el('div', 'enterprise-control-panel-head')
-  head.append(text(el('h2'), 'Operations'), text(el('span', 'enterprise-control-status'), `Updated ${timestamp(snapshot.usage.updatedAt)}`))
+  head.append(text(el('h2'), 'Operations'))
+  const headRight = el('div', 'enterprise-control-head-actions')
+  headRight.append(text(el('span', 'enterprise-control-status'), `Updated ${timestamp(snapshot.usage.updatedAt)}`))
+  const transitions = el('div', 'enterprise-control-actions')
+  for (const next of allowedTransitions(snapshot.state.state)) {
+    const button = actionButton(next === 'active' ? 'Activate' : next === 'draining' ? 'Drain' : next === 'maintenance' ? 'Enter maintenance' : 'Disable', next === 'disabled' ? 'danger' : next === 'active' ? 'primary' : 'quiet')
+    button.addEventListener('click', () => void executeAction(button, async () => {
+      const promptValue = window.prompt(`Reason for transition to ${next} (optional)`, snapshot.state.reason ?? '')
+      if (promptValue === null) return
+      await window.dshEnterprise.transitionEnvironment({ environmentId: snapshot.state.environmentId, to: next, ...(promptValue.trim() ? { reason: promptValue.trim() } : {}) })
+      await refresh()
+    }))
+    transitions.append(button)
+  }
+  headRight.append(transitions)
+  head.append(headRight)
   panel.append(head)
 
   const grid = el('div', 'enterprise-control-two-column')
@@ -109,9 +154,25 @@ function renderOperations(host: HTMLElement, snapshot: DesktopOperationsSnapshot
   quota.append(table)
 
   const maintenance = el('div', 'enterprise-control-subpanel')
-  maintenance.append(text(el('h3'), 'Maintenance'))
+  const maintenanceHead = el('div', 'enterprise-control-subpanel-head')
+  maintenanceHead.append(text(el('h3'), 'Maintenance'))
+  if (snapshot.state.state === 'maintenance') {
+    const controls = el('div', 'enterprise-control-actions')
+    for (const type of MAINTENANCE_TYPES) {
+      const button = actionButton(type, 'quiet')
+      button.addEventListener('click', () => void executeAction(button, async () => {
+        const reason = window.prompt(`Reason for ${type} maintenance (optional)`, '')
+        if (reason === null) return
+        await window.dshEnterprise.requestMaintenance({ environmentId: snapshot.state.environmentId, type, ...(reason.trim() ? { reason: reason.trim() } : {}) })
+        await refresh()
+      }))
+      controls.append(button)
+    }
+    maintenanceHead.append(controls)
+  }
+  maintenance.append(maintenanceHead)
   if (!snapshot.maintenance.length) {
-    maintenance.append(text(el('p', 'enterprise-control-muted'), 'No maintenance tasks have been recorded for this environment.'))
+    maintenance.append(text(el('p', 'enterprise-control-muted'), snapshot.state.state === 'maintenance' ? 'No maintenance tasks have been recorded for this environment.' : 'Enter maintenance mode after the environment is drained to schedule governed maintenance.'))
   } else {
     for (const task of snapshot.maintenance.slice(0, 8)) {
       const row = el('div', 'enterprise-control-list-row')
@@ -134,7 +195,7 @@ function approvalTitle(value: DesktopApprovalSummary): string {
   return `${gate} · ${action}`
 }
 
-function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview): void {
+function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview, refresh: () => Promise<void>): void {
   if (sectionUnavailable(host, overview.approvals, 'Approval inbox')) return
   const inbox = overview.approvals.value
   const panel = el('section', 'enterprise-control-panel')
@@ -145,15 +206,31 @@ function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview)
     panel.append(text(el('p', 'enterprise-control-muted'), 'Nothing is currently waiting for your approval in this environment.'))
   } else {
     for (const approval of inbox.waitingForMe.slice(0, 8)) {
-      const row = el('div', 'enterprise-control-list-row')
+      const row = el('div', 'enterprise-control-list-row enterprise-control-approval-row')
       const main = el('div')
       main.append(
         text(el('strong'), approvalTitle(approval)),
-        text(el('small'), `${approval.currentStage.name ?? approval.currentStage.id} · ${approval.currentStage.approvals}/${approval.currentStage.quorum} approvals`),
+        text(el('small'), `${approval.currentStage.name ?? approval.currentStage.id} · ${approval.currentStage.approvals}/${approval.currentStage.quorum} approvals · version ${approval.version}`),
       )
       const meta = el('div', 'enterprise-control-list-meta')
       if ((approval.escalationCount ?? 0) > 0) meta.append(text(el('span', 'enterprise-control-pill is-attention'), 'escalated'))
       meta.append(text(el('small'), timestamp(approval.createdAt)))
+      const controls = el('div', 'enterprise-control-actions')
+      const reject = actionButton('Reject', 'danger')
+      reject.addEventListener('click', () => void executeAction(reject, async () => {
+        const comment = window.prompt('Rejection reason (optional)', '')
+        if (comment === null) return
+        await window.dshEnterprise.decideApproval({ approvalId: approval.id, environmentId: approval.environmentId, expectedVersion: approval.version, decision: 'reject', ...(comment.trim() ? { comment: comment.trim() } : {}) })
+        await refresh()
+      }))
+      const approve = actionButton('Approve', 'primary')
+      approve.addEventListener('click', () => void executeAction(approve, async () => {
+        if (!window.confirm(`Approve ${approvalTitle(approval)}?`)) return
+        await window.dshEnterprise.decideApproval({ approvalId: approval.id, environmentId: approval.environmentId, expectedVersion: approval.version, decision: 'approve' })
+        await refresh()
+      }))
+      controls.append(reject, approve)
+      meta.append(controls)
       row.append(main, meta)
       panel.append(row)
     }
@@ -269,9 +346,10 @@ export async function renderEnterpriseControlCenter(host: HTMLElement, scope: { 
   metrics.append(approvalMetric(overview), budgetMetric(overview))
   page.append(metrics)
 
-  if (overview.operations.available) renderOperations(page, overview.operations.value)
+  const refresh = () => renderEnterpriseControlCenter(host, scope)
+  if (overview.operations.available) renderOperations(page, overview.operations.value, refresh)
   else sectionUnavailable(page, overview.operations, 'Operations')
-  renderApprovals(page, overview)
+  renderApprovals(page, overview, refresh)
   renderModelGovernance(page, overview)
   host.append(page)
 }
