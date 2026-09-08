@@ -10,6 +10,8 @@
     "src/desktop-obis-identity-ui.ts",
     "src/desktop-obis-identity-shared.ts",
     "src/desktop-obis-identity.css.d.ts",
+    "src/desktop-enterprise-shell.ts",
+    "src/desktop-enterprise-overview-ui.ts",
     "src/desktop-brand.tsx",
     "src/desktop-model-settings.tsx",
     "src/desktop-web-search-settings.tsx",
