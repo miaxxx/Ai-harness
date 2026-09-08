@@ -152,6 +152,7 @@ export interface DesktopWorkspaceDefinitionInput {
 
 export type DesktopWorkloadKind = 'action' | 'model' | 'mcp' | 'workflow' | 'task' | 'sync' | 'agent'
 export type DesktopEnvironmentRuntimeState = 'active' | 'draining' | 'maintenance' | 'disabled'
+export type DesktopMaintenanceTaskType = 'reconcile' | 'cleanup' | 'compact' | 'update'
 export type DesktopMaintenanceTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface DesktopEnvironmentOperationsState {
@@ -190,7 +191,7 @@ export interface DesktopMaintenanceTask {
   id: string
   tenantId: string
   environmentId: string
-  type: 'reconcile' | 'cleanup' | 'compact' | 'update'
+  type: DesktopMaintenanceTaskType
   status: DesktopMaintenanceTaskStatus
   requestedBy: string
   reason?: string
@@ -242,6 +243,31 @@ export interface DesktopApprovalInbox {
   escalated: DesktopApprovalSummary[]
   completed: DesktopApprovalSummary[]
   expired: DesktopApprovalSummary[]
+}
+
+export interface DesktopApprovalDecisionInput {
+  approvalId: string
+  environmentId: string
+  expectedVersion: number
+  decision: 'approve' | 'reject'
+  comment?: string
+}
+
+export interface DesktopApprovalDecisionResult {
+  status: string
+  approval?: DesktopApprovalSummary
+}
+
+export interface DesktopEnvironmentTransitionInput {
+  environmentId: string
+  to: DesktopEnvironmentRuntimeState
+  reason?: string
+}
+
+export interface DesktopMaintenanceRequestInput {
+  environmentId: string
+  type: DesktopMaintenanceTaskType
+  reason?: string
 }
 
 export interface DesktopModelBudgetPolicy {
@@ -328,6 +354,9 @@ export interface DesktopObisIdentityBridge {
   listWorkspaceDefinitions(): Promise<unknown[]>
   saveWorkspaceDefinition(id: string, value: DesktopWorkspaceDefinitionInput): Promise<unknown>
   overview(scope: { environmentId: string; projectId?: string }): Promise<DesktopEnterpriseOverview>
+  decideApproval(input: DesktopApprovalDecisionInput): Promise<DesktopApprovalDecisionResult>
+  transitionEnvironment(input: DesktopEnvironmentTransitionInput): Promise<DesktopEnvironmentOperationsState>
+  requestMaintenance(input: DesktopMaintenanceRequestInput): Promise<DesktopMaintenanceTask>
 }
 
 declare global {
