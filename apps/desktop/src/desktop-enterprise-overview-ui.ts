@@ -197,7 +197,10 @@ function approvalTitle(value: DesktopApprovalSummary): string {
 }
 
 function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview, refresh: () => Promise<void>): void {
-  if (sectionUnavailable(host, overview.approvals, 'Approval inbox')) return
+  if (!overview.approvals.available) {
+    sectionUnavailable(host, overview.approvals, 'Approval inbox')
+    return
+  }
   const inbox = overview.approvals.value
   const panel = el('section', 'enterprise-control-panel')
   const head = el('div', 'enterprise-control-panel-head')

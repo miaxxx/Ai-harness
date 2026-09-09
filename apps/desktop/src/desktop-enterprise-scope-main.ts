@@ -64,12 +64,6 @@ export function setEnterpriseRuntimeScope(value: DesktopEnterpriseRuntimeScope |
   process.env.OBIS_PROJECT_ID = activeScope.projectId
   process.env.OBIS_ENVIRONMENT_ID = activeScope.environmentId
   process.env.OBIS_INSTALLATION_ID = activeScope.installationId
-
-  // Keep the previous names only inside the Electron Main process while downstream
-  // packages migrate. The ACP environment is populated from the validated scope.
-  process.env.OBIS_DESKTOP_TENANT_ID = activeScope.tenantId
-  process.env.OBIS_DESKTOP_PROJECT_ID = activeScope.projectId
-  process.env.OBIS_DESKTOP_ENVIRONMENT_ID = activeScope.environmentId
 }
 
 export function enterpriseRuntimeScope(): DesktopEnterpriseRuntimeScope | undefined {

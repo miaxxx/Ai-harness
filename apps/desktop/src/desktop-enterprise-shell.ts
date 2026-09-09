@@ -256,13 +256,22 @@ function openAdminEditor(input: { workspace: DesktopResolvedWorkspace; onSaved: 
       const main = el('div', 'enterprise-admin-row-main')
       const name = el('input', 'enterprise-input')
       name.value = item.label
-      name.oninput = () => { items = replace(items, index, { ...items[index]!, label: name.value }) }
+      name.oninput = () => {
+        const current = items[index]
+        if (current) items = replace(items, index, { ...current, label: name.value })
+      }
       const role = el('input', 'enterprise-input enterprise-role-input')
       role.placeholder = 'roles: owner, admin'
       role.value = item.requiredRoles?.join(', ') ?? ''
       role.oninput = () => {
         const roles = role.value.split(',').map(value => value.trim()).filter(Boolean)
-        items = replace(items, index, { ...items[index]!, requiredRoles: roles.length ? roles : undefined } as DesktopNavigationItem)
+        const current = items[index]
+        if (current) {
+          items = replace(items, index, {
+            ...current,
+            requiredRoles: roles.length ? roles : undefined,
+          } as DesktopNavigationItem)
+        }
       }
       main.append(name, role)
 
@@ -465,7 +474,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
       }
     }
     const saveScopeSafely = (): void => {
-      void saveScope().catch(error => {
+      void saveScope().catch((error: unknown) => {
         console.error('[enterprise-scope] failed to switch runtime scope:', error)
         renderScope()
       })

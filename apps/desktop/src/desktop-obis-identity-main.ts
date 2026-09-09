@@ -526,8 +526,10 @@ function installIdentityIpc(): void {
     const existing = await readStored()
     const baseURL = validateBaseURL(row.baseURL)
     const tenantId = row.tenantId.trim()
-    const sameAuthority = existing?.baseURL === baseURL && existing.tenantId === tenantId
-    const next: StoredObisIdentity = sameAuthority && existing
+    const sameAuthority = existing !== undefined
+      && existing.baseURL === baseURL
+      && existing.tenantId === tenantId
+    const next: StoredObisIdentity = sameAuthority
       ? existing
       : {
           version: STORE_VERSION,

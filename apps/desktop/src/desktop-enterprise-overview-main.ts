@@ -303,7 +303,6 @@ async function decideApproval(input: DesktopApprovalDecisionInput): Promise<Desk
   const approvalId = nonEmpty(input.approvalId, 'Approval id')
   const environmentId = nonEmpty(input.environmentId, 'Environment')
   if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error('Approval expectedVersion must be a positive integer')
-  if (input.decision !== 'approve' && input.decision !== 'reject') throw new Error('Approval decision must be approve or reject')
   if (input.comment !== undefined && typeof input.comment !== 'string') throw new Error('Approval comment must be text')
   return authenticatedRequest<DesktopApprovalDecisionResult>(`/v1/approvals/${encodeURIComponent(approvalId)}/decisions`, {
     method: 'POST',

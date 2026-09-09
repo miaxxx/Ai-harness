@@ -42,7 +42,7 @@ function renderShell(root: HTMLElement, title: string, description: string): { c
   return { card, message }
 }
 
-async function configurationGate(root: HTMLElement): Promise<void> {
+function configurationGate(root: HTMLElement): void {
   const { card, message } = renderShell(root, 'Connect this desktop to OBIS', 'Enterprise mode requires a governed OBIS authority. Credentials are persisted only after authentication and protected by the operating-system secure storage used by Orbis AI.')
   const form = element('div', 'obis-enterprise-fields')
   const urlLabel = element('label'); urlLabel.textContent = 'OBIS URL'
@@ -87,7 +87,6 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
             return
           }
           if (result.status === 'slow_down') waitSeconds = Math.max(waitSeconds + 5, result.retryAfterSeconds ?? 0)
-          else if (result.retryAfterSeconds !== undefined) waitSeconds = Math.max(waitSeconds, result.retryAfterSeconds)
         } catch (error: unknown) {
           currentAuthorization = undefined
           setMessage(message, publicError(error), 'error')
@@ -131,7 +130,7 @@ async function identityGate(root: HTMLElement): Promise<void> {
     return
   }
   if (!status.configured) {
-    if (status.required) await configurationGate(root)
+    if (status.required) configurationGate(root)
     else if (!productMounted && productMount) { productMounted = true; await productMount() }
     return
   }

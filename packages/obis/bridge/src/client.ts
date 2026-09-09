@@ -73,7 +73,6 @@ export class ObisBridgeClient {
     this.baseUrl = stripTrailingSlash(options.baseUrl)
     this.fetchImpl = options.fetch ?? globalThis.fetch
     if (!this.baseUrl) throw new TypeError('OBIS baseUrl is required.')
-    if (!this.fetchImpl) throw new TypeError('A Fetch implementation is required.')
   }
 
   private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
@@ -103,7 +102,7 @@ export class ObisBridgeClient {
       if (isOhpError(payload)) {
         throw new ObisBridgeError(
           response.status,
-          String(payload.error.code ?? 'OHP_REQUEST_FAILED'),
+          payload.error.code,
           payload.error.message,
           payload.error.correlationId || responseCorrelationId,
 
@@ -208,7 +207,7 @@ export class ObisBridgeClient {
       if (isOhpError(payload)) {
         throw new ObisBridgeError(
           response.status,
-          String(payload.error.code ?? 'OHP_REQUEST_FAILED'),
+          payload.error.code,
           payload.error.message,
           payload.error.correlationId || responseCorrelationId,
 

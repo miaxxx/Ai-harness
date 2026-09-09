@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopObisIdentityBridge } from './desktop-obis-identity-shared.ts'
-import './desktop-enterprise-runtime-shared.ts'
 
 const bridge: DesktopObisIdentityBridge = {
   status: () => ipcRenderer.invoke('dsh:obis-identity-status') as ReturnType<DesktopObisIdentityBridge['status']>,

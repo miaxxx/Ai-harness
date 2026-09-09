@@ -186,12 +186,13 @@ export function apply(ctx: Context, input: Config): void {
   const toolContext = async (exec: ToolRunContext): Promise<{ context: ObisToolContext; binding: AgentRunBinding }> => {
     if (!exec.agent) throw new Error('OBIS tools require an active Harness Agent scope.')
     const binding = await ensureBinding(exec.agent)
+    const capabilityLease = config.capabilityLease ?? binding.capabilityLease?.id
     return {
       binding,
       context: {
         environmentId: config.environmentId,
         runId: binding.id,
-        ...(config.capabilityLease || binding.capabilityLease?.id ? { capabilityLease: config.capabilityLease ?? binding.capabilityLease!.id } : {}),
+        ...(capabilityLease ? { capabilityLease } : {}),
         signal: exec.signal,
         idempotencyKey: `tool:${String(exec.callId)}`,
       },

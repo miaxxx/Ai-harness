@@ -25,6 +25,18 @@ export interface SafeWorkspaceLaunchExchange {
 
 const SESSION_KEY = 'dsh.obisLaunch'
 
+interface ObisLaunchRpcResult {
+  ok: boolean
+  value?: unknown
+  error?: { message?: string }
+}
+
+interface ObisLaunchConnection {
+  rpc: {
+    call(path: string, method: string, input: unknown): Promise<ObisLaunchRpcResult>
+  }
+}
+
 function consumeTicketFromFragment(): string | undefined {
   if (typeof location === 'undefined' || !location.hash) return undefined
   const params = new URLSearchParams(location.hash.slice(1))
@@ -64,8 +76,9 @@ export function apply(ctx: Context): void {
   if (ticket === undefined || typeof location === 'undefined') return
   const harnessOrigin = location.origin
 
-  void ctx.connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {
-    if (!result.ok) throw new Error(result.error.message)
+  const connection = ctx.connection as unknown as ObisLaunchConnection
+  void connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {
+    if (!result.ok) throw new Error(result.error?.message ?? 'OBIS launch exchange failed')
     const exchange = result.value as SafeWorkspaceLaunchExchange
     persistSafeLaunch(exchange)
     if (typeof window !== 'undefined') {

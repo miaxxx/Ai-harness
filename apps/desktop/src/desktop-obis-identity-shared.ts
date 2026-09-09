@@ -1,3 +1,8 @@
+import type {
+  DesktopEnterpriseRuntimeScope,
+  DesktopEnterpriseScopeRequest,
+} from './desktop-enterprise-runtime-shared.ts'
+
 export interface DesktopObisMembership {
   tenantId: string
   roles: string[]
@@ -409,6 +414,7 @@ export interface DesktopObisIdentityBridge {
   transitionEnvironment(input: DesktopEnvironmentTransitionInput): Promise<DesktopEnvironmentOperationsState>
   requestMaintenance(input: DesktopMaintenanceRequestInput): Promise<DesktopMaintenanceTask>
   updateDirectoryUser(input: DesktopDirectoryUserUpdateInput): Promise<DesktopDirectoryUser>
+  validateRuntimeScope(input: DesktopEnterpriseScopeRequest): Promise<DesktopEnterpriseRuntimeScope>
 }
 
 declare global {
