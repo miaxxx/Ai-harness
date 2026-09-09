@@ -4,8 +4,10 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
 import {
   evaluateDesktopUpdate,
+  isDesktopReleaseChannel,
   mergeDesktopUpdatePolicy,
   parseDesktopUpdatePolicy,
+  type RemoteDesktopUpdatePolicy,
 } from './desktop-update.ts'
 import type {
   DesktopUpdatePolicy,
@@ -54,13 +56,51 @@ function validatedFeedURL(): string | undefined {
   return parsed.toString().replace(/\/$/, '')
 }
 
-interface CapabilityPolicyEnvelope {
-  minimumHarnessVersion?: unknown
-  recommendedHarnessVersion?: unknown
-  blockedHarnessVersions?: unknown
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function remoteCompatibilityPolicy(): Promise<Partial<DesktopUpdatePolicy>> {
+function versionValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(normalized) ? normalized : undefined
+}
+
+function versionArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value.map(versionValue)
+  return items.every((item): item is string => item !== undefined) ? items : undefined
+}
+
+interface LegacyCapabilityPolicyEnvelope {
+  minimumHarnessVersion?: unknown
+  recommendedHarnessVersion?: unknown
+  latestHarnessVersion?: unknown
+  blockedHarnessVersions?: unknown
+  desktopUpdatePolicy?: unknown
+}
+
+function parseRemoteCompatibilityPolicy(payload: unknown): RemoteDesktopUpdatePolicy {
+  if (!isRecord(payload)) return {}
+  const legacy = payload as LegacyCapabilityPolicyEnvelope
+  const nested = isRecord(legacy.desktopUpdatePolicy) ? legacy.desktopUpdatePolicy : undefined
+
+  const minimumVersion = versionValue(nested?.minimumVersion) ?? versionValue(legacy.minimumHarnessVersion)
+  const recommendedVersion = versionValue(nested?.recommendedVersion) ?? versionValue(legacy.recommendedHarnessVersion)
+  const latestVersion = versionValue(nested?.latestVersion) ?? versionValue(legacy.latestHarnessVersion)
+  const blockedVersions = versionArray(nested?.blockedVersions) ?? versionArray(legacy.blockedHarnessVersions)
+  const releaseChannel = isDesktopReleaseChannel(nested?.releaseChannel) ? nested.releaseChannel : undefined
+
+  return {
+    ...(minimumVersion ? { minimumVersion } : {}),
+    ...(recommendedVersion ? { recommendedVersion } : {}),
+    ...(latestVersion ? { latestVersion } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(releaseChannel ? { releaseChannel } : {}),
+  }
+}
+
+async function remoteCompatibilityPolicy(): Promise<RemoteDesktopUpdatePolicy> {
   const base = process.env.OBIS_BASE_URL?.trim()?.replace(/\/$/, '')
   if (!base) return {}
   const controller = new AbortController()
@@ -71,14 +111,7 @@ async function remoteCompatibilityPolicy(): Promise<Partial<DesktopUpdatePolicy>
       signal: controller.signal,
     })
     if (!response.ok) return {}
-    const payload = await response.json() as CapabilityPolicyEnvelope
-    return {
-      ...(typeof payload.minimumHarnessVersion === 'string' ? { minimumVersion: payload.minimumHarnessVersion } : {}),
-      ...(typeof payload.recommendedHarnessVersion === 'string' ? { recommendedVersion: payload.recommendedHarnessVersion } : {}),
-      ...(Array.isArray(payload.blockedHarnessVersions)
-        ? { blockedVersions: payload.blockedHarnessVersions.filter((entry): entry is string => typeof entry === 'string') }
-        : {}),
-    }
+    return parseRemoteCompatibilityPolicy(await response.json())
   } catch {
     return {}
   } finally {
@@ -89,6 +122,7 @@ async function remoteCompatibilityPolicy(): Promise<Partial<DesktopUpdatePolicy>
 async function refreshPolicy(): Promise<DesktopUpdatePolicy> {
   effectivePolicy = mergeDesktopUpdatePolicy(parseDesktopUpdatePolicy(process.env), await remoteCompatibilityPolicy())
   state.channel = effectivePolicy.releaseChannel
+  autoUpdater.allowDowngrade = effectivePolicy.allowDowngrade === true
   return effectivePolicy
 }
 
@@ -121,8 +155,9 @@ async function createPreflight(targetVersion: string): Promise<void> {
 }
 
 function updateVersion(info: UpdateInfo): string {
-  if (!info.version?.trim()) throw new Error('Update provider returned an invalid version')
-  return info.version.trim()
+  const version = versionValue(info.version)
+  if (!version) throw new Error('Update provider returned an invalid semantic version')
+  return version
 }
 
 async function check(): Promise<DesktopUpdateState> {
