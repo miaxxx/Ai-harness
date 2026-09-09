@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: feature/enterprise-v3.1-sprint-a
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 11.7.0
@@ -39,43 +39,6 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build host contracts
         run: pnpm run build:lib:host
-      - name: Apply enterprise lint autofix
-        shell: bash
-        run: |
-          pnpm exec tsx scripts/run-oxlint.ts \
-            apps/desktop/src/desktop-obis-identity-main.ts \
-            apps/desktop/src/desktop-obis-identity-ui.ts \
-            apps/desktop/src/desktop-enterprise-overview-main.ts \
-            apps/desktop/src/desktop-enterprise-overview-ui.ts \
-            apps/desktop/src/desktop-enterprise-shell.ts \
-            apps/desktop/src/desktop-enterprise-scope-main.ts \
-            apps/desktop/src/main.ts \
-            packages/obis/bridge/src/client.ts \
-            packages/obis/launch/src/client/index.ts \
-            packages/obis/tool-obis/src/index.ts \
-            --fix || true
-      - name: Commit enterprise lint autofix
-        shell: bash
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            apps/desktop/src/desktop-obis-identity-main.ts \
-            apps/desktop/src/desktop-obis-identity-ui.ts \
-            apps/desktop/src/desktop-enterprise-overview-main.ts \
-            apps/desktop/src/desktop-enterprise-overview-ui.ts \
-            apps/desktop/src/desktop-enterprise-shell.ts \
-            apps/desktop/src/desktop-enterprise-scope-main.ts \
-            apps/desktop/src/main.ts \
-            packages/obis/bridge/src/client.ts \
-            packages/obis/launch/src/client/index.ts \
-            packages/obis/tool-obis/src/index.ts
-          if git diff --cached --quiet; then
-            echo 'No autofixable enterprise lint changes.'
-          else
-            git commit -m 'style: apply enterprise lint autofix'
-            git push origin HEAD:feature/enterprise-v3.1-sprint-a
-          fi
       - name: Lint
         shell: bash
         run: |
