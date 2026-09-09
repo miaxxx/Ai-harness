@@ -16,6 +16,11 @@ on:
         required: true
         default: false
         type: boolean
+      stage_b_signing:
+        description: Enable configured macOS/Windows signing and notarization secrets
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'desktop-v*'
@@ -23,14 +28,20 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.meta.outputs.version }}
       channel: ${{ steps.meta.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
@@ -42,6 +53,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_CHANNEL: ${{ inputs.channel }}
         run: |
+          set -euo pipefail
           version="$INPUT_VERSION"
           channel="$INPUT_CHANNEL"
           if [ -z "$version" ]; then version="${GITHUB_REF_NAME#desktop-v}"; fi
@@ -53,9 +65,11 @@ jobs:
               *) channel=stable ;;
             esac
           fi
-          node -e "if(!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(process.argv[1])) process.exit(1)" "$version"
+          node scripts/desktop-release-artifacts.mjs validate --version "$version" --channel "$channel"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Test release artifact contract
+        run: node --test scripts/desktop-release-artifacts.test.mjs
       - run: pnpm run build:lib
       - run: pnpm --dir apps/desktop run build
       - run: pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
@@ -72,58 +86,81 @@ jobs:
             target: win
     runs-on: ${{ matrix.os }}
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.stage_b_signing == true && 'true' || 'false' }}
+      CSC_LINK: ${{ inputs.stage_b_signing == true && (matrix.target == 'mac' && secrets.MAC_CSC_LINK || secrets.WIN_CSC_LINK) || '' }}
+      CSC_KEY_PASSWORD: ${{ inputs.stage_b_signing == true && (matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || secrets.WIN_CSC_KEY_PASSWORD) || '' }}
+      APPLE_ID: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_ID || '' }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      APPLE_TEAM_ID: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_TEAM_ID || '' }}
       OBIS_DESKTOP_UPDATE_CHANNEL: ${{ needs.validate.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - shell: bash
+      - name: Stamp release version
+        shell: bash
         run: node -e "const fs=require('fs');const p='apps/desktop/package.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n')" '${{ needs.validate.outputs.version }}'
       - run: pnpm run build:lib
       - if: matrix.target == 'mac'
         run: pnpm --dir apps/desktop run dist:mac:release
       - if: matrix.target == 'win'
         run: pnpm --dir apps/desktop run dist:win:release
-      - shell: bash
-        run: |
-          node - <<'NODE'
-          const fs=require('fs'),crypto=require('crypto'),path=require('path')
-          const root='apps/desktop/dist-electron'
-          const files=[]
-          function walk(dir){if(!fs.existsSync(dir))return;for(const name of fs.readdirSync(dir)){const p=path.join(dir,name);const s=fs.statSync(p);if(s.isDirectory())walk(p);else if(/\.(dmg|zip|exe|yml|yaml|blockmap)$/i.test(name)){const b=fs.readFileSync(p);files.push({file:path.relative(root,p),size:s.size,sha256:crypto.createHash('sha256').update(b).digest('hex')})}}}
-          walk(root)
-          fs.writeFileSync(path.join(root,'release-manifest.json'),JSON.stringify({schemaVersion:1,version:process.env.RELEASE_VERSION,channel:process.env.RELEASE_CHANNEL,platform:process.platform,arch:process.arch,files},null,2)+'\n')
-          NODE
-        env:
-          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-          RELEASE_CHANNEL: ${{ needs.validate.outputs.channel }}
+      - name: Finalize update metadata and integrity manifest
+        shell: bash
+        run: >-
+          node scripts/desktop-release-artifacts.mjs finalize
+          --root apps/desktop/dist-electron
+          --version '${{ needs.validate.outputs.version }}'
+          --channel '${{ needs.validate.outputs.channel }}'
+          --target '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}-${{ needs.validate.outputs.version }}
           path: apps/desktop/dist-electron/**
           if-no-files-found: error
+          retention-days: 14
 
   publish:
     if: ${{ github.event_name == 'push' || inputs.publish == true }}
     needs: [validate, package]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           path: release
           merge-multiple: true
-      - shell: bash
+      - name: Build cross-platform release index
+        run: >-
+          node scripts/desktop-release-artifacts.mjs index
+          --root release
+          --version '${{ needs.validate.outputs.version }}'
+          --channel '${{ needs.validate.outputs.channel }}'
+      - name: Publish immutable GitHub release assets
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CHANNEL: ${{ needs.validate.outputs.channel }}
         run: |
-          tag="desktop-v${{ needs.validate.outputs.version }}"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Desktop ${{ needs.validate.outputs.version }}" --notes "Channel: ${{ needs.validate.outputs.channel }}"
+          set -euo pipefail
+          tag="desktop-v${VERSION}"
+          flags=()
+          if [ "$CHANNEL" != stable ]; then flags+=(--prerelease); fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "Desktop ${VERSION}" --notes "Channel: ${CHANNEL}" "${flags[@]}"
+          else
+            gh release edit "$tag" --title "Desktop ${VERSION}" --notes "Channel: ${CHANNEL}" "${flags[@]}"
+          fi
           find release -type f -print0 | xargs -0 -r gh release upload "$tag" --clobber
-      - name: Publish optional S3/COS-compatible update feed
+      - name: Publish optional S3/COS-compatible channel feed
         if: ${{ vars.DESKTOP_UPDATE_BUCKET != '' }}
         shell: bash
         env:
@@ -131,11 +168,22 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_UPDATE_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.DESKTOP_UPDATE_REGION }}
           AWS_ENDPOINT_URL: ${{ vars.DESKTOP_UPDATE_ENDPOINT_URL }}
+          BUCKET: ${{ vars.DESKTOP_UPDATE_BUCKET }}
+          CHANNEL: ${{ needs.validate.outputs.channel }}
         run: |
+          set -euo pipefail
           args=()
           if [ -n "$AWS_ENDPOINT_URL" ]; then args+=(--endpoint-url "$AWS_ENDPOINT_URL"); fi
-          aws "${args[@]}" s3 sync release "s3://${{ vars.DESKTOP_UPDATE_BUCKET }}/${{ needs.validate.outputs.channel }}/" --no-progress
+          destination="s3://${BUCKET}/${CHANNEL}/"
+          # Publish immutable payloads before channel metadata so clients can never
+          # observe metadata that references an artifact which is not uploaded yet.
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*.yml' --exclude '*.yaml' --exclude '*.json' --cache-control 'public,max-age=31536000,immutable'
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*' --include '*.yml' --include '*.yaml' --cache-control 'no-cache,max-age=0'
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*' --include '*.json' --cache-control 'no-cache,max-age=0'
 
-# Stage B credentials are intentionally optional here:
-# CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
-# and Windows signing secrets can be added without changing the Stage A release contract.
+# Stage A packages are intentionally unsigned unless stage_b_signing is explicitly enabled.
+# Stage B secret placeholders:
+# MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
+# DESKTOP_UPDATE_ACCESS_KEY_ID / DESKTOP_UPDATE_SECRET_ACCESS_KEY
+# DESKTOP_UPDATE_BUCKET / DESKTOP_UPDATE_REGION / DESKTOP_UPDATE_ENDPOINT_URL
