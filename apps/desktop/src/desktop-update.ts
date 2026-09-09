@@ -34,6 +34,10 @@ export function releaseChannelForVersion(version: string): DesktopReleaseChannel
   return 'stable'
 }
 
+export function isDesktopReleaseChannel(value: unknown): value is DesktopReleaseChannel {
+  return value === 'canary' || value === 'beta' || value === 'stable' || value === 'enterprise-lts'
+}
+
 export function evaluateDesktopUpdate(
   currentVersion: string,
   availableVersion: string,
@@ -67,15 +71,21 @@ export function evaluateDesktopUpdate(
   return { allowed: true, mandatory }
 }
 
+export type RemoteDesktopUpdatePolicy = Partial<Pick<
+  DesktopUpdatePolicy,
+  'minimumVersion' | 'recommendedVersion' | 'latestVersion' | 'blockedVersions' | 'releaseChannel'
+>>
+
 export function mergeDesktopUpdatePolicy(
   local: DesktopUpdatePolicy,
-  remote: Partial<Pick<DesktopUpdatePolicy, 'minimumVersion' | 'recommendedVersion' | 'latestVersion' | 'blockedVersions'>>,
+  remote: RemoteDesktopUpdatePolicy,
 ): DesktopUpdatePolicy {
   return {
     ...local,
     ...(remote.minimumVersion ? { minimumVersion: remote.minimumVersion } : {}),
     ...(remote.recommendedVersion ? { recommendedVersion: remote.recommendedVersion } : {}),
     ...(remote.latestVersion ? { latestVersion: remote.latestVersion } : {}),
+    ...(remote.releaseChannel ? { releaseChannel: remote.releaseChannel } : {}),
     blockedVersions: [...new Set([...local.blockedVersions, ...(remote.blockedVersions ?? [])])],
   }
 }
@@ -86,7 +96,7 @@ export function parseDesktopUpdatePolicy(env: NodeJS.ProcessEnv): DesktopUpdateP
   const normalizedMode: DesktopUpdatePolicy['mode'] = mode === 'automatic' || mode === 'stable-only' || mode === 'manual-approval' || mode === 'pinned' || mode === 'disabled'
     ? mode
     : 'manual-approval'
-  const normalizedChannel: DesktopReleaseChannel = releaseChannel === 'canary' || releaseChannel === 'beta' || releaseChannel === 'enterprise-lts'
+  const normalizedChannel: DesktopReleaseChannel = isDesktopReleaseChannel(releaseChannel)
     ? releaseChannel
     : 'stable'
   const blockedVersions = (env.OBIS_DESKTOP_BLOCKED_VERSIONS ?? '')
@@ -98,6 +108,7 @@ export function parseDesktopUpdatePolicy(env: NodeJS.ProcessEnv): DesktopUpdateP
     releaseChannel: normalizedChannel,
     ...(env.OBIS_DESKTOP_MINIMUM_VERSION?.trim() ? { minimumVersion: env.OBIS_DESKTOP_MINIMUM_VERSION.trim() } : {}),
     ...(env.OBIS_DESKTOP_RECOMMENDED_VERSION?.trim() ? { recommendedVersion: env.OBIS_DESKTOP_RECOMMENDED_VERSION.trim() } : {}),
+    ...(env.OBIS_DESKTOP_LATEST_VERSION?.trim() ? { latestVersion: env.OBIS_DESKTOP_LATEST_VERSION.trim() } : {}),
     ...(env.OBIS_DESKTOP_PINNED_VERSION?.trim() ? { pinnedVersion: env.OBIS_DESKTOP_PINNED_VERSION.trim() } : {}),
     blockedVersions,
     allowDowngrade: env.OBIS_DESKTOP_ALLOW_DOWNGRADE?.trim() === '1',
