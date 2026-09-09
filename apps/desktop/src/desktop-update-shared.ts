@@ -23,10 +23,13 @@ export interface DesktopUpdateState {
   transferred?: number
   total?: number
   mandatory: boolean
-  reason?: string
+  // Update state transitions intentionally clear stale human-facing messages by
+  // assigning undefined. Under exactOptionalPropertyTypes that clear operation
+  // must be represented explicitly rather than relying on optional omission.
+  reason?: string | undefined
   checkedAt?: string
   downloadedAt?: string
-  error?: string
+  error?: string | undefined
 }
 
 export interface DesktopUpdateBridge {
