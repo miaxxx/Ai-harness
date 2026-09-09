@@ -1,0 +1,141 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without v prefix
+        required: true
+      channel:
+        description: Release channel
+        required: true
+        type: choice
+        options: [canary, beta, stable, enterprise-lts]
+      publish:
+        description: Publish GitHub release and optional S3-compatible feed
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          version="$INPUT_VERSION"
+          channel="$INPUT_CHANNEL"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#desktop-v}"; fi
+          if [ -z "$channel" ]; then
+            case "$version" in
+              *canary*) channel=canary ;;
+              *enterprise-lts*) channel=enterprise-lts ;;
+              *beta*|*rc*) channel=beta ;;
+              *) channel=stable ;;
+            esac
+          fi
+          node -e "if(!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(process.argv[1])) process.exit(1)" "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - run: pnpm run build:lib
+      - run: pnpm --dir apps/desktop run build
+      - run: pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
+
+  package:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: mac
+          - os: windows-2025
+            target: win
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      OBIS_DESKTOP_UPDATE_CHANNEL: ${{ needs.validate.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - shell: bash
+        run: node -e "const fs=require('fs');const p='apps/desktop/package.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n')" '${{ needs.validate.outputs.version }}'
+      - run: pnpm run build:lib
+      - if: matrix.target == 'mac'
+        run: pnpm --dir apps/desktop run dist:mac:release
+      - if: matrix.target == 'win'
+        run: pnpm --dir apps/desktop run dist:win:release
+      - shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),crypto=require('crypto'),path=require('path')
+          const root='apps/desktop/dist-electron'
+          const files=[]
+          function walk(dir){if(!fs.existsSync(dir))return;for(const name of fs.readdirSync(dir)){const p=path.join(dir,name);const s=fs.statSync(p);if(s.isDirectory())walk(p);else if(/\.(dmg|zip|exe|yml|yaml|blockmap)$/i.test(name)){const b=fs.readFileSync(p);files.push({file:path.relative(root,p),size:s.size,sha256:crypto.createHash('sha256').update(b).digest('hex')})}}}
+          walk(root)
+          fs.writeFileSync(path.join(root,'release-manifest.json'),JSON.stringify({schemaVersion:1,version:process.env.RELEASE_VERSION,channel:process.env.RELEASE_CHANNEL,platform:process.platform,arch:process.arch,files},null,2)+'\n')
+          NODE
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.validate.outputs.channel }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ needs.validate.outputs.version }}
+          path: apps/desktop/dist-electron/**
+          if-no-files-found: error
+
+  publish:
+    if: ${{ github.event_name == 'push' || inputs.publish == true }}
+    needs: [validate, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="desktop-v${{ needs.validate.outputs.version }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Desktop ${{ needs.validate.outputs.version }}" --notes "Channel: ${{ needs.validate.outputs.channel }}"
+          find release -type f -print0 | xargs -0 -r gh release upload "$tag" --clobber
+      - name: Publish optional S3/COS-compatible update feed
+        if: ${{ vars.DESKTOP_UPDATE_BUCKET != '' }}
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_UPDATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_UPDATE_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.DESKTOP_UPDATE_REGION }}
+          AWS_ENDPOINT_URL: ${{ vars.DESKTOP_UPDATE_ENDPOINT_URL }}
+        run: |
+          args=()
+          if [ -n "$AWS_ENDPOINT_URL" ]; then args+=(--endpoint-url "$AWS_ENDPOINT_URL"); fi
+          aws "${args[@]}" s3 sync release "s3://${{ vars.DESKTOP_UPDATE_BUCKET }}/${{ needs.validate.outputs.channel }}/" --no-progress
+
+# Stage B credentials are intentionally optional here:
+# CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+# and Windows signing secrets can be added without changing the Stage A release contract.
