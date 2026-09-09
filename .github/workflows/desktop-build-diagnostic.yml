@@ -104,27 +104,26 @@ jobs:
         shell: bash
         run: |
           mkdir -p .ci
-          set +e
+          : > .ci/desktop-build-diagnostic.log
+          build_lib=0
+          desktop=99
+          tests=0
           {
             echo '=== build:lib ==='
-            pnpm run build:lib
-            build_lib=$?
+            pnpm run build:lib || build_lib=$?
             echo "BUILD_LIB_EXIT=$build_lib"
             if [ "$build_lib" -eq 0 ]; then
               echo '=== desktop build ==='
-              pnpm --dir apps/desktop run build
-              desktop=$?
-            else
-              desktop=99
+              desktop=0
+              pnpm --dir apps/desktop run build || desktop=$?
             fi
             echo "DESKTOP_BUILD_EXIT=$desktop"
             echo '=== enterprise desktop tests ==='
-            pnpm exec vitest run apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
-            tests=$?
+            pnpm exec vitest run apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts || tests=$?
             echo "TEST_EXIT=$tests"
-            if [ "$build_lib" -eq 0 ] && [ "$desktop" -eq 0 ] && [ "$tests" -eq 0 ]; then exit 0; else exit 1; fi
-          } > .ci/desktop-build-diagnostic.log 2>&1
-          code=$?
+          } >> .ci/desktop-build-diagnostic.log 2>&1
+          code=0
+          if [ "$build_lib" -ne 0 ] || [ "$desktop" -ne 0 ] || [ "$tests" -ne 0 ]; then code=1; fi
           cat .ci/desktop-build-diagnostic.log
           echo "code=$code" >> "$GITHUB_OUTPUT"
           exit 0
