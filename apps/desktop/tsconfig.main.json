@@ -20,7 +20,11 @@
     "src/desktop-prompt.ts",
     "src/desktop-model-capabilities.ts",
     "src/desktop-model-storage.ts",
-    "src/desktop-web-search-storage.ts"
+    "src/desktop-web-search-storage.ts",
+    "src/desktop-update.ts",
+    "src/desktop-update-shared.ts",
+    "src/desktop-update-main.ts",
+    "src/desktop-update-preload.ts"
   ],
   "references": [
     { "path": "../../packages/acp/acp-client" },
