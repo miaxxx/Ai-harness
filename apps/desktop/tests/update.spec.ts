@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   compareDesktopVersions,
   evaluateDesktopUpdate,
+  isDesktopReleaseChannel,
   mergeDesktopUpdatePolicy,
   parseDesktopUpdatePolicy,
   releaseChannelForVersion,
@@ -20,11 +21,14 @@ describe('desktop update policy', () => {
     expect(compareDesktopVersions('1.2.0', '1.2.0')).toBe(0)
   })
 
-  it('classifies update channels', () => {
+  it('classifies and validates all enterprise update channels', () => {
     expect(releaseChannelForVersion('1.0.0')).toBe('stable')
     expect(releaseChannelForVersion('1.0.0-beta.2')).toBe('beta')
+    expect(releaseChannelForVersion('1.0.0-rc.2')).toBe('beta')
     expect(releaseChannelForVersion('1.0.0-canary.4')).toBe('canary')
     expect(releaseChannelForVersion('1.0.0-enterprise-lts.1')).toBe('enterprise-lts')
+    for (const channel of ['canary', 'beta', 'stable', 'enterprise-lts']) expect(isDesktopReleaseChannel(channel)).toBe(true)
+    expect(isDesktopReleaseChannel('preview')).toBe(false)
   })
 
   it('rejects blocked, disabled and unauthorized downgrade updates', () => {
@@ -45,13 +49,21 @@ describe('desktop update policy', () => {
     expect(decision.mandatory).toBe(true)
   })
 
-  it('merges OBIS compatibility restrictions without dropping local blocks', () => {
+  it('merges canonical OBIS policy fields without dropping local blocks', () => {
     const merged = mergeDesktopUpdatePolicy(
       { ...stablePolicy, blockedVersions: ['1.0.5'] },
-      { minimumVersion: '1.1.0', recommendedVersion: '1.2.0', blockedVersions: ['1.1.5'] },
+      {
+        minimumVersion: '1.1.0',
+        recommendedVersion: '1.2.0-beta.1',
+        latestVersion: '1.3.0-beta.2',
+        releaseChannel: 'beta',
+        blockedVersions: ['1.1.5'],
+      },
     )
     expect(merged.minimumVersion).toBe('1.1.0')
-    expect(merged.recommendedVersion).toBe('1.2.0')
+    expect(merged.recommendedVersion).toBe('1.2.0-beta.1')
+    expect(merged.latestVersion).toBe('1.3.0-beta.2')
+    expect(merged.releaseChannel).toBe('beta')
     expect(merged.blockedVersions).toEqual(['1.0.5', '1.1.5'])
   })
 
@@ -59,12 +71,14 @@ describe('desktop update policy', () => {
     const policy = parseDesktopUpdatePolicy({
       OBIS_DESKTOP_UPDATE_MODE: 'pinned',
       OBIS_DESKTOP_UPDATE_CHANNEL: 'enterprise-lts',
+      OBIS_DESKTOP_LATEST_VERSION: '2.1.0-enterprise-lts.1',
       OBIS_DESKTOP_PINNED_VERSION: '2.0.0-enterprise-lts.1',
       OBIS_DESKTOP_BLOCKED_VERSIONS: '1.0.0, 1.1.0',
       OBIS_DESKTOP_ALLOW_DOWNGRADE: '1',
     })
     expect(policy.mode).toBe('pinned')
     expect(policy.releaseChannel).toBe('enterprise-lts')
+    expect(policy.latestVersion).toBe('2.1.0-enterprise-lts.1')
     expect(policy.pinnedVersion).toBe('2.0.0-enterprise-lts.1')
     expect(policy.blockedVersions).toEqual(['1.0.0', '1.1.0'])
     expect(policy.allowDowngrade).toBe(true)
