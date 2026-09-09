@@ -1,0 +1,218 @@
+name: Enterprise Semantic Lint Fix v2
+
+on:
+  push:
+    branches: [feature/enterprise-v3.1-sprint-a]
+    paths: [.github/workflows/enterprise-semantic-lint-fix-v2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/enterprise-v3.1-sprint-a
+      - name: Apply semantic fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected source not found in {path}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          Path('apps/desktop/src/desktop-enterprise-runtime-shared.ts').write_text(
+              "export interface DesktopEnterpriseScopeRequest {\n"
+              "  projectId: string\n"
+              "  environmentId: string\n"
+              "}\n\n"
+              "export interface DesktopEnterpriseRuntimeScope {\n"
+              "  tenantId: string\n"
+              "  projectId: string\n"
+              "  environmentId: string\n"
+              "  installationId: string\n"
+              "  userId: string\n"
+              "}\n"
+          )
+
+          shared = Path('apps/desktop/src/desktop-obis-identity-shared.ts')
+          text = shared.read_text()
+          if not text.startswith("import type {\n  DesktopEnterpriseRuntimeScope,"):
+              text = (
+                  "import type {\n"
+                  "  DesktopEnterpriseRuntimeScope,\n"
+                  "  DesktopEnterpriseScopeRequest,\n"
+                  "} from './desktop-enterprise-runtime-shared.ts'\n\n"
+                  + text
+              )
+          marker = "  updateDirectoryUser(input: DesktopDirectoryUserUpdateInput): Promise<DesktopDirectoryUser>\n}"
+          if marker not in text:
+              raise SystemExit('bridge interface marker missing')
+          text = text.replace(
+              marker,
+              "  updateDirectoryUser(input: DesktopDirectoryUserUpdateInput): Promise<DesktopDirectoryUser>\n"
+              "  validateRuntimeScope(input: DesktopEnterpriseScopeRequest): Promise<DesktopEnterpriseRuntimeScope>\n}",
+              1,
+          )
+          shared.write_text(text)
+
+          replace('apps/desktop/src/desktop-obis-identity-preload.ts',
+                  "import './desktop-enterprise-runtime-shared.ts'\n", '')
+
+          replace(
+              'apps/desktop/src/desktop-enterprise-scope-main.ts',
+              "  process.env.OBIS_INSTALLATION_ID = activeScope.installationId\n\n"
+              "  // Keep the previous names only inside the Electron Main process while downstream\n"
+              "  // packages migrate. The ACP environment is populated from the validated scope.\n"
+              "  process.env.OBIS_DESKTOP_TENANT_ID = activeScope.tenantId\n"
+              "  process.env.OBIS_DESKTOP_PROJECT_ID = activeScope.projectId\n"
+              "  process.env.OBIS_DESKTOP_ENVIRONMENT_ID = activeScope.environmentId\n",
+              "  process.env.OBIS_INSTALLATION_ID = activeScope.installationId\n",
+          )
+
+          replace(
+              'packages/obis/tool-obis/src/index.ts',
+              "    const binding = await ensureBinding(exec.agent)\n"
+              "    return {\n"
+              "      binding,\n"
+              "      context: {\n"
+              "        environmentId: config.environmentId,\n"
+              "        runId: binding.id,\n"
+              "        ...(config.capabilityLease || binding.capabilityLease?.id ? { capabilityLease: config.capabilityLease ?? binding.capabilityLease!.id } : {}),\n",
+              "    const binding = await ensureBinding(exec.agent)\n"
+              "    const capabilityLease = config.capabilityLease ?? binding.capabilityLease?.id\n"
+              "    return {\n"
+              "      binding,\n"
+              "      context: {\n"
+              "        environmentId: config.environmentId,\n"
+              "        runId: binding.id,\n"
+              "        ...(capabilityLease ? { capabilityLease } : {}),\n",
+          )
+
+          replace(
+              'apps/desktop/src/desktop-obis-identity-main.ts',
+              "    const sameAuthority = existing?.baseURL === baseURL && existing.tenantId === tenantId\n"
+              "    const next: StoredObisIdentity = sameAuthority && existing\n"
+              "      ? existing\n",
+              "    const sameAuthority = existing !== undefined\n"
+              "      && existing.baseURL === baseURL\n"
+              "      && existing.tenantId === tenantId\n"
+              "    const next: StoredObisIdentity = sameAuthority\n"
+              "      ? existing\n",
+          )
+
+          replace('apps/desktop/src/desktop-enterprise-overview-main.ts',
+                  "  if (input.decision !== 'approve' && input.decision !== 'reject') throw new Error('Approval decision must be approve or reject')\n", '')
+
+          replace('apps/desktop/src/desktop-obis-identity-ui.ts',
+                  'async function configurationGate(root: HTMLElement): Promise<void> {',
+                  'function configurationGate(root: HTMLElement): void {')
+          replace('apps/desktop/src/desktop-obis-identity-ui.ts',
+                  '    if (status.required) await configurationGate(root)',
+                  '    if (status.required) configurationGate(root)')
+          replace(
+              'apps/desktop/src/desktop-obis-identity-ui.ts',
+              "          if (result.status === 'slow_down') waitSeconds = Math.max(waitSeconds + 5, result.retryAfterSeconds ?? 0)\n"
+              "          else if (result.retryAfterSeconds !== undefined) waitSeconds = Math.max(waitSeconds, result.retryAfterSeconds)",
+              "          if (result.status === 'slow_down') waitSeconds = Math.max(waitSeconds + 5, result.retryAfterSeconds ?? 0)",
+          )
+
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-ui.ts',
+              "function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview, refresh: () => Promise<void>): void {\n"
+              "  if (sectionUnavailable(host, overview.approvals, 'Approval inbox')) return\n"
+              "  const inbox = overview.approvals.value\n",
+              "function renderApprovals(host: HTMLElement, overview: DesktopEnterpriseOverview, refresh: () => Promise<void>): void {\n"
+              "  if (!overview.approvals.available) {\n"
+              "    sectionUnavailable(host, overview.approvals, 'Approval inbox')\n"
+              "    return\n"
+              "  }\n"
+              "  const inbox = overview.approvals.value\n",
+          )
+
+          shell = Path('apps/desktop/src/desktop-enterprise-shell.ts')
+          text = shell.read_text()
+          text = text.replace(
+              "name.oninput = () => { items = replace(items, index, { ...items[index]!, label: name.value }) }",
+              "name.oninput = () => {\n"
+              "        const current = items[index]\n"
+              "        if (current) items = replace(items, index, { ...current, label: name.value })\n"
+              "      }",
+              1,
+          )
+          text = text.replace(
+              "items = replace(items, index, { ...items[index]!, requiredRoles: roles.length ? roles : undefined } as DesktopNavigationItem)",
+              "const current = items[index]\n"
+              "        if (current) {\n"
+              "          items = replace(items, index, {\n"
+              "            ...current,\n"
+              "            requiredRoles: roles.length ? roles : undefined,\n"
+              "          } as DesktopNavigationItem)\n"
+              "        }",
+              1,
+          )
+          text = text.replace(
+              ".catch(error => {\n        console.error('[enterprise-scope] failed to switch runtime scope:', error)",
+              ".catch((error: unknown) => {\n        console.error('[enterprise-scope] failed to switch runtime scope:', error)",
+              1,
+          )
+          shell.write_text(text)
+
+          launch = Path('packages/obis/launch/src/client/index.ts')
+          text = launch.read_text()
+          marker = "const SESSION_KEY = 'dsh.obisLaunch'\n"
+          if marker not in text:
+              raise SystemExit('launch SESSION_KEY marker missing')
+          text = text.replace(
+              marker,
+              marker + "\n"
+              "interface ObisLaunchRpcResult {\n"
+              "  ok: boolean\n"
+              "  value?: unknown\n"
+              "  error?: { message?: string }\n"
+              "}\n\n"
+              "interface ObisLaunchConnection {\n"
+              "  rpc: {\n"
+              "    call(path: string, method: string, input: unknown): Promise<ObisLaunchRpcResult>\n"
+              "  }\n"
+              "}\n",
+              1,
+          )
+          call = "  void ctx.connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {"
+          if call not in text:
+              raise SystemExit('launch rpc call marker missing')
+          text = text.replace(
+              call,
+              "  const connection = ctx.connection as unknown as ObisLaunchConnection\n"
+              "  void connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {",
+              1,
+          )
+          text = text.replace(
+              '    if (!result.ok) throw new Error(result.error.message)',
+              "    if (!result.ok) throw new Error(result.error?.message ?? 'OBIS launch exchange failed')",
+              1,
+          )
+          launch.write_text(text)
+
+          bridge = Path('packages/obis/bridge/src/client.ts')
+          text = bridge.read_text()
+          text = text.replace("    if (!this.fetchImpl) throw new TypeError('A Fetch implementation is required.')\n", '', 1)
+          text = text.replace("String(payload.error.code ?? 'OHP_REQUEST_FAILED')", 'payload.error.code')
+          bridge.write_text(text)
+          PY
+          git diff --check
+      - name: Commit semantic fixes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/desktop/src packages/obis
+          git commit -m 'fix(enterprise): resolve runtime authority type and lint issues'
+          git push origin HEAD:feature/enterprise-v3.1-sprint-a
