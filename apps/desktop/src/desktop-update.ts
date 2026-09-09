@@ -38,6 +38,19 @@ export function isDesktopReleaseChannel(value: unknown): value is DesktopRelease
   return value === 'canary' || value === 'beta' || value === 'stable' || value === 'enterprise-lts'
 }
 
+export function desktopUpdateFeedUrl(configuredRoot: string, channel: DesktopReleaseChannel): string {
+  const input = configuredRoot.trim()
+  if (!input) throw new Error('Desktop update feed root is empty')
+  const withChannel = input.includes('{channel}') ? input.replaceAll('{channel}', channel) : `${input.replace(/\/$/, '')}/${channel}`
+  const parsed = new URL(withChannel)
+  const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1'
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('Desktop update feed may not contain credentials, query or fragment')
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local)) {
+    throw new Error('Desktop update feed must use HTTPS; HTTP is allowed only for localhost development')
+  }
+  return parsed.toString().replace(/\/$/, '')
+}
+
 export function evaluateDesktopUpdate(
   currentVersion: string,
   availableVersion: string,
