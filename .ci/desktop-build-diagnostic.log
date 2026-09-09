@@ -1,0 +1,28 @@
+$ tsc -b && tsdown && vite build
+src/desktop-obis-identity-main.ts(20,43): error TS6307: File '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-enterprise-scope-main.ts' is not listed within the file list of project '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/tsconfig.main.json'. Projects must list all files or use an 'include' pattern.
+  The file is in the program because:
+    Imported via './desktop-enterprise-scope-main.ts' from file '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-obis-identity-main.ts'
+    Imported via './desktop-enterprise-scope-main.ts' from file '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/main.ts'
+src/desktop-obis-identity-shared.ts(4,8): error TS6307: File '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-enterprise-runtime-shared.ts' is not listed within the file list of project '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/tsconfig.main.json'. Projects must list all files or use an 'include' pattern.
+  The file is in the program because:
+    Imported via './desktop-enterprise-runtime-shared.ts' from file '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-obis-identity-shared.ts'
+    Imported via './desktop-enterprise-runtime-shared.ts' from file '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-obis-identity-main.ts'
+    Imported via './desktop-enterprise-runtime-shared.ts' from file '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-enterprise-scope-main.ts'
+../../packages/api/remotes/src/client/index.ts(4,28): error TS2307: Cannot find module '@deepseek-ai/dsh-commands/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(5,25): error TS2307: Cannot find module '@deepseek-ai/dsh-goal/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(6,27): error TS2307: Cannot find module '@deepseek-ai/dsh-cordis-host-runner/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(7,34): error TS2307: Cannot find module '@deepseek-ai/dsh-file-reference/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(8,35): error TS2307: Cannot find module '@deepseek-ai/dsh-host-plugin-inventory/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(9,35): error TS2307: Cannot find module '@deepseek-ai/dsh-message-feedback/remote' or its corresponding type declarations.
+../../packages/api/remotes/src/client/index.ts(10,37): error TS2307: Cannot find module '@deepseek-ai/dsh-session-reference/remote' or its corresponding type declarations.
+../../packages/client/runtime/src/client/index.ts(195,60): error TS2345: Argument of type 'TypertClientRemote' is not assignable to parameter of type 'SessionRemotes'.
+  Property 'commands' is missing in type 'TypertClientRemote' but required in type 'SessionRemotes'.
+../../packages/client/runtime/src/client/sessions/remotes.ts(12,54): error TS2344: Type '"commands"' does not satisfy the constraint 'keyof TypertClientRemote'.
+../../packages/client/runtime/src/client/sessions/session.ts(363,26): error TS2571: Object is of type 'unknown'.
+src/desktop-enterprise-overview-ui.ts(12,42): error TS6307: File '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-enterprise-identity-ui.ts' is not listed within the file list of project '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/tsconfig.renderer.json'. Projects must list all files or use an 'include' pattern.
+src/desktop-enterprise-overview-ui.ts(13,8): error TS2882: Cannot find module or type declarations for side-effect import of './desktop-enterprise-overview.css'.
+src/desktop-enterprise-shell.ts(10,8): error TS2882: Cannot find module or type declarations for side-effect import of './desktop-enterprise-shell.css'.
+src/desktop-obis-identity-shared.ts(4,8): error TS6307: File '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/src/desktop-enterprise-runtime-shared.ts' is not listed within the file list of project '/home/runner/work/Ai-harness/Ai-harness/apps/desktop/tsconfig.renderer.json'. Projects must list all files or use an 'include' pattern.
+[ELIFECYCLE] Command failed with exit code 2.
+
+EXIT_CODE=2
