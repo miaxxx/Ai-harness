@@ -204,9 +204,10 @@ async function webSearchRuntimeEnv(): Promise<Record<string, string>> {
 async function modelRuntimeEnv(): Promise<Record<string, string>> {
   const scope = enterpriseRuntimeScope()
   const enterpriseEnv: Record<string, string> = scope === undefined ? {} : {
-    OBIS_DESKTOP_TENANT_ID: scope.tenantId,
-    ...(scope.projectId ? { OBIS_DESKTOP_PROJECT_ID: scope.projectId } : {}),
-    ...(scope.environmentId ? { OBIS_DESKTOP_ENVIRONMENT_ID: scope.environmentId } : {}),
+    OBIS_TENANT_ID: scope.tenantId,
+    OBIS_PROJECT_ID: scope.projectId,
+    OBIS_ENVIRONMENT_ID: scope.environmentId,
+    OBIS_INSTALLATION_ID: scope.installationId,
   }
   const desktopModeEnv = {
     DSH_DESKTOP_CODE_WORK_ENABLED: 'true',
@@ -298,7 +299,12 @@ class AcpRuntimeSupervisor {
   private publish(frame: DesktopRendererFrame): void { this.window?.webContents.send('dsh:frame', frame) }
   private publishStatus(status: Extract<DesktopRendererFrame, { type: 'runtime-status' }>['status'], message?: string): void { this.publish({ type: 'runtime-status', status, ...(message === undefined ? {} : { message }) }) }
   private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> { const window = this.window; if (window === undefined || request.options.length === 0) return { outcome: { outcome: 'cancelled' } }; const buttons = request.options.map(option => permissionLabel(option.kind)); const result = await dialog.showMessageBox(window, { type: 'warning', message: `Orbis AI requests permission for tool call ${request.toolCall.toolCallId}`, detail: 'Permission decides whether this action should run. Runtime sandbox policy independently constrains what it can access.', buttons, cancelId: Math.max(0, request.options.findIndex(option => option.kind.startsWith('reject_'))), noLink: true }); const option = request.options[result.response]; return option === undefined ? { outcome: { outcome: 'cancelled' } } : { outcome: { outcome: 'selected', optionId: option.optionId } } }
-  async start(): Promise<void> { if (this.connection !== undefined) return; if (this.connecting !== undefined) { await this.connecting; return } this.publishStatus('starting'); const pending = desktopRuntimeSpec().then(spec => connectAcpRuntime(spec, { onSessionUpdate: (notification) => { void assertEnterpriseSessionAccess(notification.sessionId).then(() => { this.publish({ type: 'session-update', sessionId: notification.sessionId, notification }) }).catch(() => {}) }, onPermissionRequest: request => this.requestPermission(request), onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) } })); this.connecting = pending; try { const connection = await pending; this.connection = connection; this.publishStatus('ready'); void connection.client.closed.then(() => { if (this.connection !== connection) return; this.connection = undefined; this.publishStatus('failed', 'ACP Runtime connection closed unexpectedly') }) } catch (error: unknown) { this.publishStatus('failed', error instanceof Error ? error.message : String(error)); throw error } finally { if (this.connecting === pending) this.connecting = undefined } }
+  async start(): Promise<void> {
+    if (process.env.OBIS_DESKTOP_REQUIRED?.trim() === '1' && enterpriseRuntimeScope() === undefined) {
+      this.publishStatus('stopped', 'Waiting for a validated enterprise runtime scope')
+      throw new Error('A validated enterprise runtime scope is required before ACP Runtime can start')
+    }
+    if (this.connection !== undefined) return; if (this.connecting !== undefined) { await this.connecting; return } this.publishStatus('starting'); const pending = desktopRuntimeSpec().then(spec => connectAcpRuntime(spec, { onSessionUpdate: (notification) => { void assertEnterpriseSessionAccess(notification.sessionId).then(() => { this.publish({ type: 'session-update', sessionId: notification.sessionId, notification }) }).catch(() => {}) }, onPermissionRequest: request => this.requestPermission(request), onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) } })); this.connecting = pending; try { const connection = await pending; this.connection = connection; this.publishStatus('ready'); void connection.client.closed.then(() => { if (this.connection !== connection) return; this.connection = undefined; this.publishStatus('failed', 'ACP Runtime connection closed unexpectedly') }) } catch (error: unknown) { this.publishStatus('failed', error instanceof Error ? error.message : String(error)); throw error } finally { if (this.connecting === pending) this.connecting = undefined } }
   async stop(): Promise<void> { if (this.connection === undefined && this.connecting !== undefined) await this.connecting.catch(() => {}); const connection = this.connection; this.connection = undefined; this.connecting = undefined; if (connection === undefined) { this.publishStatus('stopped'); return } await connection.dispose(); this.publishStatus('stopped') }
   async restart(): Promise<void> { await this.stop(); await this.start() }
   private async runtime(): Promise<AcpRuntimeConnection> { await this.start(); if (this.connection === undefined) throw new Error('ACP Runtime is not available'); return this.connection }

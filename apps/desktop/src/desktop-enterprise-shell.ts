@@ -339,13 +339,27 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   root.append(shell)
 
   const currentScope = (): { environmentId?: string; projectId?: string } => {
+    const projectId = workspace.preferences.defaultProjectId ?? tenant.projects[0]?.id
     const environmentId = workspace.preferences.defaultEnvironmentId
-      ?? tenant.environments.find(item => item.kind === 'development')?.id
-      ?? tenant.environments[0]?.id
+      ?? tenant.environments.find(item => item.kind === 'production' && item.status === 'active')?.id
+      ?? tenant.environments.find(item => item.status === 'active')?.id
     return {
+      ...(projectId ? { projectId } : {}),
       ...(environmentId ? { environmentId } : {}),
-      ...(workspace.preferences.defaultProjectId ? { projectId: workspace.preferences.defaultProjectId } : {}),
     }
+  }
+
+  const requiredScope = (): { projectId: string; environmentId: string } => {
+    const scope = currentScope()
+    if (!scope.projectId || !scope.environmentId) {
+      throw new Error('Enterprise Desktop requires an OBIS project and active environment before AI Runtime can start.')
+    }
+    return { projectId: scope.projectId, environmentId: scope.environmentId }
+  }
+
+  const establishRuntimeScope = async (scope = requiredScope()): Promise<void> => {
+    await window.dshEnterprise.validateRuntimeScope(scope)
+    await window.dshDesktop.restartRuntime()
   }
 
   const showRoute = async (item: DesktopNavigationItem): Promise<void> => {
@@ -403,6 +417,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
       void window.dshEnterprise.switchTenant(tenantSelect.value).then(() =>{  window.location.reload() }).catch(() => { tenantSelect.disabled = false })
     }
 
+    const scope = currentScope()
     const project = el('select', 'enterprise-scope-select')
     const projectEmpty = el('option')
     projectEmpty.value = ''
@@ -412,12 +427,11 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
       const option = el('option')
       option.value = value.id
       option.textContent = value.name
-      option.selected = value.id === workspace.preferences.defaultProjectId
+      option.selected = value.id === scope.projectId
       project.append(option)
     }
 
     const environment = el('select', 'enterprise-scope-select')
-    const scope = currentScope()
     for (const value of tenant.environments) {
       const option = el('option')
       option.value = value.id
@@ -427,25 +441,37 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     }
 
     const saveScope = async (): Promise<void> => {
-      workspace.preferences = await window.dshEnterprise.savePreferences({
-        pinnedIds: workspace.preferences.pinnedIds,
-        hiddenOptionalIds: workspace.preferences.hiddenOptionalIds,
-        navigationOrder: workspace.preferences.navigationOrder,
-        ...(project.value ? { defaultProjectId: project.value } : {}),
-        ...(environment.value ? { defaultEnvironmentId: environment.value } : {}),
-      })
-      window.dispatchEvent(new CustomEvent('dsh-enterprise-scope-change', {
-        detail: {
-          tenantId: tenant.id,
-          projectId: project.value || undefined,
-          environmentId: environment.value || undefined,
-        },
-      }))
-      if (currentItem?.kind === 'operations') await showRoute(currentItem)
-      renderRail()
+      if (!project.value || !environment.value) {
+        throw new Error('Project and environment are required for Enterprise Runtime scope.')
+      }
+      project.disabled = true
+      environment.disabled = true
+      try {
+        const nextScope = { projectId: project.value, environmentId: environment.value }
+        await window.dshEnterprise.validateRuntimeScope(nextScope)
+        workspace.preferences = await window.dshEnterprise.savePreferences({
+          pinnedIds: workspace.preferences.pinnedIds,
+          hiddenOptionalIds: workspace.preferences.hiddenOptionalIds,
+          navigationOrder: workspace.preferences.navigationOrder,
+          defaultProjectId: nextScope.projectId,
+          defaultEnvironmentId: nextScope.environmentId,
+        })
+        await window.dshDesktop.restartRuntime()
+        if (currentItem?.kind === 'operations') await showRoute(currentItem)
+        renderRail()
+      } finally {
+        project.disabled = false
+        environment.disabled = false
+      }
     }
-    project.onchange = () => { void saveScope() }
-    environment.onchange = () => { void saveScope() }
+    const saveScopeSafely = (): void => {
+      void saveScope().catch(error => {
+        console.error('[enterprise-scope] failed to switch runtime scope:', error)
+        renderScope()
+      })
+    }
+    project.onchange = saveScopeSafely
+    environment.onchange = saveScopeSafely
 
     const spacer = el('div', 'enterprise-scope-spacer')
     const manage = text(el('button', 'enterprise-secondary-button'), workspace.customization.canManageEnterprise ? 'Manage layout' : 'Customize') as HTMLButtonElement
@@ -526,6 +552,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     if (currentItem) void showRoute(currentItem)
   }
 
+  await establishRuntimeScope()
   renderAll()
   return () => {
     productUnmount?.()
