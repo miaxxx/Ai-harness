@@ -18,8 +18,8 @@
   "scripts": {
     "build": "tsc -b && tsdown && vite build",
     "dist:mac": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --mac dir --publish never",
-    "dist:mac:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --mac dmg zip --publish never",
-    "dist:win:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --win nsis --publish never",
+    "dist:mac:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --mac dmg zip --x64 --arm64 --publish never",
+    "dist:win:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --win nsis --x64 --publish never",
     "verify:dist": "tsx ../../scripts/verify-desktop-dist.ts",
     "start": "electron ."
   },
@@ -46,6 +46,7 @@
   "build": {
     "appId": "ai.orbis.desktop",
     "productName": "Orbis AI",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -70,7 +71,6 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "identity": null,
       "target": [
         "dmg",
         "zip"
