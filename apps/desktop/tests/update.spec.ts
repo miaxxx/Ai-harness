@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   compareDesktopVersions,
+  desktopUpdateFeedUrl,
   evaluateDesktopUpdate,
   isDesktopReleaseChannel,
   mergeDesktopUpdatePolicy,
@@ -29,6 +30,15 @@ describe('desktop update policy', () => {
     expect(releaseChannelForVersion('1.0.0-enterprise-lts.1')).toBe('enterprise-lts')
     for (const channel of ['canary', 'beta', 'stable', 'enterprise-lts']) expect(isDesktopReleaseChannel(channel)).toBe(true)
     expect(isDesktopReleaseChannel('preview')).toBe(false)
+  })
+
+  it('binds generic feeds to the governed channel and rejects credential-bearing/insecure roots', () => {
+    expect(desktopUpdateFeedUrl('https://updates.example.com/desktop', 'beta')).toBe('https://updates.example.com/desktop/beta')
+    expect(desktopUpdateFeedUrl('https://updates.example.com/{channel}/desktop', 'enterprise-lts')).toBe('https://updates.example.com/enterprise-lts/desktop')
+    expect(desktopUpdateFeedUrl('http://localhost:8080/feed', 'canary')).toBe('http://localhost:8080/feed/canary')
+    expect(() => desktopUpdateFeedUrl('http://updates.example.com', 'stable')).toThrow(/HTTPS/)
+    expect(() => desktopUpdateFeedUrl('https://user:pass@updates.example.com', 'stable')).toThrow(/credentials/)
+    expect(() => desktopUpdateFeedUrl('https://updates.example.com?token=secret', 'stable')).toThrow(/query/)
   })
 
   it('rejects blocked, disabled and unauthorized downgrade updates', () => {
