@@ -1,4 +1,4 @@
-name: Desktop build diagnostic
+name: Desktop scope finalize
 
 on:
   push:
@@ -10,9 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
+  finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,21 +22,121 @@ jobs:
           node-version: 22.19.0
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - name: Capture Desktop build output
+      - name: Finalize enterprise scope authority
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected source fragment missing in {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              'apps/desktop/src/main.ts',
+              "  enterpriseRuntimeScope,\n  filterEnterpriseSessions,\n} from './desktop-enterprise-scope-main.ts'",
+              "  enterpriseRuntimeScope,\n  filterEnterpriseSessions,\n  onEnterpriseRuntimeScopeChange,\n} from './desktop-enterprise-scope-main.ts'",
+          )
+          replace(
+              'apps/desktop/src/main.ts',
+              "const supervisor = new AcpRuntimeSupervisor()\nlet contentStore: DesktopContentStore | undefined\nfunction desktopContent(): DesktopContentStore { contentStore ??= new DesktopContentStore(join(app.getPath('home'), '.dsh', 'skills'), () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills')); return contentStore }",
+              "const supervisor = new AcpRuntimeSupervisor()\nonEnterpriseRuntimeScopeChange((_previous, next) => {\n  if (!supervisor.running()) return\n  const transition = next === undefined ? supervisor.stop() : supervisor.restart()\n  void transition.catch((error: unknown) => {\n    console.error('[enterprise-scope] failed to rotate ACP Runtime after scope change:', error)\n  })\n})\nlet contentStore: DesktopContentStore | undefined\nfunction desktopContent(): DesktopContentStore { contentStore ??= new DesktopContentStore(join(app.getPath('home'), '.dsh', 'skills'), () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'), enterpriseRuntimeScope); return contentStore }",
+          )
+
+          replace(
+              'apps/desktop/src/desktop-content.ts',
+              "import type { DesktopArtifact, DesktopAttachment, DesktopSkillSummary } from './shared.ts'",
+              "import type { DesktopArtifact, DesktopAttachment, DesktopSkillSummary } from './shared.ts'\nimport { enterpriseSessionNamespace, type DesktopEnterpriseRuntimeScope } from './desktop-enterprise-runtime-shared.ts'",
+          )
+          replace(
+              'apps/desktop/src/desktop-content.ts',
+              "  constructor(\n    private readonly userSkillsRoot: string,\n    private readonly bundledSkillsRoot: () => string,\n  ) {}\n\n  sessionRoot(sessionId: string, cwd: string): string {\n    const root = join(resolve(cwd), '.dsh', 'artifacts', safeSessionName(sessionId))\n    this.roots.set(sessionId, root)\n    return root\n  }",
+              "  constructor(\n    private readonly userSkillsRoot: string,\n    private readonly bundledSkillsRoot: () => string,\n    private readonly enterpriseScope: () => DesktopEnterpriseRuntimeScope | undefined = () => undefined,\n  ) {}\n\n  sessionRoot(sessionId: string, cwd: string): string {\n    const scope = this.enterpriseScope()\n    const root = scope === undefined\n      ? join(resolve(cwd), '.dsh', 'artifacts', safeSessionName(sessionId))\n      : join(resolve(cwd), '.dsh', 'artifacts', 'enterprise', ...enterpriseSessionNamespace(scope, sessionId).split('/'))\n    this.roots.set(sessionId, root)\n    return root\n  }",
+          )
+
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "} from './desktop-obis-identity-shared.ts'\n\nconst APP_ORIGIN",
+              "} from './desktop-obis-identity-shared.ts'\nimport { enterpriseRuntimeScope } from './desktop-enterprise-scope-main.ts'\n\nconst APP_ORIGIN",
+          )
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "function scopeQuery(environmentId: string, projectId?: string): string {",
+              "function requireValidatedScope(environmentId: string, projectId?: string): void {\n  const scope = enterpriseRuntimeScope()\n  if (!scope) throw new Error('A validated enterprise runtime scope is required')\n  if (scope.environmentId !== environmentId) throw new Error('Requested environment is outside the active validated runtime scope')\n  if (projectId !== undefined && scope.projectId !== projectId) throw new Error('Requested project is outside the active validated runtime scope')\n}\n\nfunction scopeQuery(environmentId: string, projectId?: string): string {",
+          )
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "  if (!environmentId) throw new Error('Environment is required for enterprise overview')\n  const { stored, accessToken } = await authenticatedIdentity()",
+              "  if (!environmentId) throw new Error('Environment is required for enterprise overview')\n  requireValidatedScope(environmentId, projectId)\n  const { stored, accessToken } = await authenticatedIdentity()",
+          )
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  if (!Number.isSafeInteger(input.expectedVersion)",
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  requireValidatedScope(environmentId)\n  if (!Number.isSafeInteger(input.expectedVersion)",
+          )
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  if (!ENVIRONMENT_STATES.has(input.to))",
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  requireValidatedScope(environmentId)\n  if (!ENVIRONMENT_STATES.has(input.to))",
+          )
+          replace(
+              'apps/desktop/src/desktop-enterprise-overview-main.ts',
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  if (!MAINTENANCE_TYPES.has(input.type))",
+              "  const environmentId = nonEmpty(input.environmentId, 'Environment')\n  requireValidatedScope(environmentId)\n  if (!MAINTENANCE_TYPES.has(input.type))",
+          )
+
+          replace(
+              'package.json',
+              '"build:desktop": "pnpm run build:lib:host && pnpm --filter @deepseek-ai/dsh-desktop run build"',
+              '"build:desktop": "pnpm run build:lib && pnpm --filter @deepseek-ai/dsh-desktop run build"',
+          )
+          replace(
+              'package.json',
+              '"dist:desktop": "pnpm run build:lib:host && pnpm --filter @deepseek-ai/dsh-desktop run dist:mac"',
+              '"dist:desktop": "pnpm run build:lib && pnpm --filter @deepseek-ai/dsh-desktop run dist:mac"',
+          )
+          PY
+      - name: Validate Desktop build and isolation tests
+        id: validate
         shell: bash
         run: |
           mkdir -p .ci
           set +e
-          pnpm --dir apps/desktop run build > .ci/desktop-build-diagnostic.log 2>&1
+          {
+            echo '=== build:lib ==='
+            pnpm run build:lib
+            build_lib=$?
+            echo "BUILD_LIB_EXIT=$build_lib"
+            if [ "$build_lib" -eq 0 ]; then
+              echo '=== desktop build ==='
+              pnpm --dir apps/desktop run build
+              desktop=$?
+            else
+              desktop=99
+            fi
+            echo "DESKTOP_BUILD_EXIT=$desktop"
+            echo '=== enterprise desktop tests ==='
+            pnpm exec vitest run apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
+            tests=$?
+            echo "TEST_EXIT=$tests"
+            if [ "$build_lib" -eq 0 ] && [ "$desktop" -eq 0 ] && [ "$tests" -eq 0 ]; then exit 0; else exit 1; fi
+          } > .ci/desktop-build-diagnostic.log 2>&1
           code=$?
-          set -e
-          printf '\nEXIT_CODE=%s\n' "$code" >> .ci/desktop-build-diagnostic.log
           cat .ci/desktop-build-diagnostic.log
-      - name: Commit diagnostic log
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Commit finalized scope changes
         shell: bash
         run: |
+          code='${{ steps.validate.outputs.code }}'
+          if [ "$code" = '0' ]; then
+            rm -f .ci/desktop-build-diagnostic.log .github/workflows/desktop-build-diagnostic.yml
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .ci/desktop-build-diagnostic.log
-          git commit -m 'ci: capture desktop build diagnostic' || exit 0
+          git add -A
+          git commit -m "feat(desktop): finalize enterprise runtime scope isolation" || exit 0
           git push origin HEAD:feature/enterprise-v3.1-sprint-a
