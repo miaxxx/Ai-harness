@@ -1,0 +1,276 @@
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
+import {
+  desktopUpdateFeedUrl,
+  evaluateDesktopUpdate,
+  isDesktopReleaseChannel,
+  mergeDesktopUpdatePolicy,
+  parseDesktopUpdatePolicy,
+  type RemoteDesktopUpdatePolicy,
+} from './desktop-update.ts'
+import type {
+  DesktopUpdatePolicy,
+  DesktopUpdateState,
+} from './desktop-update-shared.ts'
+
+const APP_ORIGIN = 'dsh-app://app'
+const CAPABILITY_TIMEOUT_MS = 5_000
+let state: DesktopUpdateState = {
+  phase: 'idle',
+  currentVersion: app.getVersion(),
+  channel: parseDesktopUpdatePolicy(process.env).releaseChannel,
+  mandatory: false,
+}
+let effectivePolicy: DesktopUpdatePolicy = parseDesktopUpdatePolicy(process.env)
+let downloadedVersion: string | undefined
+let installed = false
+
+function publish(next: DesktopUpdateState): DesktopUpdateState {
+  state = structuredClone(next)
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('dsh:desktop-update-state', state)
+  }
+  return structuredClone(state)
+}
+
+function patch(value: Partial<DesktopUpdateState>): DesktopUpdateState {
+  return publish({ ...state, ...value })
+}
+
+function trustedSender(event: Electron.IpcMainInvokeEvent): boolean {
+  return event.senderFrame?.url.startsWith(`${APP_ORIGIN}/`) === true
+}
+function requireTrusted(event: Electron.IpcMainInvokeEvent): void {
+  if (!trustedSender(event)) throw new Error('desktop update IPC rejected an untrusted sender')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function versionValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(normalized) ? normalized : undefined
+}
+
+function versionArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value.map(versionValue)
+  return items.every((item): item is string => item !== undefined) ? items : undefined
+}
+
+interface LegacyCapabilityPolicyEnvelope {
+  minimumHarnessVersion?: unknown
+  recommendedHarnessVersion?: unknown
+  latestHarnessVersion?: unknown
+  blockedHarnessVersions?: unknown
+  desktopUpdatePolicy?: unknown
+}
+
+function parseRemoteCompatibilityPolicy(payload: unknown): RemoteDesktopUpdatePolicy {
+  if (!isRecord(payload)) return {}
+  const legacy = payload as LegacyCapabilityPolicyEnvelope
+  const nested = isRecord(legacy.desktopUpdatePolicy) ? legacy.desktopUpdatePolicy : undefined
+
+  const minimumVersion = versionValue(nested?.minimumVersion) ?? versionValue(legacy.minimumHarnessVersion)
+  const recommendedVersion = versionValue(nested?.recommendedVersion) ?? versionValue(legacy.recommendedHarnessVersion)
+  const latestVersion = versionValue(nested?.latestVersion) ?? versionValue(legacy.latestHarnessVersion)
+  const blockedVersions = versionArray(nested?.blockedVersions) ?? versionArray(legacy.blockedHarnessVersions)
+  const releaseChannel = isDesktopReleaseChannel(nested?.releaseChannel) ? nested.releaseChannel : undefined
+
+  return {
+    ...(minimumVersion ? { minimumVersion } : {}),
+    ...(recommendedVersion ? { recommendedVersion } : {}),
+    ...(latestVersion ? { latestVersion } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(releaseChannel ? { releaseChannel } : {}),
+  }
+}
+
+async function remoteCompatibilityPolicy(): Promise<RemoteDesktopUpdatePolicy> {
+  const base = process.env.OBIS_BASE_URL?.trim()?.replace(/\/$/, '')
+  if (!base) return {}
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CAPABILITY_TIMEOUT_MS)
+  try {
+    const response = await fetch(`${base}/v1/harness/capabilities`, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) return {}
+    return parseRemoteCompatibilityPolicy(await response.json())
+  } catch {
+    return {}
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function applyUpdaterPolicy(policy: DesktopUpdatePolicy): void {
+  // Non-stable releases are prerelease semver values, including enterprise-lts.
+  autoUpdater.allowPrerelease = policy.releaseChannel !== 'stable'
+  const feedRoot = process.env.OBIS_DESKTOP_UPDATE_FEED_URL?.trim()
+  if (feedRoot) {
+    // Generic S3/COS feeds are physically partitioned by channel. Each channel
+    // directory exposes latest*.yml aliases, so AppUpdater uses the latest name
+    // inside the already-governed channel directory.
+    autoUpdater.setFeedURL({ provider: 'generic', url: desktopUpdateFeedUrl(feedRoot, policy.releaseChannel) })
+    autoUpdater.channel = 'latest'
+  } else {
+    // GitHub release assets expose explicit channel aliases generated by the
+    // release workflow (latest/stable, beta, canary, enterprise-lts).
+    autoUpdater.channel = policy.releaseChannel === 'stable' ? 'latest' : policy.releaseChannel
+  }
+  // AppUpdater's channel setter may alter downgrade behavior, so policy is
+  // applied last and remains the authoritative control.
+  autoUpdater.allowDowngrade = policy.allowDowngrade === true
+}
+
+async function refreshPolicy(): Promise<DesktopUpdatePolicy> {
+  effectivePolicy = mergeDesktopUpdatePolicy(parseDesktopUpdatePolicy(process.env), await remoteCompatibilityPolicy())
+  state.channel = effectivePolicy.releaseChannel
+  applyUpdaterPolicy(effectivePolicy)
+  return effectivePolicy
+}
+
+async function createPreflight(targetVersion: string): Promise<void> {
+  const root = join(app.getPath('userData'), 'update-preflight')
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const at = new Date().toISOString()
+  const safeStamp = at.replace(/[:.]/g, '-')
+  const snapshotRoot = join(root, safeStamp)
+  await mkdir(snapshotRoot, { recursive: true, mode: 0o700 })
+
+  const sourceConfig = join(app.getPath('userData'), 'obis-enterprise.json')
+  try { await copyFile(sourceConfig, join(snapshotRoot, 'obis-enterprise.json')) } catch { /* configuration may not exist */ }
+
+  const manifest = {
+    schemaVersion: 1,
+    createdAt: at,
+    currentVersion: app.getVersion(),
+    targetVersion,
+    channel: effectivePolicy.releaseChannel,
+    policy: effectivePolicy,
+    migrationDryRun: 'passed-no-desktop-schema-migrations',
+  }
+  await writeFile(join(snapshotRoot, 'preflight.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 })
+  await writeFile(join(root, 'last-known-good.json'), `${JSON.stringify({
+    version: app.getVersion(),
+    snapshotRoot,
+    createdAt: at,
+  }, null, 2)}\n`, { mode: 0o600 })
+}
+
+function updateVersion(info: UpdateInfo): string {
+  const version = versionValue(info.version)
+  if (!version) throw new Error('Update provider returned an invalid semantic version')
+  return version
+}
+
+async function check(): Promise<DesktopUpdateState> {
+  if (!app.isPackaged && process.env.OBIS_DESKTOP_UPDATE_ALLOW_DEV !== '1') {
+    return patch({ phase: 'blocked', mandatory: false, reason: 'Update checks are disabled for unpackaged development builds.', checkedAt: new Date().toISOString() })
+  }
+  const policy = await refreshPolicy()
+  if (policy.mode === 'disabled') {
+    return patch({ phase: 'blocked', mandatory: false, reason: 'Enterprise policy disables Desktop updates.', checkedAt: new Date().toISOString() })
+  }
+  patch({ phase: 'checking', error: undefined, reason: undefined, checkedAt: new Date().toISOString() })
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    if (!result?.updateInfo) return patch({ phase: 'idle', mandatory: false, reason: 'No update is available.' })
+    const availableVersion = updateVersion(result.updateInfo)
+    const decision = evaluateDesktopUpdate(app.getVersion(), availableVersion, policy)
+    if (!decision.allowed) {
+      return patch({ phase: 'blocked', availableVersion, mandatory: decision.mandatory, reason: decision.reason })
+    }
+    return patch({ phase: 'available', availableVersion, mandatory: decision.mandatory, reason: decision.mandatory ? 'Current Desktop version is below the enterprise minimum.' : undefined })
+  } catch (error) {
+    return patch({ phase: 'error', mandatory: false, error: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+async function download(): Promise<DesktopUpdateState> {
+  if (state.phase !== 'available' || !state.availableVersion) throw new Error('No governed Desktop update is available for download')
+  if (effectivePolicy.mode === 'disabled') throw new Error('Enterprise policy disables Desktop updates')
+  await createPreflight(state.availableVersion)
+  patch({ phase: 'downloading', percent: 0, error: undefined })
+  try {
+    await autoUpdater.downloadUpdate()
+    return structuredClone(state)
+  } catch (error) {
+    return patch({ phase: 'error', error: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+async function install(): Promise<void> {
+  if (state.phase !== 'downloaded' || !downloadedVersion) throw new Error('No verified Desktop update has been downloaded')
+  if (installed) return
+  await createPreflight(downloadedVersion)
+  installed = true
+  autoUpdater.quitAndInstall(false, true)
+}
+
+function configureUpdater(): void {
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
+  applyUpdaterPolicy(parseDesktopUpdatePolicy(process.env))
+
+  autoUpdater.on('checking-for-update', () => { patch({ phase: 'checking', error: undefined }) })
+  autoUpdater.on('update-not-available', () => { patch({ phase: 'idle', mandatory: false, reason: 'No update is available.' }) })
+  autoUpdater.on('update-available', (info: UpdateInfo) => {
+    const availableVersion = updateVersion(info)
+    const decision = evaluateDesktopUpdate(app.getVersion(), availableVersion, effectivePolicy)
+    patch(decision.allowed
+      ? { phase: 'available', availableVersion, mandatory: decision.mandatory, reason: decision.reason }
+      : { phase: 'blocked', availableVersion, mandatory: decision.mandatory, reason: decision.reason })
+  })
+  autoUpdater.on('download-progress', (progress: ProgressInfo) => {
+    patch({
+      phase: 'downloading',
+      percent: progress.percent,
+      bytesPerSecond: progress.bytesPerSecond,
+      transferred: progress.transferred,
+      total: progress.total,
+    })
+  })
+  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    downloadedVersion = updateVersion(info)
+    patch({ phase: 'downloaded', availableVersion: downloadedVersion, downloadedAt: new Date().toISOString(), percent: 100 })
+  })
+  autoUpdater.on('error', error => { patch({ phase: 'error', error: error.message }) })
+}
+
+configureUpdater()
+
+ipcMain.handle('dsh:desktop-update-state', async event => {
+  requireTrusted(event)
+  await refreshPolicy()
+  return structuredClone(state)
+})
+ipcMain.handle('dsh:desktop-update-check', async event => {
+  requireTrusted(event)
+  return check()
+})
+ipcMain.handle('dsh:desktop-update-download', async event => {
+  requireTrusted(event)
+  return download()
+})
+ipcMain.handle('dsh:desktop-update-install', async event => {
+  requireTrusted(event)
+  await install()
+})
+
+app.whenReady().then(() => {
+  const mode = parseDesktopUpdatePolicy(process.env).mode
+  if (mode !== 'automatic') return
+  void check().then(result => {
+    if (result.phase === 'available') return download()
+    return result
+  }).catch(error => {
+    patch({ phase: 'error', error: error instanceof Error ? error.message : String(error) })
+  })
+})

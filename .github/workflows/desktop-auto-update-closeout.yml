@@ -1,0 +1,54 @@
+name: Desktop update release gate
+
+on:
+  push:
+    branches: [feature/enterprise-v3.1-sprint-a]
+    paths:
+      - apps/desktop/package.json
+      - apps/desktop/src/desktop-update.ts
+      - apps/desktop/src/desktop-update-main.ts
+      - apps/desktop/src/desktop-update-shared.ts
+      - apps/desktop/tests/update.spec.ts
+      - scripts/desktop-release-artifacts.mjs
+      - scripts/desktop-release-artifacts.test.mjs
+      - .github/workflows/desktop-release.yml
+      - .github/workflows/desktop-auto-update-closeout.yml
+      - pnpm-lock.yaml
+  pull_request:
+    paths:
+      - apps/desktop/package.json
+      - apps/desktop/src/desktop-update.ts
+      - apps/desktop/src/desktop-update-main.ts
+      - apps/desktop/src/desktop-update-shared.ts
+      - apps/desktop/tests/update.spec.ts
+      - scripts/desktop-release-artifacts.mjs
+      - scripts/desktop-release-artifacts.test.mjs
+      - .github/workflows/desktop-release.yml
+      - .github/workflows/desktop-auto-update-closeout.yml
+      - pnpm-lock.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  update-release-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - name: Immutable install
+        run: pnpm install --frozen-lockfile
+      - name: Desktop release artifact contract
+        run: |
+          node scripts/desktop-release-artifacts.mjs validate --version 0.1.1-rc.2 --channel beta
+          node --test scripts/desktop-release-artifacts.test.mjs
+      - name: Build shared libraries
+        run: pnpm run build:lib
+      - name: Build Desktop
+        run: pnpm --dir apps/desktop run build
+      - name: Update and enterprise scope regression
+        run: pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts

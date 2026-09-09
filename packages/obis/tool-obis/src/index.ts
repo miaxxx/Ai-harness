@@ -165,11 +165,11 @@ export function apply(ctx: Context, input: Config): void {
       const run = config.runId
         ? await client.getAgentRun(config.runId, config.environmentId)
         : await client.createAgentRun({
-            environmentId: config.environmentId,
-            agentId: config.agentId,
-            goal: humanGoal(agent),
-            autonomy: config.autonomy,
-          }, { idempotencyKey: `workspace:${key}` })
+          environmentId: config.environmentId,
+          agentId: config.agentId,
+          goal: humanGoal(agent),
+          autonomy: config.autonomy,
+        }, { idempotencyKey: `workspace:${key}` })
       return await client.attachAgentRun(run.id, {
         environmentId: config.environmentId,
         harnessSessionId: key,
@@ -186,12 +186,13 @@ export function apply(ctx: Context, input: Config): void {
   const toolContext = async (exec: ToolRunContext): Promise<{ context: ObisToolContext; binding: AgentRunBinding }> => {
     if (!exec.agent) throw new Error('OBIS tools require an active Harness Agent scope.')
     const binding = await ensureBinding(exec.agent)
+    const capabilityLease = config.capabilityLease ?? binding.capabilityLease?.id
     return {
       binding,
       context: {
         environmentId: config.environmentId,
         runId: binding.id,
-        ...(config.capabilityLease || binding.capabilityLease?.id ? { capabilityLease: config.capabilityLease ?? binding.capabilityLease!.id } : {}),
+        ...(capabilityLease ? { capabilityLease } : {}),
         signal: exec.signal,
         idempotencyKey: `tool:${String(exec.callId)}`,
       },
@@ -207,7 +208,7 @@ export function apply(ctx: Context, input: Config): void {
       output,
       execute: async (args, exec) => {
         const { context, binding } = await toolContext(exec)
-        const proposalResult = await definition.execute(args as JsonRecord, context)
+        const proposalResult = await definition.execute(args, context)
         if (toolName !== 'obis_propose_action') return proposalResult as JsonValue
 
         const parts = proposalParts(proposalResult)

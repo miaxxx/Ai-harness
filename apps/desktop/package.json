@@ -1,13 +1,13 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "macOS Electron technical preview over an independently supervised standalone ACP Runtime",
+  "description": "Enterprise desktop workspace over an independently supervised ACP Runtime",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/miaxxx/Ai-harness.git",
     "directory": "apps/desktop"
   },
   "type": "module",
@@ -18,8 +18,13 @@
   "scripts": {
     "build": "tsc -b && tsdown && vite build",
     "dist:mac": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --mac dir --publish never",
+    "dist:mac:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --mac dmg zip --x64 --arm64 --publish never",
+    "dist:win:release": "pnpm run build && tsx ../../scripts/build-desktop-runtime.ts && electron-builder --win nsis --x64 --publish never",
     "verify:dist": "tsx ../../scripts/verify-desktop-dist.ts",
     "start": "electron ."
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.25.1",
@@ -41,6 +46,7 @@
   "build": {
     "appId": "ai.orbis.desktop",
     "productName": "Orbis AI",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -55,12 +61,29 @@
     "directories": {
       "output": "dist-electron"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "miaxxx",
+        "repo": "Ai-harness",
+        "releaseType": "release"
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "identity": null,
       "target": [
-        "dir"
+        "dmg",
+        "zip"
       ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   },
   "license": "MIT"

@@ -44,3 +44,5 @@ worktrees/
 # Generated Electron application and embedded Runtime staging.
 apps/desktop/dist-electron/
 apps/desktop/runtime-dist/
+# Excluded workspace materialized by CI/install; keep lint aligned with package.json workspaces.
+packages/workstation/
