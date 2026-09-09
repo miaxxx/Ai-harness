@@ -37,6 +37,41 @@ jobs:
           test -f pnpm-lock.yaml
       - name: Install exact workspace graph
         run: pnpm install --frozen-lockfile
+      - name: Build host contracts
+        run: pnpm run build:lib:host
+      - name: Generate enterprise lint autofix candidates
+        shell: bash
+        run: |
+          pnpm exec tsx scripts/run-oxlint.ts \
+            apps/desktop/src/desktop-obis-identity-main.ts \
+            apps/desktop/src/desktop-obis-identity-ui.ts \
+            apps/desktop/src/desktop-enterprise-overview-main.ts \
+            apps/desktop/src/desktop-enterprise-overview-ui.ts \
+            apps/desktop/src/desktop-enterprise-shell.ts \
+            apps/desktop/src/desktop-enterprise-scope-main.ts \
+            apps/desktop/src/main.ts \
+            packages/obis/bridge/src/client.ts \
+            packages/obis/launch/src/client/index.ts \
+            packages/obis/tool-obis/src/index.ts \
+            --fix || true
+      - name: Upload autofix candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enterprise-lint-autofix-${{ github.sha }}
+          path: |
+            apps/desktop/src/desktop-obis-identity-main.ts
+            apps/desktop/src/desktop-obis-identity-ui.ts
+            apps/desktop/src/desktop-enterprise-overview-main.ts
+            apps/desktop/src/desktop-enterprise-overview-ui.ts
+            apps/desktop/src/desktop-enterprise-shell.ts
+            apps/desktop/src/desktop-enterprise-scope-main.ts
+            apps/desktop/src/main.ts
+            packages/obis/bridge/src/client.ts
+            packages/obis/launch/src/client/index.ts
+            packages/obis/tool-obis/src/index.ts
+          if-no-files-found: error
+          retention-days: 7
       - name: Lint
         shell: bash
         run: |
