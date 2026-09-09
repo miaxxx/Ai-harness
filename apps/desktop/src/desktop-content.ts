@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import type { ContentBlock } from '@agentclientprotocol/sdk'
 import type { DesktopArtifact, DesktopAttachment, DesktopSkillSummary } from './shared.ts'
+import { enterpriseSessionNamespace, type DesktopEnterpriseRuntimeScope } from './desktop-enterprise-runtime-shared.ts'
 
 const BASIC_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.html', '.htm', '.json', '.jsonl', '.csv', '.tsv', '.xml', '.yaml', '.yml',
@@ -139,10 +140,14 @@ export class DesktopContentStore {
   constructor(
     private readonly userSkillsRoot: string,
     private readonly bundledSkillsRoot: () => string,
+    private readonly enterpriseScope: () => DesktopEnterpriseRuntimeScope | undefined = () => undefined,
   ) {}
 
   sessionRoot(sessionId: string, cwd: string): string {
-    const root = join(resolve(cwd), '.dsh', 'artifacts', safeSessionName(sessionId))
+    const scope = this.enterpriseScope()
+    const root = scope === undefined
+      ? join(resolve(cwd), '.dsh', 'artifacts', safeSessionName(sessionId))
+      : join(resolve(cwd), '.dsh', 'artifacts', 'enterprise', ...enterpriseSessionNamespace(scope, sessionId).split('/'))
     this.roots.set(sessionId, root)
     return root
   }

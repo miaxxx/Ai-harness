@@ -57,6 +57,7 @@ import {
   claimEnterpriseSession,
   enterpriseRuntimeScope,
   filterEnterpriseSessions,
+  onEnterpriseRuntimeScopeChange,
 } from './desktop-enterprise-scope-main.ts'
 
 protocol.registerSchemesAsPrivileged([{
@@ -318,8 +319,15 @@ class AcpRuntimeSupervisor {
 }
 
 const supervisor = new AcpRuntimeSupervisor()
+onEnterpriseRuntimeScopeChange((_previous, next) => {
+  if (!supervisor.running()) return
+  const transition = next === undefined ? supervisor.stop() : supervisor.restart()
+  void transition.catch((error: unknown) => {
+    console.error('[enterprise-scope] failed to rotate ACP Runtime after scope change:', error)
+  })
+})
 let contentStore: DesktopContentStore | undefined
-function desktopContent(): DesktopContentStore { contentStore ??= new DesktopContentStore(join(app.getPath('home'), '.dsh', 'skills'), () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills')); return contentStore }
+function desktopContent(): DesktopContentStore { contentStore ??= new DesktopContentStore(join(app.getPath('home'), '.dsh', 'skills'), () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'), enterpriseRuntimeScope); return contentStore }
 function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean { return event.senderFrame?.url.startsWith(`${APP_ORIGIN}/`) === true }
 function nonEmptyString(value: unknown, label: string): string { if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${label} must be a non-empty string`); return value }
 

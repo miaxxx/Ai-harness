@@ -19,6 +19,7 @@ import type {
   DesktopScimProviderSummary,
   DesktopSsoProviderSummary,
 } from './desktop-obis-identity-shared.ts'
+import { enterpriseRuntimeScope } from './desktop-enterprise-scope-main.ts'
 
 const APP_ORIGIN = 'dsh-app://app'
 const ENVIRONMENT_STATES = new Set<DesktopEnvironmentRuntimeState>(['active', 'draining', 'maintenance', 'disabled'])
@@ -253,6 +254,13 @@ async function section<T>(operation: () => Promise<T>): Promise<DesktopOverviewS
   }
 }
 
+function requireValidatedScope(environmentId: string, projectId?: string): void {
+  const scope = enterpriseRuntimeScope()
+  if (!scope) throw new Error('A validated enterprise runtime scope is required')
+  if (scope.environmentId !== environmentId) throw new Error('Requested environment is outside the active validated runtime scope')
+  if (projectId !== undefined && scope.projectId !== projectId) throw new Error('Requested project is outside the active validated runtime scope')
+}
+
 function scopeQuery(environmentId: string, projectId?: string): string {
   const params = new URLSearchParams({ environmentId })
   if (projectId) params.set('projectId', projectId)
@@ -263,6 +271,7 @@ async function enterpriseOverview(scope: { environmentId: string; projectId?: st
   const environmentId = scope.environmentId.trim()
   const projectId = scope.projectId?.trim() || undefined
   if (!environmentId) throw new Error('Environment is required for enterprise overview')
+  requireValidatedScope(environmentId, projectId)
   const { stored, accessToken } = await authenticatedIdentity()
   const encodedEnvironment = encodeURIComponent(environmentId)
   const query = scopeQuery(environmentId, projectId)
@@ -302,6 +311,7 @@ async function enterpriseOverview(scope: { environmentId: string; projectId?: st
 async function decideApproval(input: DesktopApprovalDecisionInput): Promise<DesktopApprovalDecisionResult> {
   const approvalId = nonEmpty(input.approvalId, 'Approval id')
   const environmentId = nonEmpty(input.environmentId, 'Environment')
+  requireValidatedScope(environmentId)
   if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error('Approval expectedVersion must be a positive integer')
   if (input.comment !== undefined && typeof input.comment !== 'string') throw new Error('Approval comment must be text')
   return authenticatedRequest<DesktopApprovalDecisionResult>(`/v1/approvals/${encodeURIComponent(approvalId)}/decisions`, {
@@ -317,6 +327,7 @@ async function decideApproval(input: DesktopApprovalDecisionInput): Promise<Desk
 
 async function transitionEnvironment(input: { environmentId: string; to: DesktopEnvironmentRuntimeState; reason?: string }): Promise<DesktopEnvironmentOperationsState> {
   const environmentId = nonEmpty(input.environmentId, 'Environment')
+  requireValidatedScope(environmentId)
   if (!ENVIRONMENT_STATES.has(input.to)) throw new Error('Invalid environment runtime state')
   return authenticatedRequest<DesktopEnvironmentOperationsState>(`/v1/management/operations/environments/${encodeURIComponent(environmentId)}/state`, {
     method: 'PATCH',
@@ -326,6 +337,7 @@ async function transitionEnvironment(input: { environmentId: string; to: Desktop
 
 async function requestMaintenance(input: DesktopMaintenanceRequestInput): Promise<DesktopMaintenanceTask> {
   const environmentId = nonEmpty(input.environmentId, 'Environment')
+  requireValidatedScope(environmentId)
   if (!MAINTENANCE_TYPES.has(input.type)) throw new Error('Invalid maintenance task type')
   return authenticatedRequest<DesktopMaintenanceTask>(`/v1/management/operations/environments/${encodeURIComponent(environmentId)}/maintenance`, {
     method: 'POST',
