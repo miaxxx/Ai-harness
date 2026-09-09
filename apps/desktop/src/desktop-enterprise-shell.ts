@@ -135,7 +135,7 @@ function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSa
   const head = el('header', 'enterprise-sheet-head')
   const close = text(el('button', 'enterprise-icon-button'), '×') as HTMLButtonElement
   close.type = 'button'
-  close.onclick = () => backdrop.remove()
+  close.onclick = () =>{  backdrop.remove() }
   head.append(text(el('div'), 'Personalize workspace'), close)
   sheet.append(
     head,
@@ -173,7 +173,7 @@ function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSa
       }
       controls.append(up, down)
       if (item.optional) {
-        const toggle = el('input') as HTMLInputElement
+        const toggle = el('input')
         toggle.type = 'checkbox'
         toggle.checked = !hidden.has(item.id)
         toggle.title = 'Show this optional entry'
@@ -200,7 +200,7 @@ function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSa
       navigationOrder: items.map(item => item.id),
       ...(input.workspace.preferences.defaultProjectId ? { defaultProjectId: input.workspace.preferences.defaultProjectId } : {}),
       ...(input.workspace.preferences.defaultEnvironmentId ? { defaultEnvironmentId: input.workspace.preferences.defaultEnvironmentId } : {}),
-    }).then(async value => {
+    }).then(async (value) => {
       await input.onSave(value)
       backdrop.remove()
     }).finally(() => { save.disabled = false })
@@ -218,7 +218,7 @@ function openAdminEditor(input: { workspace: DesktopResolvedWorkspace; onSaved: 
   const head = el('header', 'enterprise-sheet-head')
   const close = text(el('button', 'enterprise-icon-button'), '×') as HTMLButtonElement
   close.type = 'button'
-  close.onclick = () => backdrop.remove()
+  close.onclick = () =>{  backdrop.remove() }
   head.append(text(el('div'), 'Manage enterprise desktop'), close)
   sheet.append(
     head,
@@ -226,16 +226,16 @@ function openAdminEditor(input: { workspace: DesktopResolvedWorkspace; onSaved: 
   )
 
   const brandLabel = text(el('label', 'enterprise-field-label'), 'Product name')
-  const brand = el('input', 'enterprise-input') as HTMLInputElement
+  const brand = el('input', 'enterprise-input')
   brand.value = draft.branding.productName
   brand.oninput = () => { draft.branding.productName = brand.value }
   brandLabel.append(brand)
   sheet.append(brandLabel)
 
   const paneLabel = text(el('label', 'enterprise-field-label'), 'Secondary pane')
-  const pane = el('select', 'enterprise-input') as HTMLSelectElement
+  const pane = el('select', 'enterprise-input')
   for (const mode of ['none', 'spaces', 'team', 'assistants', 'module'] as const) {
-    const option = el('option') as HTMLOptionElement
+    const option = el('option')
     option.value = mode
     option.textContent = mode
     option.selected = draft.contextPane.mode === mode
@@ -254,10 +254,10 @@ function openAdminEditor(input: { workspace: DesktopResolvedWorkspace; onSaved: 
     items.forEach((item, index) => {
       const row = el('div', 'enterprise-admin-row')
       const main = el('div', 'enterprise-admin-row-main')
-      const name = el('input', 'enterprise-input') as HTMLInputElement
+      const name = el('input', 'enterprise-input')
       name.value = item.label
       name.oninput = () => { items = replace(items, index, { ...items[index]!, label: name.value }) }
-      const role = el('input', 'enterprise-input enterprise-role-input') as HTMLInputElement
+      const role = el('input', 'enterprise-input enterprise-role-input')
       role.placeholder = 'roles: owner, admin'
       role.value = item.requiredRoles?.join(', ') ?? ''
       role.oninput = () => {
@@ -318,7 +318,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   root.replaceChildren()
   root.dataset.enterpriseShell = 'true'
 
-  let context = await window.dshEnterprise.context()
+  const context = await window.dshEnterprise.context()
   let workspace = await window.dshEnterprise.workspace()
   let tenant = selectedTenant(context)
   let productUnmount: ProductUnmount | undefined
@@ -390,9 +390,9 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   const renderScope = (): void => {
     scopebar.replaceChildren()
 
-    const tenantSelect = el('select', 'enterprise-scope-select') as HTMLSelectElement
+    const tenantSelect = el('select', 'enterprise-scope-select')
     for (const value of context.tenants) {
-      const option = el('option') as HTMLOptionElement
+      const option = el('option')
       option.value = value.id
       option.textContent = value.displayName
       option.selected = value.id === context.currentTenantId
@@ -400,26 +400,26 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     }
     tenantSelect.onchange = () => {
       tenantSelect.disabled = true
-      void window.dshEnterprise.switchTenant(tenantSelect.value).then(() => window.location.reload()).catch(() => { tenantSelect.disabled = false })
+      void window.dshEnterprise.switchTenant(tenantSelect.value).then(() =>{  window.location.reload() }).catch(() => { tenantSelect.disabled = false })
     }
 
-    const project = el('select', 'enterprise-scope-select') as HTMLSelectElement
-    const projectEmpty = el('option') as HTMLOptionElement
+    const project = el('select', 'enterprise-scope-select')
+    const projectEmpty = el('option')
     projectEmpty.value = ''
     projectEmpty.textContent = 'Project'
     project.append(projectEmpty)
     for (const value of tenant.projects) {
-      const option = el('option') as HTMLOptionElement
+      const option = el('option')
       option.value = value.id
       option.textContent = value.name
       option.selected = value.id === workspace.preferences.defaultProjectId
       project.append(option)
     }
 
-    const environment = el('select', 'enterprise-scope-select') as HTMLSelectElement
+    const environment = el('select', 'enterprise-scope-select')
     const scope = currentScope()
     for (const value of tenant.environments) {
-      const option = el('option') as HTMLOptionElement
+      const option = el('option')
       option.value = value.id
       option.textContent = value.name
       option.selected = value.id === scope.environmentId
@@ -463,7 +463,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
       } else {
         openPreferenceEditor({
           workspace,
-          onSave: async next => {
+          onSave: async (next) => {
             workspace = { ...workspace, preferences: next }
             workspace = await window.dshEnterprise.workspace()
             renderAll()
@@ -484,7 +484,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
 
     const nav = el('nav', 'enterprise-nav')
     for (const item of workspace.navigation) {
-      const button = el('button', 'enterprise-nav-item') as HTMLButtonElement
+      const button = el('button', 'enterprise-nav-item')
       button.type = 'button'
       button.dataset.navId = item.id
       button.classList.toggle('is-active', item.id === currentItem?.id)
@@ -502,14 +502,14 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     const settings = text(el('button', 'enterprise-icon-button'), '⋯') as HTMLButtonElement
     settings.type = 'button'
     settings.title = 'Personalize workspace'
-    settings.onclick = () => openPreferenceEditor({
+    settings.onclick = () =>{  openPreferenceEditor({
       workspace,
-      onSave: async next => {
+      onSave: async (next) => {
         workspace = { ...workspace, preferences: next }
         workspace = await window.dshEnterprise.workspace()
         renderAll()
       },
-    })
+    }) }
     footer.append(text(el('span', 'enterprise-user-avatar'), context.user.displayName.slice(0, 1).toUpperCase()), meta, settings)
     rail.append(footer)
   }

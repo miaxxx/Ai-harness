@@ -106,7 +106,8 @@ export class ObisBridgeClient {
           String(payload.error.code ?? 'OHP_REQUEST_FAILED'),
           payload.error.message,
           payload.error.correlationId || responseCorrelationId,
-          payload.error.retryable === true,
+
+          payload.error.retryable,
           payload.error.details,
         )
       }
@@ -210,7 +211,8 @@ export class ObisBridgeClient {
           String(payload.error.code ?? 'OHP_REQUEST_FAILED'),
           payload.error.message,
           payload.error.correlationId || responseCorrelationId,
-          payload.error.retryable === true,
+
+          payload.error.retryable,
           payload.error.details,
         )
       }

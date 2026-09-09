@@ -35,7 +35,7 @@ export function setEnterpriseRuntimeScope(value: DesktopEnterpriseRuntimeScope |
   }
   const tenantId=clean(value.tenantId)
   if (!tenantId) throw new Error('Enterprise runtime scope requires tenantId.')
-  activeScope={tenantId,...(clean(value.projectId)?{projectId:clean(value.projectId)}:{}),...(clean(value.environmentId)?{environmentId:clean(value.environmentId)}:{})}
+  activeScope={ tenantId,...(clean(value.projectId)?{ projectId:clean(value.projectId) }:{}),...(clean(value.environmentId)?{ environmentId:clean(value.environmentId) }:{}) }
   process.env.OBIS_DESKTOP_TENANT_ID=tenantId
   if(activeScope.projectId)process.env.OBIS_DESKTOP_PROJECT_ID=activeScope.projectId;else delete process.env.OBIS_DESKTOP_PROJECT_ID
   if(activeScope.environmentId)process.env.OBIS_DESKTOP_ENVIRONMENT_ID=activeScope.environmentId;else delete process.env.OBIS_DESKTOP_ENVIRONMENT_ID
@@ -59,7 +59,7 @@ async function ownership(): Promise<Map<string, SessionOwnershipRecord>> {
     if(parsed.version===1&&Array.isArray(parsed.records)){
       for(const value of parsed.records){
         if(!value||typeof value!=='object'||typeof value.sessionId!=='string'||typeof value.cwd!=='string'||typeof value.tenantId!=='string')continue
-        map.set(value.sessionId,{sessionId:value.sessionId,cwd:value.cwd,tenantId:value.tenantId,...(typeof value.projectId==='string'&&value.projectId?{projectId:value.projectId}:{}),...(typeof value.environmentId==='string'&&value.environmentId?{environmentId:value.environmentId}:{}),claimedAt:typeof value.claimedAt==='string'?value.claimedAt:new Date(0).toISOString()})
+        map.set(value.sessionId,{ sessionId:value.sessionId,cwd:value.cwd,tenantId:value.tenantId,...(typeof value.projectId==='string'&&value.projectId?{ projectId:value.projectId }:{}),...(typeof value.environmentId==='string'&&value.environmentId?{ environmentId:value.environmentId }:{}),claimedAt:typeof value.claimedAt==='string'?value.claimedAt:new Date(0).toISOString() })
       }
     }
   } catch (error) {
@@ -70,9 +70,9 @@ async function ownership(): Promise<Map<string, SessionOwnershipRecord>> {
 }
 
 async function persist(map: Map<string, SessionOwnershipRecord>): Promise<void> {
-  const path=filePath(),temporary=`${path}.tmp`,payload:SessionOwnershipFile={version:1,records:[...map.values()].sort((a,b)=>a.claimedAt.localeCompare(b.claimedAt))}
-  await mkdir(app.getPath('userData'),{recursive:true})
-  await writeFile(temporary,`${JSON.stringify(payload,null,2)}\n`,{mode:0o600})
+  const path=filePath(),temporary=`${path}.tmp`,payload:SessionOwnershipFile={ version:1,records:[...map.values()].sort((a,b)=>a.claimedAt.localeCompare(b.claimedAt)) }
+  await mkdir(app.getPath('userData'),{ recursive:true })
+  await writeFile(temporary,`${JSON.stringify(payload,null,2)}\n`,{ mode:0o600 })
   await rename(temporary,path)
 }
 
@@ -82,7 +82,7 @@ export async function claimEnterpriseSession(sessionId:string,cwd:string):Promis
   const map=await ownership(),existing=map.get(sessionId)
   if(existing&&!sameScope(existing,scope))throw new Error('Enterprise session is already owned by another tenant/project/environment scope.')
   if(existing)return
-  map.set(sessionId,{sessionId,cwd,...scope,claimedAt:new Date().toISOString()})
+  map.set(sessionId,{ sessionId,cwd,...scope,claimedAt:new Date().toISOString() })
   await persist(map)
 }
 
@@ -93,11 +93,11 @@ export async function canAccessEnterpriseSession(sessionId:string):Promise<boole
   return owner!==undefined&&sameScope(owner,scope)
 }
 
-export async function filterEnterpriseSessions<T extends {sessionId:string}>(values:readonly T[]):Promise<T[]>{
+export async function filterEnterpriseSessions<T extends { sessionId:string }>(values:readonly T[]):Promise<T[]>{
   const scope=enterpriseRuntimeScope()
   if(!scope)return [...values]
   const map=await ownership()
-  return values.filter(value=>{const owner=map.get(value.sessionId);return owner!==undefined&&sameScope(owner,scope)})
+  return values.filter((value)=>{const owner=map.get(value.sessionId);return owner!==undefined&&sameScope(owner,scope)})
 }
 
 export async function assertEnterpriseSessionAccess(sessionId:string):Promise<void>{
