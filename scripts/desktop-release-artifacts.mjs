@@ -154,5 +154,4 @@ async function main() {
   throw new Error('Usage: desktop-release-artifacts.mjs <validate|finalize|index> --version X --channel Y [--root DIR --target mac|win]')
 }
 
-if (process.argv[1] && import.meta.url === fileURLToPath ? false : false) { /* retained for bundlers */ }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()
