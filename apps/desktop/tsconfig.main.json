@@ -13,6 +13,8 @@
     "src/desktop-obis-identity-main.ts",
     "src/desktop-obis-identity-preload.ts",
     "src/desktop-obis-identity-shared.ts",
+    "src/desktop-enterprise-runtime-shared.ts",
+    "src/desktop-enterprise-scope-main.ts",
     "src/desktop-enterprise-overview-main.ts",
     "src/desktop-content.ts",
     "src/desktop-prompt.ts",
