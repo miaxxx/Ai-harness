@@ -1,11 +1,16 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
-import type { DesktopEnterpriseRuntimeScope } from './desktop-enterprise-runtime-shared.ts'
+import {
+  enterpriseSessionNamespace,
+  sameEnterpriseRuntimeScope,
+  type DesktopEnterpriseRuntimeScope,
+} from './desktop-enterprise-runtime-shared.ts'
 
 interface SessionOwnershipRecord extends DesktopEnterpriseRuntimeScope {
   sessionId: string
   cwd: string
+  namespace: string
   claimedAt: string
 }
 
@@ -14,8 +19,14 @@ interface SessionOwnershipFile {
   records: SessionOwnershipRecord[]
 }
 
+type ScopeChangeListener = (
+  previous: DesktopEnterpriseRuntimeScope | undefined,
+  next: DesktopEnterpriseRuntimeScope | undefined,
+) => void
+
 let activeScope: DesktopEnterpriseRuntimeScope | undefined
 let ownershipCache: Map<string, SessionOwnershipRecord> | undefined
+const scopeChangeListeners = new Set<ScopeChangeListener>()
 
 function filePath(): string {
   return join(app.getPath('userData'), 'enterprise-session-ownership.json')
@@ -27,7 +38,7 @@ function required(value: string, label: string): string {
   return normalized
 }
 
-function isOwnershipRecord(value: unknown): value is SessionOwnershipRecord {
+function isOwnershipRecord(value: unknown): value is Omit<SessionOwnershipRecord, 'namespace'> & { namespace?: string } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const row = value as Partial<SessionOwnershipRecord>
   return typeof row.sessionId === 'string'
@@ -39,7 +50,27 @@ function isOwnershipRecord(value: unknown): value is SessionOwnershipRecord {
     && typeof row.userId === 'string'
 }
 
+function publishScopeChange(
+  previous: DesktopEnterpriseRuntimeScope | undefined,
+  next: DesktopEnterpriseRuntimeScope | undefined,
+): void {
+  if (sameEnterpriseRuntimeScope(previous, next)) return
+  for (const listener of scopeChangeListeners) {
+    try {
+      listener(previous ? { ...previous } : undefined, next ? { ...next } : undefined)
+    } catch (error) {
+      console.warn('[enterprise-scope] runtime scope listener failed:', error)
+    }
+  }
+}
+
+export function onEnterpriseRuntimeScopeChange(listener: ScopeChangeListener): () => void {
+  scopeChangeListeners.add(listener)
+  return () => scopeChangeListeners.delete(listener)
+}
+
 export function setEnterpriseRuntimeScope(value: DesktopEnterpriseRuntimeScope | undefined): void {
+  const previous = activeScope ? { ...activeScope } : undefined
   if (!value) {
     activeScope = undefined
     delete process.env.OBIS_TENANT_ID
@@ -49,6 +80,7 @@ export function setEnterpriseRuntimeScope(value: DesktopEnterpriseRuntimeScope |
     delete process.env.OBIS_DESKTOP_TENANT_ID
     delete process.env.OBIS_DESKTOP_PROJECT_ID
     delete process.env.OBIS_DESKTOP_ENVIRONMENT_ID
+    publishScopeChange(previous, undefined)
     return
   }
 
@@ -64,6 +96,7 @@ export function setEnterpriseRuntimeScope(value: DesktopEnterpriseRuntimeScope |
   process.env.OBIS_PROJECT_ID = activeScope.projectId
   process.env.OBIS_ENVIRONMENT_ID = activeScope.environmentId
   process.env.OBIS_INSTALLATION_ID = activeScope.installationId
+  publishScopeChange(previous, activeScope)
 }
 
 export function enterpriseRuntimeScope(): DesktopEnterpriseRuntimeScope | undefined {
@@ -71,11 +104,7 @@ export function enterpriseRuntimeScope(): DesktopEnterpriseRuntimeScope | undefi
 }
 
 function sameScope(owner: SessionOwnershipRecord, scope: DesktopEnterpriseRuntimeScope): boolean {
-  return owner.tenantId === scope.tenantId
-    && owner.projectId === scope.projectId
-    && owner.environmentId === scope.environmentId
-    && owner.installationId === scope.installationId
-    && owner.userId === scope.userId
+  return sameEnterpriseRuntimeScope(owner, scope)
 }
 
 async function ownership(): Promise<Map<string, SessionOwnershipRecord>> {
@@ -87,8 +116,18 @@ async function ownership(): Promise<Map<string, SessionOwnershipRecord>> {
     if (parsed.version === 2 && Array.isArray(parsed.records)) {
       for (const value of parsed.records) {
         if (!isOwnershipRecord(value)) continue
+        const scope: DesktopEnterpriseRuntimeScope = {
+          tenantId: value.tenantId,
+          projectId: value.projectId,
+          environmentId: value.environmentId,
+          installationId: value.installationId,
+          userId: value.userId,
+        }
         map.set(value.sessionId, {
           ...value,
+          namespace: typeof value.namespace === 'string' && value.namespace.length > 0
+            ? value.namespace
+            : enterpriseSessionNamespace(scope, value.sessionId),
           claimedAt: typeof value.claimedAt === 'string' ? value.claimedAt : new Date(0).toISOString(),
         })
       }
@@ -131,6 +170,7 @@ export async function claimEnterpriseSession(sessionId: string, cwd: string): Pr
     sessionId,
     cwd,
     ...scope,
+    namespace: enterpriseSessionNamespace(scope, sessionId),
     claimedAt: new Date().toISOString(),
   })
   await persist(map)
