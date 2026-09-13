@@ -23,8 +23,8 @@ const records = [
   },
 ] as const
 
-describe('enterprise application runtime navigation', () => {
-  it('converts governed OBIS navigation into collision-safe desktop routes', () => {
+void describe('enterprise application runtime navigation', () => {
+  void it('converts governed OBIS navigation into collision-safe desktop routes', () => {
     const items = moduleNavigationItems(records)
 
     assert.deepEqual(items[0], {
@@ -44,7 +44,7 @@ describe('enterprise application runtime navigation', () => {
     assert.equal(items[1]?.order, 1010)
   })
 
-  it('recognizes only fully resolved module navigation records', () => {
+  void it('recognizes only fully resolved module navigation records', () => {
     const [item] = moduleNavigationItems(records)
     assert.ok(item)
     assert.equal(isModuleNavigationItem(item), true)
