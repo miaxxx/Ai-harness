@@ -6,6 +6,11 @@ import type {
   DesktopUserPreference,
   DesktopWorkspaceDefinitionInput,
 } from './desktop-obis-identity-shared.ts'
+import {
+  isModuleNavigationItem,
+  moduleNavigationItems,
+  renderDesktopApplicationPage,
+} from './desktop-application-ui.ts'
 import { renderEnterpriseControlCenter } from './desktop-enterprise-overview-ui.ts'
 import './desktop-enterprise-shell.css'
 
@@ -135,7 +140,7 @@ function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSa
   const head = el('header', 'enterprise-sheet-head')
   const close = text(el('button', 'enterprise-icon-button'), '×') as HTMLButtonElement
   close.type = 'button'
-  close.onclick = () =>{  backdrop.remove() }
+  close.onclick = () => { backdrop.remove() }
   head.append(text(el('div'), 'Personalize workspace'), close)
   sheet.append(
     head,
@@ -218,7 +223,7 @@ function openAdminEditor(input: { workspace: DesktopResolvedWorkspace; onSaved: 
   const head = el('header', 'enterprise-sheet-head')
   const close = text(el('button', 'enterprise-icon-button'), '×') as HTMLButtonElement
   close.type = 'button'
-  close.onclick = () =>{  backdrop.remove() }
+  close.onclick = () => { backdrop.remove() }
   head.append(text(el('div'), 'Manage enterprise desktop'), close)
   sheet.append(
     head,
@@ -332,6 +337,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   let tenant = selectedTenant(context)
   let productUnmount: ProductUnmount | undefined
   let productMounted = false
+  let moduleNavigation: DesktopNavigationItem[] = []
   let currentItem = workspace.navigation.find(item => item.route === workspace.homeRoute) ?? workspace.navigation[0]
 
   const shell = el('main', 'enterprise-desktop-shell')
@@ -346,6 +352,8 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   stage.append(scopebar, outlet)
   shell.append(rail, contextHost, stage)
   root.append(shell)
+
+  const navigation = (): DesktopNavigationItem[] => [...workspace.navigation, ...moduleNavigation]
 
   const currentScope = (): { environmentId?: string; projectId?: string } => {
     const projectId = workspace.preferences.defaultProjectId ?? tenant.projects[0]?.id
@@ -369,6 +377,15 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
   const establishRuntimeScope = async (scope = requiredScope()): Promise<void> => {
     await window.dshEnterprise.validateRuntimeScope(scope)
     await window.dshDesktop.restartRuntime()
+  }
+
+  const refreshModuleNavigation = async (scope = requiredScope()): Promise<void> => {
+    try {
+      moduleNavigation = moduleNavigationItems(await window.dshApplications.navigation(scope))
+    } catch (error) {
+      moduleNavigation = []
+      console.error('[enterprise-applications] failed to resolve governed navigation:', error)
+    }
   }
 
   const showRoute = async (item: DesktopNavigationItem): Promise<void> => {
@@ -402,6 +419,28 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
       return
     }
 
+    if (isModuleNavigationItem(item)) {
+      try {
+        const scope = requiredScope()
+        const application = await window.dshApplications.page({
+          ...scope,
+          moduleId: item.moduleId,
+          pageId: item.modulePageId,
+        })
+        if (application.module.version !== item.moduleVersion) {
+          throw new Error('The published module version changed after navigation was resolved. Refresh the workspace and try again.')
+        }
+        renderDesktopApplicationPage(page, application)
+      } catch (error) {
+        renderEmptyOutlet(
+          page,
+          item.label,
+          error instanceof Error ? error.message : 'The governed application could not be loaded.',
+        )
+      }
+      return
+    }
+
     if (item.kind === 'team') renderEmptyOutlet(page, 'Team', 'The shell is ready for the OBIS organization directory surface. Team data will be loaded from governed identity and organization sources rather than bundled into the client.')
     else if (item.kind === 'assistants') renderEmptyOutlet(page, 'Assistant plaza', 'Enterprise assistants can be published by administrators and targeted by role, team or user. The Desktop shell provides the marketplace surface without granting new tool authority.')
     else if (item.kind === 'skills') renderEmptyOutlet(page, 'Experts · Skills · Plugins', 'Installed Skills and MCP capabilities remain runtime-governed. This surface can be customized by enterprise policy and module bindings.')
@@ -423,7 +462,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     }
     tenantSelect.onchange = () => {
       tenantSelect.disabled = true
-      void window.dshEnterprise.switchTenant(tenantSelect.value).then(() =>{  window.location.reload() }).catch(() => { tenantSelect.disabled = false })
+      void window.dshEnterprise.switchTenant(tenantSelect.value).then(() => { window.location.reload() }).catch(() => { tenantSelect.disabled = false })
     }
 
     const scope = currentScope()
@@ -466,8 +505,12 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
           defaultEnvironmentId: nextScope.environmentId,
         })
         await window.dshDesktop.restartRuntime()
-        if (currentItem?.kind === 'operations') await showRoute(currentItem)
+        await refreshModuleNavigation(nextScope)
+        if (currentItem && !navigation().some(item => item.id === currentItem?.id)) {
+          currentItem = workspace.navigation.find(item => item.route === workspace.homeRoute) ?? workspace.navigation[0]
+        }
         renderRail()
+        if (currentItem?.kind === 'operations' || currentItem?.kind === 'module') await showRoute(currentItem)
       } finally {
         project.disabled = false
         environment.disabled = false
@@ -518,7 +561,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     rail.append(brand)
 
     const nav = el('nav', 'enterprise-nav')
-    for (const item of workspace.navigation) {
+    for (const item of navigation()) {
       const button = el('button', 'enterprise-nav-item')
       button.type = 'button'
       button.dataset.navId = item.id
@@ -537,7 +580,7 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     const settings = text(el('button', 'enterprise-icon-button'), '⋯') as HTMLButtonElement
     settings.type = 'button'
     settings.title = 'Personalize workspace'
-    settings.onclick = () =>{  openPreferenceEditor({
+    settings.onclick = () => { openPreferenceEditor({
       workspace,
       onSave: async (next) => {
         workspace = { ...workspace, preferences: next }
@@ -555,13 +598,14 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     renderRail()
     renderContextPane(contextHost, workspace, tenant)
     renderScope()
-    if (currentItem && !workspace.navigation.some(item => item.id === currentItem?.id)) {
+    if (currentItem && !navigation().some(item => item.id === currentItem?.id)) {
       currentItem = workspace.navigation.find(item => item.route === workspace.homeRoute) ?? workspace.navigation[0]
     }
     if (currentItem) void showRoute(currentItem)
   }
 
   await establishRuntimeScope()
+  await refreshModuleNavigation()
   renderAll()
   return () => {
     productUnmount?.()
