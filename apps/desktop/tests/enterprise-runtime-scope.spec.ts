@@ -15,7 +15,7 @@ const production: EnterpriseRuntimeScope = {
   userId: 'user-1',
 }
 
-test('enterprise runtime namespace is stable and path-safe', () => {
+void test('enterprise runtime namespace is stable and path-safe', () => {
   assert.equal(
     enterpriseScopeNamespace(production),
     'tenant/tenant%2Facme/project/finance%20ai/environment/production',
@@ -26,7 +26,7 @@ test('enterprise runtime namespace is stable and path-safe', () => {
   )
 })
 
-test('scope equality includes tenant, project, environment, installation and user authority', () => {
+void test('scope equality includes tenant, project, environment, installation and user authority', () => {
   assert.equal(sameEnterpriseRuntimeScope(production, { ...production }), true)
   assert.equal(sameEnterpriseRuntimeScope(production, { ...production, tenantId: 'tenant-b' }), false)
   assert.equal(sameEnterpriseRuntimeScope(production, { ...production, projectId: 'project-b' }), false)
