@@ -3,6 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { DesktopAttachmentPaste, DesktopBridge, DesktopRendererFrame } from './shared.ts'
 import './desktop-obis-identity-preload.ts'
+import './desktop-application-preload.ts'
 import './desktop-update-preload.ts'
 
 const pendingFrames: DesktopRendererFrame[] = []
