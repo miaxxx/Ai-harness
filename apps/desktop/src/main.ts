@@ -324,7 +324,7 @@ class AcpRuntimeSupervisor {
   async listSessions(cwd = desktopWorkspace()): Promise<DesktopSessionSummary[]> {
     const runtime = await this.runtime()
     const result = await runtime.client.listSessions({ cwd })
-    const rows = result.sessions.map((session) => ({
+    const rows = result.sessions.map(session => ({
       sessionId: session.sessionId,
       cwd: session.cwd,
       ...(session.title === undefined || session.title === null ? {} : { title: session.title }),
