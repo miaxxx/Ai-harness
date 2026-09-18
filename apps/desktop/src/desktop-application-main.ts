@@ -6,6 +6,8 @@ import type {
   DesktopApplicationActionBinding,
   DesktopApplicationActionRequest,
   DesktopApplicationAiRequest,
+  DesktopApplicationApprovalRequest,
+  DesktopApplicationApprovalStatus,
   DesktopApplicationAiResult,
   DesktopApplicationActionResult,
   DesktopApplicationNavigationRecord,
@@ -335,6 +337,43 @@ function parseQueryResult(value: unknown): DesktopApplicationQueryResult {
   }
 }
 
+const APPLICATION_APPROVAL_STATUSES = new Set(['pending', 'approved', 'rejected', 'cancelled', 'expired'])
+
+function parseApprovalStatus(value: unknown): DesktopApplicationApprovalStatus {
+  const row = record(value)
+  const currentStage = record(row?.currentStage)
+  if (!row || !currentStage || typeof row.status !== 'string' || !APPLICATION_APPROVAL_STATUSES.has(row.status)) {
+    throw new Error('OBIS returned an invalid application approval status')
+  }
+  if (typeof row.version !== 'number' || !Number.isInteger(row.version) || row.version < 1) {
+    throw new Error('Application approval version is invalid')
+  }
+  if (typeof currentStage.quorum !== 'number' || !Number.isInteger(currentStage.quorum) || currentStage.quorum < 1) {
+    throw new Error('Application approval quorum is invalid')
+  }
+  if (typeof currentStage.approvals !== 'number' || typeof currentStage.rejections !== 'number') {
+    throw new Error('Application approval decision counts are invalid')
+  }
+  return {
+    id: requiredString(row.id, 'approval.id'),
+    status: row.status as DesktopApplicationApprovalStatus['status'],
+    version: row.version,
+    action: requiredString(row.action, 'approval.action'),
+    gate: requiredString(row.gate, 'approval.gate'),
+    requesterId: requiredString(row.requesterId, 'approval.requesterId'),
+    updatedAt: requiredString(row.updatedAt, 'approval.updatedAt'),
+    currentStage: {
+      id: requiredString(currentStage.id, 'approval.currentStage.id'),
+      ...(typeof currentStage.name === 'string' && currentStage.name.trim()
+        ? { name: currentStage.name.trim() }
+        : {}),
+      quorum: currentStage.quorum,
+      approvals: currentStage.approvals,
+      rejections: currentStage.rejections,
+    },
+  }
+}
+
 function parseAiResult(value: unknown): DesktopApplicationAiResult {
   const row = record(value)
   if (!row || (row.mode !== 'summary' && row.mode !== 'compose')) {
@@ -597,6 +636,24 @@ async function applicationAction(value: unknown): Promise<DesktopApplicationActi
   return parseActionResult(payload, idempotencyKey)
 }
 
+async function applicationApproval(value: unknown): Promise<DesktopApplicationApprovalStatus> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application approval request must be an object')
+  const input: DesktopApplicationApprovalRequest = {
+    ...scope,
+    approvalId: requiredString(row.approvalId, 'approvalId'),
+  }
+  const params = new URLSearchParams({ environmentId: input.environmentId })
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/approvals/${encodeURIComponent(input.approvalId)}?${params.toString()}`,
+    {
+      headers: { 'OHP-Version': '1.0' },
+    },
+  )
+  return parseApprovalStatus(payload)
+}
+
 async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult> {
   const scope = requireValidatedScope(value)
   const row = record(value)
@@ -655,6 +712,10 @@ function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-action', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationAction(value)
+  })
+  ipcMain.handle('dsh:application-approval', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationApproval(value)
   })
   ipcMain.handle('dsh:application-ai', async (event, value: unknown) => {
     requireTrusted(event)
