@@ -91,10 +91,12 @@ function parseRemoteCompatibilityPolicy(payload: unknown): RemoteDesktopUpdatePo
 }
 
 async function remoteCompatibilityPolicy(): Promise<RemoteDesktopUpdatePolicy> {
-  const base = process.env.OBIS_BASE_URL?.trim()?.replace(/\/$/, '')
+  const base = process.env.OBIS_BASE_URL?.trim().replace(/\/$/, '')
   if (!base) return {}
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), CAPABILITY_TIMEOUT_MS)
+  const timer = setTimeout(() => {
+    controller.abort()
+  }, CAPABILITY_TIMEOUT_MS)
   try {
     const response = await fetch(`${base}/v1/harness/capabilities`, {
       headers: { accept: 'application/json' },
@@ -241,36 +243,38 @@ function configureUpdater(): void {
     downloadedVersion = updateVersion(info)
     patch({ phase: 'downloaded', availableVersion: downloadedVersion, downloadedAt: new Date().toISOString(), percent: 100 })
   })
-  autoUpdater.on('error', error => { patch({ phase: 'error', error: error.message }) })
+  autoUpdater.on('error', (error) => {
+    patch({ phase: 'error', error: error.message })
+  })
 }
 
 configureUpdater()
 
-ipcMain.handle('dsh:desktop-update-state', async event => {
+ipcMain.handle('dsh:desktop-update-state', async (event) => {
   requireTrusted(event)
   await refreshPolicy()
   return structuredClone(state)
 })
-ipcMain.handle('dsh:desktop-update-check', async event => {
+ipcMain.handle('dsh:desktop-update-check', async (event) => {
   requireTrusted(event)
   return check()
 })
-ipcMain.handle('dsh:desktop-update-download', async event => {
+ipcMain.handle('dsh:desktop-update-download', async (event) => {
   requireTrusted(event)
   return download()
 })
-ipcMain.handle('dsh:desktop-update-install', async event => {
+ipcMain.handle('dsh:desktop-update-install', async (event) => {
   requireTrusted(event)
   await install()
 })
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   const mode = parseDesktopUpdatePolicy(process.env).mode
   if (mode !== 'automatic') return
-  void check().then(result => {
+  void check().then((result) => {
     if (result.phase === 'available') return download()
     return result
-  }).catch(error => {
+  }).catch((error: unknown) => {
     patch({ phase: 'error', error: error instanceof Error ? error.message : String(error) })
   })
 })
