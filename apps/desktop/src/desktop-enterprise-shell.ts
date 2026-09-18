@@ -133,7 +133,10 @@ function renderContextPane(host: HTMLElement, workspace: DesktopResolvedWorkspac
   host.append(sections)
 }
 
-function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSave: (next: DesktopUserPreference) => Promise<void> }): void {
+function openPreferenceEditor(input: {
+  workspace: DesktopResolvedWorkspace
+  onSave: (next: DesktopUserPreference) => Promise<void>
+}): void {
   document.querySelector('.enterprise-sheet-backdrop')?.remove()
   const backdrop = el('div', 'enterprise-sheet-backdrop')
   const sheet = el('aside', 'enterprise-sheet')
@@ -204,7 +207,9 @@ function openPreferenceEditor(input: { workspace: DesktopResolvedWorkspace; onSa
       hiddenOptionalIds: [...hidden],
       navigationOrder: items.map(item => item.id),
       ...(input.workspace.preferences.defaultProjectId ? { defaultProjectId: input.workspace.preferences.defaultProjectId } : {}),
-      ...(input.workspace.preferences.defaultEnvironmentId ? { defaultEnvironmentId: input.workspace.preferences.defaultEnvironmentId } : {}),
+      ...(input.workspace.preferences.defaultEnvironmentId
+        ? { defaultEnvironmentId: input.workspace.preferences.defaultEnvironmentId }
+        : {}),
     }).then(async (value) => {
       await input.onSave(value)
       backdrop.remove()
@@ -415,7 +420,10 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
         renderEmptyOutlet(page, 'Operations', 'This tenant does not expose an environment that can be used for governed operations.')
         return
       }
-      await renderEnterpriseControlCenter(page, { environmentId: scope.environmentId, ...(scope.projectId ? { projectId: scope.projectId } : {}) })
+      await renderEnterpriseControlCenter(page, {
+        environmentId: scope.environmentId,
+        ...(scope.projectId ? { projectId: scope.projectId } : {}),
+      })
       return
     }
 
@@ -465,7 +473,9 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
     }
     tenantSelect.onchange = () => {
       tenantSelect.disabled = true
-      void window.dshEnterprise.switchTenant(tenantSelect.value).then(() => { window.location.reload() }).catch(() => { tenantSelect.disabled = false })
+      void window.dshEnterprise.switchTenant(tenantSelect.value)
+        .then(() => { window.location.reload() })
+        .catch(() => { tenantSelect.disabled = false })
     }
 
     const scope = currentScope()
