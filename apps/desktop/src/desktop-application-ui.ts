@@ -900,11 +900,12 @@ export async function renderDesktopApplicationPage(
             actionStatus.classList.add('is-error')
             return
           }
+          const retryKey = retryKeys.get(action)
           await perform({
             input: actionInput,
             ...(form.target.value.trim() ? { targetId: form.target.value.trim() } : {}),
             ...(expectedVersion !== undefined ? { expectedVersion } : {}),
-            ...(retryKeys.get(action) ? { idempotencyKey: retryKeys.get(action) } : {}),
+            ...(retryKey ? { idempotencyKey: retryKey } : {}),
           })
         })()
       }
