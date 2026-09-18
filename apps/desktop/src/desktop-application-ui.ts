@@ -257,6 +257,15 @@ function renderNode(
   return host
 }
 
+function actionApprovalId(result: DesktopApplicationActionResult): string | undefined {
+  const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+    ? result.output as Record<string, unknown>
+    : undefined
+  return typeof output?.approvalId === 'string' && output.approvalId.trim()
+    ? output.approvalId.trim()
+    : undefined
+}
+
 function actionMessage(result: DesktopApplicationActionResult): string {
   const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
     ? result.output as Record<string, unknown>
@@ -757,9 +766,124 @@ export async function renderDesktopApplicationPage(
 
       const form = renderActionForm(binding)
       const execute = text(el('button', 'enterprise-secondary-button'), `Execute ${action}`) as HTMLButtonElement
+      const approvalPanel = el('div', 'enterprise-app-approval-panel')
+      let pending: {
+        input: Record<string, unknown>
+        targetId?: string
+        expectedVersion?: number
+        idempotencyKey: string
+        approvalId: string
+      } | undefined
+
       execute.type = 'button'
       execute.disabled = !envelope.permissions.executable
       actionButtons.push(execute)
+
+      const perform = async (execution: {
+        input: Record<string, unknown>
+        targetId?: string
+        expectedVersion?: number
+        idempotencyKey?: string
+      }): Promise<void> => {
+        for (const button of actionButtons) button.disabled = true
+        actionStatus.classList.remove('is-error')
+        actionStatus.textContent = `Executing ${action} through OBIS…`
+        try {
+          const result = await runtime.bridge.action({
+            ...runtime.scope,
+            moduleId: envelope.module.id,
+            pageId: envelope.page.id,
+            action,
+            input: execution.input,
+            ...(execution.targetId ? { targetId: execution.targetId } : {}),
+            ...(execution.expectedVersion !== undefined ? { expectedVersion: execution.expectedVersion } : {}),
+            ...(execution.idempotencyKey ? { idempotencyKey: execution.idempotencyKey } : {}),
+          })
+          actionStatus.textContent = actionMessage(result)
+
+          if (result.status === 'approval-required') {
+            const approvalId = actionApprovalId(result)
+            if (!approvalId) {
+              actionStatus.textContent = 'Action requires approval, but OBIS returned no approval id.'
+              actionStatus.classList.add('is-error')
+              return
+            }
+            retryKeys.set(action, result.idempotencyKey)
+            pending = {
+              input: structuredClone(execution.input),
+              ...(execution.targetId ? { targetId: execution.targetId } : {}),
+              ...(execution.expectedVersion !== undefined ? { expectedVersion: execution.expectedVersion } : {}),
+              idempotencyKey: result.idempotencyKey,
+              approvalId,
+            }
+
+            const approvalText = text(
+              el('span', 'enterprise-app-approval-copy'),
+              `Approval ${approvalId} is pending.`,
+            )
+            const refreshApproval = text(
+              el('button', 'enterprise-secondary-button'),
+              'Refresh approval',
+            ) as HTMLButtonElement
+            refreshApproval.type = 'button'
+            refreshApproval.onclick = () => {
+              void (async () => {
+                if (!pending) return
+                refreshApproval.disabled = true
+                try {
+                  const status = await runtime.bridge.approval({
+                    ...runtime.scope,
+                    approvalId: pending.approvalId,
+                  })
+                  approvalText.textContent = `${status.gate} · ${status.status} · stage ${status.currentStage.name ?? status.currentStage.id} · ${status.currentStage.approvals}/${status.currentStage.quorum} approvals`
+                  if (status.status === 'approved') {
+                    const replay = pending
+                    pending = undefined
+                    approvalPanel.replaceChildren()
+                    await perform({
+                      input: replay.input,
+                      ...(replay.targetId ? { targetId: replay.targetId } : {}),
+                      ...(replay.expectedVersion !== undefined ? { expectedVersion: replay.expectedVersion } : {}),
+                      idempotencyKey: replay.idempotencyKey,
+                    })
+                  } else if (status.status !== 'pending') {
+                    pending = undefined
+                    retryKeys.delete(action)
+                    actionStatus.textContent = `Approval ${status.id} is ${status.status}; the action will not execute.`
+                    actionStatus.classList.add('is-error')
+                  }
+                } catch (error) {
+                  approvalText.textContent = error instanceof Error
+                    ? error.message
+                    : 'Unable to refresh approval status.'
+                  approvalText.classList.add('is-error')
+                } finally {
+                  refreshApproval.disabled = false
+                }
+              })()
+            }
+            approvalPanel.replaceChildren(approvalText, refreshApproval)
+          } else {
+            pending = undefined
+            retryKeys.delete(action)
+            approvalPanel.replaceChildren()
+          }
+
+          if (result.status === 'executed' && envelope.page.source?.query) {
+            const where = queryControls?.readWhere()
+            await runPageQuery(where)
+          }
+          if (result.status !== 'executed' && result.status !== 'approval-required') {
+            actionStatus.classList.add('is-error')
+          }
+        } catch (error) {
+          actionStatus.textContent = error instanceof Error ? error.message : 'The governed action failed.'
+          actionStatus.classList.add('is-error')
+        } finally {
+          for (const button of actionButtons) button.disabled = !envelope.permissions.executable
+        }
+      }
+
       execute.onclick = () => {
         void (async () => {
           let actionInput: Record<string, unknown>
@@ -776,43 +900,18 @@ export async function renderDesktopApplicationPage(
             actionStatus.classList.add('is-error')
             return
           }
-
-          for (const button of actionButtons) button.disabled = true
-          actionStatus.classList.remove('is-error')
-          actionStatus.textContent = `Executing ${action} through OBIS…`
-          try {
-            const retryKey = retryKeys.get(action)
-            const result = await runtime.bridge.action({
-              ...runtime.scope,
-              moduleId: envelope.module.id,
-              pageId: envelope.page.id,
-              action,
-              input: actionInput,
-              ...(form.target.value.trim() ? { targetId: form.target.value.trim() } : {}),
-              ...(expectedVersion !== undefined ? { expectedVersion } : {}),
-              ...(retryKey ? { idempotencyKey: retryKey } : {}),
-            })
-            actionStatus.textContent = actionMessage(result)
-            if (result.status === 'approval-required') retryKeys.set(action, result.idempotencyKey)
-            else retryKeys.delete(action)
-            if (result.status === 'executed' && envelope.page.source?.query) {
-              const where = queryControls?.readWhere()
-              await runPageQuery(where)
-            }
-            if (result.status !== 'executed' && result.status !== 'approval-required') {
-              actionStatus.classList.add('is-error')
-            }
-          } catch (error) {
-            actionStatus.textContent = error instanceof Error ? error.message : 'The governed action failed.'
-            actionStatus.classList.add('is-error')
-          } finally {
-            for (const button of actionButtons) button.disabled = !envelope.permissions.executable
-          }
+          await perform({
+            input: actionInput,
+            ...(form.target.value.trim() ? { targetId: form.target.value.trim() } : {}),
+            ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+            ...(retryKeys.get(action) ? { idempotencyKey: retryKeys.get(action) } : {}),
+          })
         })()
       }
+
       const controls = el('div', 'enterprise-app-action-buttons')
       controls.append(execute)
-      form.container.append(controls)
+      form.container.append(controls, approvalPanel)
       actionBar.append(form.container)
     }
     actionBar.append(actionStatus)
