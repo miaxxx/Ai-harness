@@ -91,7 +91,9 @@ function previewText(value: unknown): string | undefined {
 function previewNode(value: unknown): PreviewUiNode | undefined {
   const row = previewRecord(value)
   if (!row || typeof row.component !== 'string' || !row.component.trim()) return undefined
-  const children = Array.isArray(row.children) ? row.children.map(previewNode).filter((item): item is PreviewUiNode => item !== undefined) : undefined
+  const children = Array.isArray(row.children)
+    ? row.children.map(previewNode).filter((item): item is PreviewUiNode => item !== undefined)
+    : undefined
   return {
     component: row.component.trim(),
     ...(typeof row.id === 'string' && row.id.trim() ? { id: row.id.trim() } : {}),
@@ -118,7 +120,13 @@ function parsePreviewPage(value: unknown): PreviewPageEnvelope {
     || !Array.isArray(access.reasons) || !access.reasons.every(item => typeof item === 'string')
   ) throw new Error('OBIS application preview returned an invalid page envelope.')
   return {
-    preview: { id: preview.id, moduleId: preview.moduleId, moduleVersion: preview.moduleVersion, sourceRevision: preview.sourceRevision, persona },
+    preview: {
+      id: preview.id,
+      moduleId: preview.moduleId,
+      moduleVersion: preview.moduleVersion,
+      sourceRevision: preview.sourceRevision,
+      persona,
+    },
     module: { id: module.id, version: module.version, name: module.name },
     page: {
       id: page.id,
@@ -134,7 +142,7 @@ function parsePreviewPage(value: unknown): PreviewPageEnvelope {
       configurable: access.configurable,
       editable: access.editable,
       administerable: access.administerable,
-      reasons: access.reasons as string[],
+      reasons: access.reasons,
     },
   }
 }
@@ -207,7 +215,7 @@ function renderPreviewOverlay(envelope: PreviewPageEnvelope): void {
   close.type = 'button'
   close.setAttribute('aria-label', 'Close application preview')
   close.textContent = '×'
-  close.onclick = () => backdrop.remove()
+  close.onclick = () => { backdrop.remove() }
   head.append(copy, close)
 
   const body = previewElement('div', 'obis-preview-body')
@@ -220,7 +228,7 @@ function renderPreviewOverlay(envelope: PreviewPageEnvelope): void {
   body.append(notice, canvas)
   shell.append(head, body)
   backdrop.append(shell)
-  backdrop.onclick = event => { if (event.target === backdrop) backdrop.remove() }
+  backdrop.onclick = (event) => { if (event.target === backdrop) backdrop.remove() }
   document.body.append(backdrop)
 }
 
@@ -251,7 +259,8 @@ export function apply(ctx: Context): void {
   if (ticket === undefined || typeof location === 'undefined') return
   const harnessOrigin = location.origin
 
-  const connection = ctx.connection as unknown as ObisLaunchConnection
+  const connection = ctx.get('connection')
+  if (connection === undefined) throw new Error('OBIS launch requires the client connection service.')
   void connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {
     if (!result.ok) throw new Error(result.error?.message ?? 'OBIS launch exchange failed')
     const exchange = result.value as SafeWorkspaceLaunchExchange
