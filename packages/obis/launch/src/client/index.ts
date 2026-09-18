@@ -3,7 +3,7 @@
  * the Host RPC runs; delegated credentials never enter browser storage or JS state.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 
 export const inject = ['connection']
 
@@ -248,7 +248,7 @@ export function apply(ctx: Context): void {
   if (ticket === undefined || typeof location === 'undefined') return
   const harnessOrigin = location.origin
 
-  const connection = ctx.get('connection')
+  const connection = ctx.get('connection') as ConnectionHandle | undefined
   if (connection === undefined) throw new Error('OBIS launch requires the client connection service.')
   void connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {
     if (!result.ok) throw new Error(result.error?.message ?? 'OBIS launch exchange failed')
