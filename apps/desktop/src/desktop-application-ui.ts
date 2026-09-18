@@ -7,6 +7,7 @@ import type {
   DesktopApplicationBridge,
   DesktopApplicationNavigationRecord,
   DesktopApplicationPageEnvelope,
+  DesktopApplicationPreviewPageEnvelope,
   DesktopApplicationQueryItem,
   DesktopApplicationQueryResult,
   DesktopApplicationUiNode,
@@ -617,6 +618,61 @@ export function isModuleNavigationItem(item: DesktopNavigationItem): item is Des
     && value.modulePageId.length > 0
     && typeof value.moduleVersion === 'string'
     && value.moduleVersion.length > 0
+}
+
+export function renderDesktopApplicationPreviewPage(
+  host: HTMLElement,
+  envelope: DesktopApplicationPreviewPageEnvelope,
+): void {
+  host.replaceChildren()
+  const page = el('article', 'enterprise-application-page enterprise-application-preview')
+  page.dataset.moduleId = envelope.module.id
+  page.dataset.moduleVersion = envelope.module.version
+  page.dataset.pageId = envelope.page.id
+  page.dataset.previewId = envelope.preview.id
+
+  const head = el('header', 'enterprise-application-head')
+  const title = el('div')
+  title.append(
+    text(el('span', 'enterprise-page-eyebrow'), `PREVIEW · ${envelope.preview.persona.toUpperCase()} · r${envelope.preview.sourceRevision}`),
+    text(el('h1'), envelope.page.title),
+  )
+  const authority = text(
+    el('span', 'enterprise-app-authority'),
+    envelope.permissions.visible
+      ? `Preview · executable would be ${String(envelope.permissions.executable)} after publish`
+      : 'Preview · hidden for this persona',
+  )
+  head.append(title, authority)
+  page.append(head)
+
+  const notice = el('section', 'enterprise-app-unsupported')
+  notice.append(
+    text(el('strong'), 'Immutable governed preview'),
+    text(el('p'), 'This view renders the draft UI schema and entitlement result only. Query, Action, Approval and AI execution are disabled until the exact module revision passes governance and is published.'),
+  )
+  page.append(notice)
+
+  if (envelope.designSystem.id !== 'obis-enterprise') {
+    const blocked = el('section', 'enterprise-app-unsupported')
+    blocked.append(
+      text(el('strong'), 'Unsupported design system'),
+      text(el('p'), `This Desktop build cannot preview ${envelope.designSystem.id}@${envelope.designSystem.version}.`),
+    )
+    page.append(blocked)
+    host.append(page)
+    return
+  }
+
+  const canvas = el('div', 'enterprise-application-canvas')
+  canvas.append(renderNode(envelope.page.layout, {
+    module: envelope.module,
+    page: envelope.page,
+    designSystem: envelope.designSystem,
+    permissions: envelope.permissions,
+  }))
+  page.append(canvas)
+  host.append(page)
 }
 
 export async function renderDesktopApplicationPage(
