@@ -391,12 +391,26 @@ function parseRuntimeBindings(value: unknown): DesktopApplicationRuntimeBindings
   const row = record(value)
   if (!row || !Array.isArray(row.actions)) throw new Error('OBIS returned invalid application runtime bindings')
   const query = record(row.query)
+  const queryFilters = record(query?.filters)
+  const parsedFilters: NonNullable<DesktopApplicationRuntimeBindings['query']>['filters'] = {}
+  for (const [name, rawField] of Object.entries(queryFilters ?? {})) {
+    const field = record(rawField)
+    const type = typeof field?.type === 'string' ? field.type : ''
+    if (!field || !APPLICATION_FIELD_TYPES.has(type)) {
+      throw new Error(`Application query filter ${name} has an unsupported type`)
+    }
+    parsedFilters[name] = {
+      type: type as NonNullable<DesktopApplicationRuntimeBindings['query']>['filters'][string]['type'],
+      ...(typeof field.ref === 'string' && field.ref.trim() ? { ref: field.ref.trim() } : {}),
+    }
+  }
   const parsedQuery = query
     ? {
       name: requiredString(query.name, 'runtime.query.name'),
       object: requiredString(query.object, 'runtime.query.object'),
       fields: stringArray(query.fields),
       filterable: stringArray(query.filterable),
+      filters: parsedFilters,
       ...(typeof query.defaultLimit === 'number' && Number.isInteger(query.defaultLimit) && query.defaultLimit > 0
         ? { defaultLimit: query.defaultLimit }
         : {}),
