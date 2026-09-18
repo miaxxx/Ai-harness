@@ -75,10 +75,11 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
       setMessage(message, 'Complete the authorization in your browser. This window will continue automatically.')
       await window.dshDesktop.openExternal(authorization.verificationUri)
       const deadline = Date.now() + authorization.expiresInSeconds * 1000
+      const authorizationCurrent = (): boolean => currentAuthorization?.deviceCode === authorization.deviceCode
       let waitSeconds = Math.max(1, authorization.intervalSeconds)
-      while (!cancelled && currentAuthorization === authorization && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
-        if (cancelled || currentAuthorization !== authorization) return
+      while (!cancelled && authorizationCurrent() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000))
+        if (cancelled || !authorizationCurrent()) return
         try {
           const result = await window.dshEnterprise.exchangeDeviceAuthorization(authorization.deviceCode)
           if (result.status === 'authenticated') {
@@ -94,7 +95,7 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
           return
         }
       }
-      if (!cancelled && currentAuthorization === authorization) {
+      if (!cancelled && authorizationCurrent()) {
         currentAuthorization = undefined
         setMessage(message, 'The one-time sign-in code expired. Start a new authorization.', 'error')
         signIn.disabled = false
