@@ -389,6 +389,78 @@ function renderActionForm(binding: DesktopApplicationActionBinding): RenderedAct
   }
 }
 
+interface RenderedQueryControls {
+  container: HTMLElement
+  apply: HTMLButtonElement
+  clear: HTMLButtonElement
+  readWhere: () => Record<string, unknown>
+  reset: () => void
+}
+
+function renderQueryControls(
+  query: NonNullable<DesktopApplicationPageEnvelope['runtime']>['query'],
+): RenderedQueryControls | undefined {
+  if (!query || query.filterable.length === 0) return undefined
+  const container = el('section', 'enterprise-app-query-controls')
+  const head = el('div', 'enterprise-app-query-head')
+  head.append(
+    text(el('span', 'enterprise-page-eyebrow'), 'GOVERNED FILTERS'),
+    text(el('p', 'enterprise-app-binding'), `${query.object} · only active-IR filterable fields are exposed`),
+  )
+  container.append(head)
+
+  const fields = el('div', 'enterprise-app-query-fields')
+  const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement>()
+  for (const name of query.filterable) {
+    const schema = query.filters[name]
+    if (!schema) continue
+    const label = el('label', 'enterprise-app-action-schema-field')
+    const caption = el('span')
+    caption.append(
+      text(el('strong'), name),
+      text(el('small'), `${schema.type}${schema.ref ? ` · ${schema.ref}` : ''}`),
+    )
+    const control = actionFieldControl(name, { ...schema, required: false })
+    control.setAttribute('data-query-filter', name)
+    controls.set(name, control)
+    label.append(caption, control)
+    fields.append(label)
+  }
+  if (!controls.size) return undefined
+  container.append(fields)
+
+  const actions = el('div', 'enterprise-app-action-buttons')
+  const apply = text(el('button', 'enterprise-secondary-button'), 'Apply filters') as HTMLButtonElement
+  const clear = text(el('button', 'enterprise-secondary-button'), 'Clear') as HTMLButtonElement
+  apply.type = 'button'
+  clear.type = 'button'
+  actions.append(apply, clear)
+  container.append(actions)
+
+  return {
+    container,
+    apply,
+    clear,
+    readWhere: () => {
+      const where: Record<string, unknown> = {}
+      for (const name of query.filterable) {
+        const schema = query.filters[name]
+        const control = controls.get(name)
+        if (!schema || !control) continue
+        const value = parseActionField(name, { ...schema, required: false }, control)
+        if (value !== undefined) where[name] = value
+      }
+      return where
+    },
+    reset: () => {
+      for (const control of controls.values()) {
+        if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = false
+        else control.value = ''
+      }
+    },
+  }
+}
+
 export function moduleNavigationItems(records: readonly DesktopApplicationNavigationRecord[]): DesktopModuleNavigationItem[] {
   return records.map((record, index) => ({
     id: `module:${record.moduleId}:${record.id}`,
@@ -452,43 +524,81 @@ export async function renderDesktopApplicationPage(
 
   let queryResult: DesktopApplicationQueryResult | undefined
   let queryError: string | undefined
-  if (envelope.page.source?.query) {
-    const source = el('div', 'enterprise-app-source')
-    source.append(
-      text(el('span'), 'GOVERNED DATA'),
-      text(el('code'), envelope.page.source.query),
-      text(el('span', 'enterprise-app-source-status'), 'Loading…'),
-    )
-    page.append(source)
-    host.append(page)
+  let sourceStatus: HTMLElement | undefined
+  let queryControls: RenderedQueryControls | undefined
+  const canvas = el('div', 'enterprise-application-canvas')
+  const renderCanvas = (): void => {
+    canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError))
+  }
+
+  const runPageQuery = async (where?: Record<string, unknown>): Promise<void> => {
+    const runtimeLimit = envelope.runtime?.query?.maxLimit
+      ? Math.min(250, envelope.runtime.query.maxLimit)
+      : 250
+    if (sourceStatus) {
+      sourceStatus.textContent = 'Loading…'
+      sourceStatus.classList.remove('is-error')
+    }
     try {
-      const runtimeLimit = envelope.runtime?.query?.maxLimit
-        ? Math.min(250, envelope.runtime.query.maxLimit)
-        : 250
       queryResult = await runtime.bridge.query({
         ...runtime.scope,
         moduleId: envelope.module.id,
         pageId: envelope.page.id,
         limit: runtimeLimit,
+        ...(where && Object.keys(where).length ? { where } : {}),
       })
-      const status = source.querySelector<HTMLElement>('.enterprise-app-source-status')
-      if (status) status.textContent = `${queryResult.items.length} records${queryResult.truncated ? ' · bounded' : ''}`
+      queryError = undefined
+      if (sourceStatus) {
+        sourceStatus.textContent = `${queryResult.items.length} records${queryResult.truncated ? ' · bounded' : ''}`
+      }
     } catch (error) {
       queryError = error instanceof Error ? error.message : 'The governed page query failed.'
-      const status = source.querySelector<HTMLElement>('.enterprise-app-source-status')
-      if (status) {
-        status.textContent = 'Query unavailable'
-        status.classList.add('is-error')
+      if (sourceStatus) {
+        sourceStatus.textContent = 'Query unavailable'
+        sourceStatus.classList.add('is-error')
       }
     }
+    renderCanvas()
+  }
+
+  if (envelope.page.source?.query) {
+    const source = el('div', 'enterprise-app-source')
+    sourceStatus = text(el('span', 'enterprise-app-source-status'), 'Loading…')
+    source.append(
+      text(el('span'), 'GOVERNED DATA'),
+      text(el('code'), envelope.page.source.query),
+      sourceStatus,
+    )
+    page.append(source)
+    if (envelope.runtime?.query) {
+      queryControls = renderQueryControls(envelope.runtime.query)
+      if (queryControls) {
+        queryControls.apply.onclick = () => {
+          try {
+            const where = queryControls?.readWhere() ?? {}
+            void runPageQuery(where)
+          } catch (error) {
+            queryError = error instanceof Error ? error.message : 'Query filter is invalid.'
+            if (sourceStatus) {
+              sourceStatus.textContent = 'Invalid filter'
+              sourceStatus.classList.add('is-error')
+            }
+            renderCanvas()
+          }
+        }
+        queryControls.clear.onclick = () => {
+          queryControls?.reset()
+          void runPageQuery()
+        }
+        page.append(queryControls.container)
+      }
+    }
+    host.append(page)
+    await runPageQuery()
   } else {
     host.append(page)
   }
 
-  const canvas = el('div', 'enterprise-application-canvas')
-  const renderCanvas = (): void => {
-    canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError))
-  }
   renderCanvas()
   page.append(canvas)
 
@@ -562,16 +672,8 @@ export async function renderDesktopApplicationPage(
             if (result.status === 'approval-required') retryKeys.set(action, result.idempotencyKey)
             else retryKeys.delete(action)
             if (result.status === 'executed' && envelope.page.source?.query) {
-              queryResult = await runtime.bridge.query({
-                ...runtime.scope,
-                moduleId: envelope.module.id,
-                pageId: envelope.page.id,
-                limit: envelope.runtime?.query?.maxLimit
-                  ? Math.min(250, envelope.runtime.query.maxLimit)
-                  : 250,
-              })
-              queryError = undefined
-              renderCanvas()
+              const where = queryControls?.readWhere()
+              await runPageQuery(where)
             }
             if (result.status !== 'executed' && result.status !== 'approval-required') {
               actionStatus.classList.add('is-error')
