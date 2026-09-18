@@ -10,6 +10,10 @@ const bridge: DesktopApplicationBridge = {
     'dsh:application-page',
     input,
   ) as ReturnType<DesktopApplicationBridge['page']>,
+  previewPage: input => ipcRenderer.invoke(
+    'dsh:application-preview-page',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['previewPage']>,
   query: input => ipcRenderer.invoke(
     'dsh:application-query',
     input,
