@@ -617,7 +617,7 @@ export async function renderDesktopApplicationPage(
     const actionStatus = text(el('p', 'enterprise-app-action-status'), 'Ready')
     const retryKeys = new Map<string, string>()
     const actionButtons: HTMLButtonElement[] = []
-    const bindings = new Map((envelope.runtime?.actions ?? []).map((binding) => [binding.name, binding]))
+    const bindings = new Map((envelope.runtime?.actions ?? []).map(binding => [binding.name, binding]))
 
     for (const action of envelope.page.actions ?? []) {
       const binding = bindings.get(action)
