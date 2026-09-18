@@ -18,6 +18,10 @@ const bridge: DesktopApplicationBridge = {
     'dsh:application-action',
     input,
   ) as ReturnType<DesktopApplicationBridge['action']>,
+  approval: input => ipcRenderer.invoke(
+    'dsh:application-approval',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['approval']>,
   ai: input => ipcRenderer.invoke(
     'dsh:application-ai',
     input,
