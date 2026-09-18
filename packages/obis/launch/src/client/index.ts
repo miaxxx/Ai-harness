@@ -7,6 +7,15 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 
 export const inject = ['connection']
 
+export type ApplicationPreviewPersona = 'employee' | 'manager' | 'auditor' | 'developer'
+
+export interface ApplicationPreviewLaunch {
+  projectId: string
+  previewId: string
+  pageId: string
+  persona: ApplicationPreviewPersona
+}
+
 export interface SafeWorkspaceLaunchExchange {
   access: { sessionId: string; expiresAt: string }
   launch: {
@@ -17,6 +26,7 @@ export interface SafeWorkspaceLaunchExchange {
     harnessOrigin: string
     goal?: string
     autonomy: 'read-only' | 'recommend' | 'draft' | 'human-approved' | 'bounded-autonomous'
+    preview?: ApplicationPreviewLaunch
     createdAt: string
     expiresAt: string
     consumedAt?: string
@@ -71,6 +81,10 @@ export function readObisLaunch(): SafeWorkspaceLaunchExchange | undefined {
   try { return JSON.parse(raw) as SafeWorkspaceLaunchExchange } catch { return undefined }
 }
 
+export function readObisPreviewLaunch(): ApplicationPreviewLaunch | undefined {
+  return readObisLaunch()?.launch.preview
+}
+
 export function apply(ctx: Context): void {
   const ticket = consumeTicketFromFragment()
   if (ticket === undefined || typeof location === 'undefined') return
@@ -83,6 +97,15 @@ export function apply(ctx: Context): void {
     persistSafeLaunch(exchange)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('obis:launch-ready', { detail: exchange }))
+      if (exchange.launch.preview) {
+        window.dispatchEvent(new CustomEvent('obis:application-preview-ready', {
+          detail: {
+            preview: exchange.launch.preview,
+            environmentId: exchange.launch.environmentId,
+            autonomy: exchange.launch.autonomy,
+          },
+        }))
+      }
     }
   }).catch((error: unknown) => {
     console.error('[obis-launch] secure workspace handoff failed:', error)
