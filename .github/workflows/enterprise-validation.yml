@@ -57,7 +57,7 @@ jobs:
       - name: OBIS bridge and tool contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
       - name: Cross-repo fixture E2E
-        run: pnpm exec vitest run tests/obis-cross-repo.e2e.ts
+        run: pnpm exec tsx tests/obis-cross-repo.e2e.ts
       - name: Desktop enterprise application runtime tests
         run: pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
       - name: Desktop build smoke
