@@ -100,19 +100,19 @@ function operationsMetrics(snapshot: DesktopOperationsSnapshot): HTMLElement[] {
       'ACTIVE WORKLOADS',
       integer(snapshot.usage.activeTotal),
       activeKinds.length
-        ? activeKinds.map((kind) => `${kind} ${snapshot.usage.active[kind]}`).join(' · ')
+        ? activeKinds.map(kind => `${kind} ${snapshot.usage.active[kind]}`).join(' · ')
         : 'No active governed workloads',
     ),
     metric(
       'STARTS THIS MINUTE',
       integer(Object.values(snapshot.usage.startsThisMinute).reduce((sum, value) => sum + value, 0)),
       rateKinds.length
-        ? rateKinds.map((kind) => `${kind} ${snapshot.usage.startsThisMinute[kind]}`).join(' · ')
+        ? rateKinds.map(kind => `${kind} ${snapshot.usage.startsThisMinute[kind]}`).join(' · ')
         : snapshot.usage.minuteBucket,
     ),
     metric(
       'MAINTENANCE',
-      integer(snapshot.maintenance.filter((item) => item.status === 'queued' || item.status === 'running').length),
+      integer(snapshot.maintenance.filter(item => item.status === 'queued' || item.status === 'running').length),
       `${snapshot.maintenance.length} recent task${snapshot.maintenance.length === 1 ? '' : 's'}`,
     ),
   ]
