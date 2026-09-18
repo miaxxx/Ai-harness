@@ -50,6 +50,59 @@ export interface DesktopApplicationPageRequest extends DesktopEnterpriseScopeReq
   pageId: string
 }
 
+export interface DesktopApplicationQueryRequest extends DesktopApplicationPageRequest {
+  id?: string
+  where?: Record<string, unknown>
+  limit?: number
+  context?: Record<string, unknown>
+}
+
+export interface DesktopApplicationQueryItem {
+  id: string
+  object: string
+  values: Record<string, unknown>
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DesktopApplicationQueryResult {
+  requestId: string
+  status: 'executed' | 'denied' | 'invalid'
+  query: string
+  object?: string
+  artifactId?: string
+  decision: {
+    allowed: boolean
+    matchedPolicies: string[]
+    reason: string
+  }
+  items: DesktopApplicationQueryItem[]
+  truncated: boolean
+  errors: string[]
+}
+
+export interface DesktopApplicationActionRequest extends DesktopApplicationPageRequest {
+  action: string
+  input: Record<string, unknown>
+  targetId?: string
+  expectedVersion?: number
+  idempotencyKey?: string
+}
+
+export interface DesktopApplicationActionResult {
+  requestId: string
+  idempotencyKey: string
+  status: 'executed' | 'denied' | 'approval-required' | 'invalid' | 'failed'
+  decision: {
+    allowed: boolean
+    matchedPolicies: string[]
+    reason: string
+    requiresApproval?: string
+  }
+  output?: unknown
+}
+
 export interface DesktopModuleNavigationItem extends DesktopNavigationItem {
   kind: 'module'
   moduleId: string
@@ -60,6 +113,8 @@ export interface DesktopModuleNavigationItem extends DesktopNavigationItem {
 export interface DesktopApplicationBridge {
   navigation(scope: DesktopEnterpriseScopeRequest): Promise<DesktopApplicationNavigationRecord[]>
   page(input: DesktopApplicationPageRequest): Promise<DesktopApplicationPageEnvelope>
+  query(input: DesktopApplicationQueryRequest): Promise<DesktopApplicationQueryResult>
+  action(input: DesktopApplicationActionRequest): Promise<DesktopApplicationActionResult>
 }
 
 declare global {
