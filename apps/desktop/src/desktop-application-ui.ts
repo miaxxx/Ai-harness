@@ -665,12 +665,13 @@ export function renderDesktopApplicationPreviewPage(
   }
 
   const canvas = el('div', 'enterprise-application-canvas')
-  canvas.append(renderNode(envelope.page.layout, {
+  const previewPage: DesktopApplicationPageEnvelope = {
     module: envelope.module,
     page: envelope.page,
     designSystem: envelope.designSystem,
     permissions: envelope.permissions,
-  }))
+  }
+  canvas.append(renderNode(envelope.page.layout, previewPage, undefined, undefined))
   page.append(canvas)
   host.append(page)
 }
