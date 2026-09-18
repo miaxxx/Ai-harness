@@ -5,6 +5,8 @@
     "outDir": "lib/types/renderer"
   },
   "include": [
+    "src/desktop-application-shared.ts",
+    "src/desktop-application-ui.ts",
     "src/renderer.tsx",
     "src/product-runtime.ts",
     "src/desktop-obis-identity-ui.ts",
