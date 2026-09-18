@@ -231,8 +231,12 @@ async function modelRuntimeEnv(): Promise<Record<string, string>> {
     DSH_DESKTOP_MODEL_ID: stored.model,
     DSH_DESKTOP_MODEL_API_KEY: safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64')),
     DSH_DESKTOP_MODEL_INPUT: stored.capabilities.input.join(','),
-    ...stored.capabilities.contextWindow === undefined ? {} : { DSH_DESKTOP_MODEL_CONTEXT_WINDOW: String(stored.capabilities.contextWindow) },
-    ...stored.capabilities.maxOutputTokens === undefined ? {} : { DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS: String(stored.capabilities.maxOutputTokens) },
+    ...(stored.capabilities.contextWindow === undefined
+      ? {}
+      : { DSH_DESKTOP_MODEL_CONTEXT_WINDOW: String(stored.capabilities.contextWindow) }),
+    ...(stored.capabilities.maxOutputTokens === undefined
+      ? {}
+      : { DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS: String(stored.capabilities.maxOutputTokens) }),
     DSH_DESKTOP_COMPUTER_USE_ENABLED: String(stored.computerUseEnabled),
   }
 }
@@ -280,7 +284,14 @@ function parseRuntimeArgs(value: string | undefined): string[] { if (value === u
 async function desktopRuntimeSpec(): Promise<AcpRuntimeSpec> {
   const env = await modelRuntimeEnv()
   const command = process.env.DSH_DESKTOP_ACP_COMMAND
-  if (command !== undefined && command.trim().length > 0) return { command, args: parseRuntimeArgs(process.env.DSH_DESKTOP_ACP_ARGS_JSON), cwd: desktopWorkspace(), env }
+  if (command !== undefined && command.trim().length > 0) {
+    return {
+      command,
+      args: parseRuntimeArgs(process.env.DSH_DESKTOP_ACP_ARGS_JSON),
+      cwd: desktopWorkspace(),
+      env,
+    }
+  }
   if (app.isPackaged) return { command: packagedRuntimePath('node', 'bin', 'node'), args: [packagedRuntimePath('app', 'node_modules', '@deepseek-ai', 'dsh-acp-demo', 'lib', 'bin.js'), '--config', packagedRuntimePath('app', 'cordis.yml')], cwd: desktopWorkspace(), env }
   return { command: process.env.DSH_DESKTOP_NODE ?? process.env.npm_node_execpath ?? 'node', args: [resolve(REPOSITORY_ROOT, 'packages/examples/acp-demo/lib/bin.js'), '--config', resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml')], cwd: desktopWorkspace(), env }
 }
@@ -310,12 +321,36 @@ class AcpRuntimeSupervisor {
   async restart(): Promise<void> { await this.stop(); await this.start() }
   private async runtime(): Promise<AcpRuntimeConnection> { await this.start(); if (this.connection === undefined) throw new Error('ACP Runtime is not available'); return this.connection }
   workspace(): string { return desktopWorkspace() }
-  async listSessions(cwd = desktopWorkspace()): Promise<DesktopSessionSummary[]> { const runtime = await this.runtime(), result = await runtime.client.listSessions({ cwd }), rows = result.sessions.map(session => ({ sessionId: session.sessionId, cwd: session.cwd, ...(session.title === undefined || session.title === null ? {} : { title: session.title }) })); return filterEnterpriseSessions(rows) }
-  async createSession(cwd = desktopWorkspace()): Promise<string> { const runtime = await this.runtime(), created = await runtime.client.newSession({ cwd, mcpServers: [] }); await claimEnterpriseSession(created.sessionId, cwd); this.sessionWorkspaces.set(created.sessionId, cwd); return created.sessionId }
-  async loadSession(sessionId: string, cwd = desktopWorkspace()): Promise<void> { await assertEnterpriseSessionAccess(sessionId); const runtime = await this.runtime(); await runtime.client.loadSession({ sessionId, cwd, mcpServers: [] }); this.sessionWorkspaces.set(sessionId, cwd) }
+  async listSessions(cwd = desktopWorkspace()): Promise<DesktopSessionSummary[]> {
+    const runtime = await this.runtime()
+    const result = await runtime.client.listSessions({ cwd })
+    const rows = result.sessions.map((session) => ({
+      sessionId: session.sessionId,
+      cwd: session.cwd,
+      ...(session.title === undefined || session.title === null ? {} : { title: session.title }),
+    }))
+    return filterEnterpriseSessions(rows)
+  }
+  async createSession(cwd = desktopWorkspace()): Promise<string> {
+    const runtime = await this.runtime()
+    const created = await runtime.client.newSession({ cwd, mcpServers: [] })
+    await claimEnterpriseSession(created.sessionId, cwd)
+    this.sessionWorkspaces.set(created.sessionId, cwd)
+    return created.sessionId
+  }
+  async loadSession(sessionId: string, cwd = desktopWorkspace()): Promise<void> {
+    await assertEnterpriseSessionAccess(sessionId)
+    const runtime = await this.runtime()
+    await runtime.client.loadSession({ sessionId, cwd, mcpServers: [] })
+    this.sessionWorkspaces.set(sessionId, cwd)
+  }
   async prompt(sessionId: string, parts: readonly DesktopPromptPart[]): Promise<DesktopPromptResult> { await assertEnterpriseSessionAccess(sessionId); const runtime = await this.runtime(), cwd = this.sessionWorkspaces.get(sessionId) ?? desktopWorkspace(), before = await desktopContent().snapshot(cwd), prompt: ContentBlock[] = [], attachmentIds: string[] = []; for (const part of parts) { if (part.type === 'text') { if (part.text !== '') prompt.push({ type: 'text', text: part.text }); continue } prompt.push(...await desktopContent().promptBlocks(sessionId, [part.attachmentId])); attachmentIds.push(part.attachmentId) } const result = await runtime.client.prompt({ sessionId, prompt }); desktopContent().consumeAttachments(sessionId, [...new Set(attachmentIds)]); return { stopReason: result.stopReason, artifacts: await desktopContent().captureArtifacts(sessionId, cwd, before) } }
   cancel(sessionId: string): void { void assertEnterpriseSessionAccess(sessionId).then(() => this.runtime()).then(runtime => runtime.client.cancel({ sessionId })).catch((error: unknown) => { this.publishStatus('failed', error instanceof Error ? error.message : String(error)) }) }
-  async closeSession(sessionId: string): Promise<void> { await assertEnterpriseSessionAccess(sessionId); const runtime = await this.runtime(); await runtime.client.closeSession({ sessionId }) }
+  async closeSession(sessionId: string): Promise<void> {
+    await assertEnterpriseSessionAccess(sessionId)
+    const runtime = await this.runtime()
+    await runtime.client.closeSession({ sessionId })
+  }
 }
 
 const supervisor = new AcpRuntimeSupervisor()
