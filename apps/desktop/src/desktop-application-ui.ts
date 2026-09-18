@@ -461,6 +461,129 @@ function renderQueryControls(
   }
 }
 
+function applicationAiContext(
+  envelope: DesktopApplicationPageEnvelope,
+  queryResult: DesktopApplicationQueryResult | undefined,
+): Record<string, unknown> {
+  return {
+    module: {
+      id: envelope.module.id,
+      version: envelope.module.version,
+      name: envelope.module.name,
+    },
+    page: {
+      id: envelope.page.id,
+      title: envelope.page.title,
+    },
+    ...(queryResult
+      ? {
+        data: {
+          query: queryResult.query,
+          ...(queryResult.object ? { object: queryResult.object } : {}),
+          truncated: queryResult.truncated,
+          items: queryResult.items.slice(0, 40).map(item => ({
+            id: item.id,
+            object: item.object,
+            values: item.values,
+            version: item.version,
+          })),
+        },
+      }
+      : {}),
+  }
+}
+
+function hydrateApplicationAi(
+  canvas: HTMLElement,
+  envelope: DesktopApplicationPageEnvelope,
+  runtime: DesktopApplicationRenderRuntime,
+  queryResult: DesktopApplicationQueryResult | undefined,
+): void {
+  const context = applicationAiContext(envelope, queryResult)
+
+  for (const block of canvas.querySelectorAll<HTMLElement>('[data-component="AISummary"]')) {
+    const controls = el('div', 'enterprise-app-ai-controls')
+    const button = text(el('button', 'enterprise-secondary-button'), 'Generate summary') as HTMLButtonElement
+    const output = text(el('div', 'enterprise-app-ai-output'), 'Ready to summarize the governed data visible on this page.')
+    const meta = el('small', 'enterprise-app-ai-meta')
+    button.type = 'button'
+    button.onclick = () => {
+      void (async () => {
+        button.disabled = true
+        output.classList.remove('is-error')
+        output.textContent = 'Generating governed summary…'
+        meta.textContent = ''
+        try {
+          const result = await runtime.bridge.ai({
+            ...runtime.scope,
+            moduleId: envelope.module.id,
+            pageId: envelope.page.id,
+            mode: 'summary',
+            context,
+          })
+          output.textContent = result.text
+          meta.textContent = `${result.modelId} · trace ${result.traceId}`
+        } catch (error) {
+          output.textContent = error instanceof Error ? error.message : 'Application AI summary failed.'
+          output.classList.add('is-error')
+        } finally {
+          button.disabled = false
+        }
+      })()
+    }
+    controls.append(button, output, meta)
+    block.append(controls)
+  }
+
+  for (const block of canvas.querySelectorAll<HTMLElement>('[data-component="AIComposer"]')) {
+    const controls = el('div', 'enterprise-app-ai-controls')
+    const prompt = el('textarea', 'enterprise-app-ai-prompt')
+    const button = text(el('button', 'enterprise-secondary-button'), 'Draft with AI') as HTMLButtonElement
+    const output = text(el('div', 'enterprise-app-ai-output'), 'AI can draft text from visible page context, but cannot execute actions.')
+    const meta = el('small', 'enterprise-app-ai-meta')
+    prompt.rows = 3
+    prompt.maxLength = 12_000
+    prompt.placeholder = 'Ask for an explanation, response, note or draft based on the governed data above…'
+    prompt.setAttribute('aria-label', 'Application AI prompt')
+    button.type = 'button'
+    button.onclick = () => {
+      void (async () => {
+        const value = prompt.value.trim()
+        if (!value) {
+          output.textContent = 'Enter a prompt before asking AI to draft.'
+          output.classList.add('is-error')
+          return
+        }
+        button.disabled = true
+        prompt.disabled = true
+        output.classList.remove('is-error')
+        output.textContent = 'Drafting from governed context…'
+        meta.textContent = ''
+        try {
+          const result = await runtime.bridge.ai({
+            ...runtime.scope,
+            moduleId: envelope.module.id,
+            pageId: envelope.page.id,
+            mode: 'compose',
+            prompt: value,
+            context,
+          })
+          output.textContent = result.text
+          meta.textContent = `${result.modelId} · trace ${result.traceId}`
+        } catch (error) {
+          output.textContent = error instanceof Error ? error.message : 'Application AI drafting failed.'
+          output.classList.add('is-error')
+        } finally {
+          button.disabled = false
+          prompt.disabled = false
+        }
+      })()
+    }
+    controls.append(prompt, button, output, meta)
+    block.append(controls)
+  }
+}
+
 export function moduleNavigationItems(records: readonly DesktopApplicationNavigationRecord[]): DesktopModuleNavigationItem[] {
   return records.map((record, index) => ({
     id: `module:${record.moduleId}:${record.id}`,
@@ -529,6 +652,7 @@ export async function renderDesktopApplicationPage(
   const canvas = el('div', 'enterprise-application-canvas')
   const renderCanvas = (): void => {
     canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError))
+    hydrateApplicationAi(canvas, envelope, runtime, queryResult)
   }
 
   const runPageQuery = async (where?: Record<string, unknown>): Promise<void> => {
