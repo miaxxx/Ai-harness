@@ -1,7 +1,12 @@
+import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
 import type { DesktopNavigationItem } from './desktop-obis-identity-shared.ts'
 import type {
+  DesktopApplicationActionResult,
+  DesktopApplicationBridge,
   DesktopApplicationNavigationRecord,
   DesktopApplicationPageEnvelope,
+  DesktopApplicationQueryItem,
+  DesktopApplicationQueryResult,
   DesktopApplicationUiNode,
   DesktopModuleNavigationItem,
 } from './desktop-application-shared.ts'
@@ -14,6 +19,11 @@ const ENTERPRISE_COMPONENTS = new Set([
   'Timeline', 'ActivityFeed', 'RiskIndicator', 'AISummary', 'AIComposer',
 ])
 const SUPPORTED_COMPONENTS = new Set([...STRUCTURAL_COMPONENTS, ...ENTERPRISE_COMPONENTS])
+
+export interface DesktopApplicationRenderRuntime {
+  scope: DesktopEnterpriseScopeRequest
+  bridge: DesktopApplicationBridge
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -43,6 +53,32 @@ function componentClass(component: string): string {
   return `enterprise-app-component enterprise-app-${component.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()}`
 }
 
+function displayValue(value: unknown): string {
+  if (value === null) return '—'
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+export function applicationQueryColumns(result: DesktopApplicationQueryResult, maxColumns = 8): string[] {
+  const keys: string[] = []
+  const seen = new Set<string>()
+  for (const item of result.items.slice(0, 25)) {
+    for (const key of Object.keys(item.values)) {
+      if (seen.has(key)) continue
+      seen.add(key)
+      keys.push(key)
+      if (keys.length >= maxColumns) return ['id', ...keys]
+    }
+  }
+  return ['id', ...keys]
+}
+
 function renderUnsupported(node: DesktopApplicationUiNode): HTMLElement {
   const block = el('section', 'enterprise-app-unsupported')
   block.dataset.component = node.component
@@ -54,7 +90,109 @@ function renderUnsupported(node: DesktopApplicationUiNode): HTMLElement {
   return block
 }
 
-function renderLeaf(node: DesktopApplicationUiNode, page: DesktopApplicationPageEnvelope): HTMLElement {
+function renderDataTable(result: DesktopApplicationQueryResult): HTMLElement {
+  const wrap = el('div', 'enterprise-app-data-table-wrap')
+  if (result.items.length === 0) {
+    wrap.append(text(el('p', 'enterprise-app-empty-data'), 'No records matched this governed query.'))
+    return wrap
+  }
+
+  const columns = applicationQueryColumns(result)
+  const table = el('table', 'enterprise-app-data-table')
+  const head = el('thead')
+  const headRow = el('tr')
+  for (const column of columns) headRow.append(text(el('th'), column))
+  head.append(headRow)
+  table.append(head)
+
+  const body = el('tbody')
+  for (const item of result.items.slice(0, 100)) {
+    const row = el('tr')
+    for (const column of columns) {
+      const value = column === 'id' ? item.id : item.values[column]
+      row.append(text(el('td'), displayValue(value)))
+    }
+    body.append(row)
+  }
+  table.append(body)
+  wrap.append(table)
+  if (result.truncated || result.items.length > 100) {
+    wrap.append(text(el('p', 'enterprise-app-binding'), 'The governed query returned additional records. This view is intentionally bounded.'))
+  }
+  return wrap
+}
+
+function renderObjectDetail(item: DesktopApplicationQueryItem | undefined): HTMLElement {
+  const detail = el('dl', 'enterprise-app-object-detail-grid')
+  if (!item) {
+    detail.append(text(el('p', 'enterprise-app-empty-data'), 'No object is available for this detail view.'))
+    return detail
+  }
+  const values: Array<[string, unknown]> = [['id', item.id], ['object', item.object], ['version', item.version], ...Object.entries(item.values)]
+  for (const [key, value] of values.slice(0, 20)) {
+    detail.append(text(el('dt'), key), text(el('dd'), displayValue(value)))
+  }
+  return detail
+}
+
+function numericSeries(result: DesktopApplicationQueryResult): Array<{ key: string; value: number }> {
+  const totals = new Map<string, number>()
+  const counts = new Map<string, number>()
+  for (const item of result.items) {
+    for (const [key, value] of Object.entries(item.values)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue
+      totals.set(key, (totals.get(key) ?? 0) + value)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  return [...totals.entries()]
+    .map(([key, total]) => ({ key, value: total / (counts.get(key) ?? 1) }))
+    .slice(0, 6)
+}
+
+function renderChart(result: DesktopApplicationQueryResult): HTMLElement {
+  const series = numericSeries(result)
+  const chart = el('div', 'enterprise-app-chart-data')
+  if (series.length === 0) {
+    chart.append(text(el('p', 'enterprise-app-empty-data'), 'The governed result has no numeric fields to visualize.'))
+    return chart
+  }
+  const maximum = Math.max(...series.map(item => Math.abs(item.value)), 1)
+  for (const item of series) {
+    const row = el('div', 'enterprise-app-chart-row')
+    const meta = el('div', 'enterprise-app-chart-meta')
+    meta.append(text(el('span'), item.key), text(el('strong'), displayValue(Math.round(item.value * 100) / 100)))
+    const track = el('div', 'enterprise-app-chart-track')
+    const bar = el('span', 'enterprise-app-chart-bar')
+    bar.style.width = `${Math.max(2, Math.round((Math.abs(item.value) / maximum) * 100))}%`
+    track.append(bar)
+    row.append(meta, track)
+    chart.append(row)
+  }
+  return chart
+}
+
+function renderActivity(result: DesktopApplicationQueryResult): HTMLElement {
+  const list = el('div', 'enterprise-app-activity-list')
+  for (const item of result.items.slice(0, 8)) {
+    const row = el('article', 'enterprise-app-activity-row')
+    const headline = Object.values(item.values).find(value => typeof value === 'string')
+    row.append(
+      text(el('strong'), typeof headline === 'string' ? headline : item.id),
+      text(el('span'), `${item.object} · v${item.version}`),
+    )
+    list.append(row)
+  }
+  if (!list.childElementCount) list.append(text(el('p', 'enterprise-app-empty-data'), 'No activity records are available.'))
+  return list
+}
+
+function renderLeaf(
+  node: DesktopApplicationUiNode,
+  page: DesktopApplicationPageEnvelope,
+  queryResult: DesktopApplicationQueryResult | undefined,
+  queryError: string | undefined,
+): HTMLElement {
   const block = el('section', componentClass(node.component))
   block.dataset.component = node.component
   if (node.id) block.dataset.componentId = node.id
@@ -68,25 +206,37 @@ function renderLeaf(node: DesktopApplicationUiNode, page: DesktopApplicationPage
   if (description) block.append(text(el('p', 'enterprise-app-component-copy'), description))
 
   if (node.component === 'DataTable' || node.component === 'Table') {
-    const source = page.page.source?.query
-    block.append(text(
-      el('p', 'enterprise-app-binding'),
-      source ? `Governed query binding · ${source}` : 'No governed query binding declared for this table.',
-    ))
+    if (queryResult) block.append(renderDataTable(queryResult))
+    else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? (page.page.source?.query ? `Governed query · ${page.page.source.query}` : 'No governed query binding declared for this table.')))
+  } else if (node.component === 'ObjectDetail') {
+    if (queryResult) block.append(renderObjectDetail(queryResult.items[0]))
+    else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Object detail waits for a governed page query.'))
   } else if (node.component === 'Chart') {
-    block.append(text(el('p', 'enterprise-app-binding'), 'Chart rendering is declarative. Series data must arrive through the governed page query binding.'))
+    if (queryResult) block.append(renderChart(queryResult))
+    else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Chart waits for a governed page query.'))
+  } else if (node.component === 'Timeline' || node.component === 'ActivityFeed') {
+    if (queryResult) block.append(renderActivity(queryResult))
+    else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Activity waits for a governed page query.'))
+  } else if (node.component === 'RiskIndicator' && queryResult?.items[0]) {
+    const risk = queryResult.items[0].values.risk ?? queryResult.items[0].values.riskLevel ?? queryResult.items[0].values.status
+    block.append(text(el('strong', 'enterprise-app-component-value'), displayValue(risk ?? 'Available')))
   } else if (node.component === 'AISummary' || node.component === 'AIComposer') {
-    block.append(text(el('p', 'enterprise-app-binding'), 'AI execution authority remains in the validated OBIS × Harness runtime scope.'))
+    block.append(text(el('p', 'enterprise-app-binding'), 'AI authority stays in the validated OBIS × Harness runtime. This component cannot mint tools or credentials from page schema.'))
   }
   return block
 }
 
-function renderNode(node: DesktopApplicationUiNode, page: DesktopApplicationPageEnvelope): HTMLElement {
+function renderNode(
+  node: DesktopApplicationUiNode,
+  page: DesktopApplicationPageEnvelope,
+  queryResult: DesktopApplicationQueryResult | undefined,
+  queryError: string | undefined,
+): HTMLElement {
   if (!SUPPORTED_COMPONENTS.has(node.component)) return renderUnsupported(node)
 
   if (!STRUCTURAL_COMPONENTS.has(node.component) || node.component === 'Table') {
-    const leaf = renderLeaf(node, page)
-    for (const child of node.children ?? []) leaf.append(renderNode(child, page))
+    const leaf = renderLeaf(node, page, queryResult, queryError)
+    for (const child of node.children ?? []) leaf.append(renderNode(child, page, queryResult, queryError))
     return leaf
   }
 
@@ -94,10 +244,25 @@ function renderNode(node: DesktopApplicationUiNode, page: DesktopApplicationPage
   const host = el(tag, componentClass(node.component))
   host.dataset.component = node.component
   if (node.id) host.dataset.componentId = node.id
+  if (tag === 'form') host.addEventListener('submit', event => event.preventDefault())
   const title = scalarProp(node, 'title', 'label')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
-  for (const child of node.children ?? []) host.append(renderNode(child, page))
+  for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError))
   return host
+}
+
+function actionMessage(result: DesktopApplicationActionResult): string {
+  const output = result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+    ? result.output as Record<string, unknown>
+    : undefined
+  if (result.status === 'approval-required') {
+    const approvalId = typeof output?.approvalId === 'string' ? output.approvalId : undefined
+    return approvalId
+      ? `Approval required · ${approvalId}. Approve it in the enterprise inbox, then retry this action.`
+      : 'Approval required. Approve it in the enterprise inbox, then retry this action.'
+  }
+  if (result.status === 'executed') return 'Action executed through the governed OBIS Action Runtime.'
+  return `${result.status} · ${result.decision.reason}`
 }
 
 export function moduleNavigationItems(records: readonly DesktopApplicationNavigationRecord[]): DesktopModuleNavigationItem[] {
@@ -126,7 +291,11 @@ export function isModuleNavigationItem(item: DesktopNavigationItem): item is Des
     && value.moduleVersion.length > 0
 }
 
-export function renderDesktopApplicationPage(host: HTMLElement, envelope: DesktopApplicationPageEnvelope): void {
+export async function renderDesktopApplicationPage(
+  host: HTMLElement,
+  envelope: DesktopApplicationPageEnvelope,
+  runtime: DesktopApplicationRenderRuntime,
+): Promise<void> {
   host.replaceChildren()
   const page = el('article', 'enterprise-application-page')
   page.dataset.moduleId = envelope.module.id
@@ -157,31 +326,142 @@ export function renderDesktopApplicationPage(host: HTMLElement, envelope: Deskto
     return
   }
 
+  let queryResult: DesktopApplicationQueryResult | undefined
+  let queryError: string | undefined
   if (envelope.page.source?.query) {
     const source = el('div', 'enterprise-app-source')
     source.append(
-      text(el('span'), 'DATA SOURCE'),
+      text(el('span'), 'GOVERNED DATA'),
       text(el('code'), envelope.page.source.query),
+      text(el('span', 'enterprise-app-source-status'), 'Loading…'),
     )
     page.append(source)
+    host.append(page)
+    try {
+      queryResult = await runtime.bridge.query({
+        ...runtime.scope,
+        moduleId: envelope.module.id,
+        pageId: envelope.page.id,
+        limit: 250,
+      })
+      const status = source.querySelector<HTMLElement>('.enterprise-app-source-status')
+      if (status) status.textContent = `${queryResult.items.length} records${queryResult.truncated ? ' · bounded' : ''}`
+    } catch (error) {
+      queryError = error instanceof Error ? error.message : 'The governed page query failed.'
+      const status = source.querySelector<HTMLElement>('.enterprise-app-source-status')
+      if (status) {
+        status.textContent = 'Query unavailable'
+        status.classList.add('is-error')
+      }
+    }
+  } else {
+    host.append(page)
   }
 
   const canvas = el('div', 'enterprise-application-canvas')
-  canvas.append(renderNode(envelope.page.layout, envelope))
+  const renderCanvas = (): void => {
+    canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError))
+  }
+  renderCanvas()
   page.append(canvas)
 
   if ((envelope.page.actions?.length ?? 0) > 0) {
     const actionBar = el('footer', 'enterprise-app-actions')
-    actionBar.append(text(el('span', 'enterprise-page-eyebrow'), 'DECLARED ACTIONS'))
+    const actionHead = el('div', 'enterprise-app-action-head')
+    actionHead.append(
+      text(el('span', 'enterprise-page-eyebrow'), 'GOVERNED ACTIONS'),
+      text(el('p', 'enterprise-app-binding'), 'Page actions can only execute names declared by the published module and this page.'),
+    )
+    actionBar.append(actionHead)
+
+    const details = el('details', 'enterprise-app-action-input')
+    const summary = text(el('summary'), 'Action input')
+    const input = el('textarea', 'enterprise-app-json-input')
+    input.value = '{}'
+    input.spellcheck = false
+    input.setAttribute('aria-label', 'Action input JSON object')
+    const target = el('input', 'enterprise-app-action-field')
+    target.placeholder = 'Target object id (optional)'
+    const version = el('input', 'enterprise-app-action-field')
+    version.placeholder = 'Expected object version (optional)'
+    version.type = 'number'
+    version.min = '1'
+    details.append(summary, input, target, version)
+    actionBar.append(details)
+
+    const buttons = el('div', 'enterprise-app-action-buttons')
+    const actionStatus = text(el('p', 'enterprise-app-action-status'), 'Ready')
+    const retryKeys = new Map<string, string>()
+
     for (const action of envelope.page.actions ?? []) {
       const button = text(el('button', 'enterprise-secondary-button'), action) as HTMLButtonElement
       button.type = 'button'
-      button.disabled = true
-      button.title = 'The action is declared by the module. Interactive Action Runtime binding is not enabled in this renderer yet.'
-      actionBar.append(button)
+      button.disabled = !envelope.permissions.executable
+      button.onclick = () => {
+        void (async () => {
+          let actionInput: unknown
+          try {
+            actionInput = JSON.parse(input.value) as unknown
+          } catch {
+            actionStatus.textContent = 'Action input must be valid JSON.'
+            actionStatus.classList.add('is-error')
+            return
+          }
+          if (!actionInput || typeof actionInput !== 'object' || Array.isArray(actionInput)) {
+            actionStatus.textContent = 'Action input must be a JSON object.'
+            actionStatus.classList.add('is-error')
+            return
+          }
+          const expectedVersion = version.value ? Number(version.value) : undefined
+          if (expectedVersion !== undefined && (!Number.isInteger(expectedVersion) || expectedVersion < 1)) {
+            actionStatus.textContent = 'Expected version must be a positive integer.'
+            actionStatus.classList.add('is-error')
+            return
+          }
+
+          for (const candidate of buttons.querySelectorAll<HTMLButtonElement>('button')) candidate.disabled = true
+          actionStatus.classList.remove('is-error')
+          actionStatus.textContent = `Executing ${action} through OBIS…`
+          try {
+            const result = await runtime.bridge.action({
+              ...runtime.scope,
+              moduleId: envelope.module.id,
+              pageId: envelope.page.id,
+              action,
+              input: actionInput as Record<string, unknown>,
+              ...(target.value.trim() ? { targetId: target.value.trim() } : {}),
+              ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+              ...(retryKeys.get(action) ? { idempotencyKey: retryKeys.get(action) } : {}),
+            })
+            actionStatus.textContent = actionMessage(result)
+            if (result.status === 'approval-required') retryKeys.set(action, result.idempotencyKey)
+            else retryKeys.delete(action)
+            if (result.status === 'executed' && envelope.page.source?.query) {
+              queryResult = await runtime.bridge.query({
+                ...runtime.scope,
+                moduleId: envelope.module.id,
+                pageId: envelope.page.id,
+                limit: 250,
+              })
+              queryError = undefined
+              renderCanvas()
+            }
+            if (result.status !== 'executed' && result.status !== 'approval-required') actionStatus.classList.add('is-error')
+          } catch (error) {
+            actionStatus.textContent = error instanceof Error ? error.message : 'The governed action failed.'
+            actionStatus.classList.add('is-error')
+          } finally {
+            for (const candidate of buttons.querySelectorAll<HTMLButtonElement>('button')) {
+              candidate.disabled = !envelope.permissions.executable
+            }
+          }
+        })()
+      }
+      buttons.append(button)
     }
+    actionBar.append(buttons, actionStatus)
     page.append(actionBar)
   }
 
-  host.append(page)
+  if (!host.contains(page)) host.append(page)
 }
