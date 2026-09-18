@@ -78,8 +78,8 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
       const authorizationCurrent = (): boolean => currentAuthorization?.deviceCode === authorization.deviceCode
       let waitSeconds = Math.max(1, authorization.intervalSeconds)
       while (!cancelled && authorizationCurrent() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000))
-        if (cancelled || !authorizationCurrent()) return
+        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+        if (!authorizationCurrent()) return
         try {
           const result = await window.dshEnterprise.exchangeDeviceAuthorization(authorization.deviceCode)
           if (result.status === 'authenticated') {
