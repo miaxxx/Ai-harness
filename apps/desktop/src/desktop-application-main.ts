@@ -454,8 +454,8 @@ function parsePageEnvelope(value: unknown): DesktopApplicationPageEnvelope {
     permissions: parsePermissions(row.permissions),
     ...(runtime ? { runtime } : {}),
   }
-  if (!envelope.permissions.visible || !envelope.permissions.executable) {
-    throw new Error('OBIS returned an application page without executable entitlement')
+  if (!envelope.permissions.visible) {
+    throw new Error('OBIS returned an application page without visible entitlement')
   }
   if (
     envelope.permissions.moduleId !== envelope.module.id
