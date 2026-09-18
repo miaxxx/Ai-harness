@@ -10,6 +10,14 @@ import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 export const name = 'obis-launch'
 
 export type WorkspaceAutonomy = 'read-only' | 'recommend' | 'draft' | 'human-approved' | 'bounded-autonomous'
+export type ApplicationPreviewPersona = 'employee' | 'manager' | 'auditor' | 'developer'
+
+export interface ApplicationPreviewLaunch {
+  projectId: string
+  previewId: string
+  pageId: string
+  persona: ApplicationPreviewPersona
+}
 
 export interface WorkspaceLaunchState {
   id: string
@@ -19,6 +27,7 @@ export interface WorkspaceLaunchState {
   harnessOrigin: string
   goal?: string
   autonomy: WorkspaceAutonomy
+  preview?: ApplicationPreviewLaunch
   createdAt: string
   expiresAt: string
   consumedAt?: string
@@ -71,6 +80,25 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
+function parsePreview(value: unknown): ApplicationPreviewLaunch | undefined {
+  if (value === undefined) return undefined
+  const row = record(value)
+  if (!row) throw new Error('OBIS workspace launch preview metadata is invalid.')
+  const persona = row.persona
+  if (
+    typeof row.projectId !== 'string' || typeof row.previewId !== 'string' || typeof row.pageId !== 'string'
+    || (persona !== 'employee' && persona !== 'manager' && persona !== 'auditor' && persona !== 'developer')
+  ) {
+    throw new Error('OBIS workspace launch preview metadata is invalid.')
+  }
+  return {
+    projectId: row.projectId,
+    previewId: row.previewId,
+    pageId: row.pageId,
+    persona,
+  }
+}
+
 function parseAutonomy(value: unknown): WorkspaceAutonomy | undefined {
   return value === 'read-only' || value === 'recommend' || value === 'draft' || value === 'human-approved' || value === 'bounded-autonomous'
     ? value
@@ -82,6 +110,7 @@ function parseExchange(value: unknown): WorkspaceLaunchExchange {
   const access = record(envelope?.access)
   const launch = record(envelope?.launch)
   const autonomy = parseAutonomy(launch?.autonomy)
+  const preview = parsePreview(launch?.preview)
   if (
     typeof access?.sessionId !== 'string' || typeof access.accessToken !== 'string' || typeof access.expiresAt !== 'string'
     || typeof launch?.id !== 'string' || typeof launch.tenantId !== 'string' || typeof launch.userId !== 'string'
@@ -102,6 +131,7 @@ function parseExchange(value: unknown): WorkspaceLaunchExchange {
       createdAt: launch.createdAt,
       expiresAt: launch.expiresAt,
       ...(typeof launch.goal === 'string' ? { goal: launch.goal } : {}),
+      ...(preview ? { preview } : {}),
       ...(typeof launch.consumedAt === 'string' ? { consumedAt: launch.consumedAt } : {}),
     },
   }
