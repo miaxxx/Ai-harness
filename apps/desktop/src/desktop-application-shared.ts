@@ -60,6 +60,10 @@ export interface DesktopApplicationRuntimeBindings {
     object: string
     fields: string[]
     filterable: string[]
+    filters: Record<string, {
+      type: DesktopApplicationFieldType
+      ref?: string
+    }>
     defaultLimit?: number
     maxLimit?: number
   }
