@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
 import type {
+  DesktopApplicationActionBinding,
   DesktopApplicationActionRequest,
   DesktopApplicationActionResult,
   DesktopApplicationNavigationRecord,
@@ -13,6 +14,7 @@ import type {
   DesktopApplicationQueryItem,
   DesktopApplicationQueryRequest,
   DesktopApplicationQueryResult,
+  DesktopApplicationRuntimeBindings,
   DesktopApplicationUiNode,
 } from './desktop-application-shared.ts'
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
@@ -353,23 +355,90 @@ function parseActionResult(value: unknown, idempotencyKey: string): DesktopAppli
   }
 }
 
+const APPLICATION_FIELD_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'datetime', 'json', 'ref'])
+
+function parseActionBinding(value: unknown): DesktopApplicationActionBinding {
+  const row = record(value)
+  const input = record(row?.input)
+  if (!row || !input) throw new Error('OBIS returned an invalid application action binding')
+  const fields: DesktopApplicationActionBinding['input'] = {}
+  for (const [name, rawField] of Object.entries(input)) {
+    const field = record(rawField)
+    const type = typeof field?.type === 'string' ? field.type : ''
+    if (!field || !APPLICATION_FIELD_TYPES.has(type)) {
+      throw new Error(`Application action field ${name} has an unsupported type`)
+    }
+    fields[name] = {
+      type: type as DesktopApplicationActionBinding['input'][string]['type'],
+      required: field.required === true,
+      ...(typeof field.ref === 'string' && field.ref.trim() ? { ref: field.ref.trim() } : {}),
+    }
+  }
+  const risk = typeof row.risk === 'string' && ['low', 'medium', 'high', 'critical'].includes(row.risk)
+    ? row.risk as DesktopApplicationActionBinding['risk']
+    : undefined
+  return {
+    name: requiredString(row.name, 'runtime.action.name'),
+    target: requiredString(row.target, 'runtime.action.target'),
+    ...(risk ? { risk } : {}),
+    ...(typeof row.approval === 'string' && row.approval.trim() ? { approval: row.approval.trim() } : {}),
+    input: fields,
+  }
+}
+
+function parseRuntimeBindings(value: unknown): DesktopApplicationRuntimeBindings | undefined {
+  if (value === undefined) return undefined
+  const row = record(value)
+  if (!row || !Array.isArray(row.actions)) throw new Error('OBIS returned invalid application runtime bindings')
+  const query = record(row.query)
+  const parsedQuery = query
+    ? {
+      name: requiredString(query.name, 'runtime.query.name'),
+      object: requiredString(query.object, 'runtime.query.object'),
+      fields: stringArray(query.fields),
+      filterable: stringArray(query.filterable),
+      ...(typeof query.defaultLimit === 'number' && Number.isInteger(query.defaultLimit) && query.defaultLimit > 0
+        ? { defaultLimit: query.defaultLimit }
+        : {}),
+      ...(typeof query.maxLimit === 'number' && Number.isInteger(query.maxLimit) && query.maxLimit > 0
+        ? { maxLimit: query.maxLimit }
+        : {}),
+    }
+    : undefined
+  return {
+    ...(parsedQuery ? { query: parsedQuery } : {}),
+    actions: row.actions.map(parseActionBinding),
+  }
+}
+
 function parsePageEnvelope(value: unknown): DesktopApplicationPageEnvelope {
   const row = record(value)
   const module = record(row?.module)
   const designSystem = record(row?.designSystem)
   if (!row || !module || !designSystem) throw new Error('OBIS returned an invalid application page envelope')
+  const page = parsePageSchema(row.page)
+  const runtime = parseRuntimeBindings(row.runtime)
+  if (runtime?.query && runtime.query.name !== page.source?.query) {
+    throw new Error('Application runtime query binding does not match the governed page source')
+  }
+  for (const action of runtime?.actions ?? []) {
+    if (!(page.actions ?? []).includes(action.name)) {
+      throw new Error(`Application runtime action ${action.name} is not declared by the governed page`)
+    }
+  }
   const envelope: DesktopApplicationPageEnvelope = {
     module: {
       id: requiredString(module.id, 'module.id'),
       version: requiredString(module.version, 'module.version'),
       name: requiredString(module.name, 'module.name'),
     },
-    page: parsePageSchema(row.page),
+    page,
     designSystem: {
       id: requiredString(designSystem.id, 'designSystem.id'),
       version: requiredString(designSystem.version, 'designSystem.version'),
     },
     permissions: parsePermissions(row.permissions),
+    ...(runtime ? { runtime } : {}),
   }
   if (!envelope.permissions.visible || !envelope.permissions.executable) {
     throw new Error('OBIS returned an application page without executable entitlement')
