@@ -51,4 +51,6 @@ jobs:
       - name: Build Desktop
         run: pnpm --dir apps/desktop run build
       - name: Update and enterprise scope regression
-        run: pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
+        run: |
+          pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/content.spec.ts
+          pnpm exec tsx --test apps/desktop/tests/enterprise-runtime-scope.spec.ts
