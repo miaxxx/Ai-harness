@@ -6,6 +6,9 @@
     "types": ["node"]
   },
   "include": [
+    "src/desktop-application-shared.ts",
+    "src/desktop-application-main.ts",
+    "src/desktop-application-preload.ts",
     "src/enterprise-main.ts",
     "src/main.ts",
     "src/preload.ts",
