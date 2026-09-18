@@ -1,12 +1,18 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
 import type {
+  DesktopApplicationActionRequest,
+  DesktopApplicationActionResult,
   DesktopApplicationNavigationRecord,
   DesktopApplicationPageEnvelope,
   DesktopApplicationPageRequest,
   DesktopApplicationPageSchema,
   DesktopApplicationPermissionDecision,
+  DesktopApplicationQueryItem,
+  DesktopApplicationQueryRequest,
+  DesktopApplicationQueryResult,
   DesktopApplicationUiNode,
 } from './desktop-application-shared.ts'
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
@@ -199,14 +205,14 @@ async function authenticatedIdentity(): Promise<{ stored: StoredEnterpriseIdenti
   return refreshIdentity(stored)
 }
 
-async function authenticatedRequest<T>(path: string): Promise<T> {
+async function authenticatedRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const identity = await authenticatedIdentity()
   try {
-    return await requestJson<T>(identity.stored, path, identity.accessToken)
+    return await requestJson<T>(identity.stored, path, identity.accessToken, init)
   } catch (error) {
     if (!(error instanceof ApplicationHttpError) || error.status !== 401) throw error
     const refreshed = await refreshIdentity(identity.stored)
-    return requestJson<T>(refreshed.stored, path, refreshed.accessToken)
+    return requestJson<T>(refreshed.stored, path, refreshed.accessToken, init)
   }
 }
 
@@ -287,6 +293,66 @@ function parsePermissions(value: unknown): DesktopApplicationPermissionDecision 
   }
 }
 
+function parseQueryItem(value: unknown): DesktopApplicationQueryItem {
+  const row = record(value)
+  const values = record(row?.values)
+  if (!row || !values) throw new Error('OBIS returned an invalid application query item')
+  if (!Number.isInteger(row.version) || Number(row.version) < 1) throw new Error('Application query item version is invalid')
+  return {
+    id: requiredString(row.id, 'query.item.id'),
+    object: requiredString(row.object, 'query.item.object'),
+    values,
+    version: Number(row.version),
+    createdAt: requiredString(row.createdAt, 'query.item.createdAt'),
+    updatedAt: requiredString(row.updatedAt, 'query.item.updatedAt'),
+  }
+}
+
+function parseQueryResult(value: unknown): DesktopApplicationQueryResult {
+  const row = record(value)
+  const decision = record(row?.decision)
+  if (!row || !decision || !['executed', 'denied', 'invalid'].includes(String(row.status))) {
+    throw new Error('OBIS returned an invalid application query result')
+  }
+  return {
+    requestId: requiredString(row.requestId, 'query.requestId'),
+    status: row.status as DesktopApplicationQueryResult['status'],
+    query: requiredString(row.query, 'query.query'),
+    ...(typeof row.object === 'string' && row.object.trim() ? { object: row.object.trim() } : {}),
+    ...(typeof row.artifactId === 'string' && row.artifactId.trim() ? { artifactId: row.artifactId.trim() } : {}),
+    decision: {
+      allowed: decision.allowed === true,
+      matchedPolicies: stringArray(decision.matchedPolicies),
+      reason: requiredString(decision.reason, 'query.decision.reason'),
+    },
+    items: Array.isArray(row.items) ? row.items.map(parseQueryItem) : [],
+    truncated: row.truncated === true,
+    errors: stringArray(row.errors),
+  }
+}
+
+function parseActionResult(value: unknown, idempotencyKey: string): DesktopApplicationActionResult {
+  const row = record(value)
+  const decision = record(row?.decision)
+  if (!row || !decision || !['executed', 'denied', 'approval-required', 'invalid', 'failed'].includes(String(row.status))) {
+    throw new Error('OBIS returned an invalid application action result')
+  }
+  return {
+    requestId: requiredString(row.requestId, 'action.requestId'),
+    idempotencyKey,
+    status: row.status as DesktopApplicationActionResult['status'],
+    decision: {
+      allowed: decision.allowed === true,
+      matchedPolicies: stringArray(decision.matchedPolicies),
+      reason: requiredString(decision.reason, 'action.decision.reason'),
+      ...(typeof decision.requiresApproval === 'string' && decision.requiresApproval.trim()
+        ? { requiresApproval: decision.requiresApproval.trim() }
+        : {}),
+    },
+    ...(row.output !== undefined ? { output: row.output } : {}),
+  }
+}
+
 function parsePageEnvelope(value: unknown): DesktopApplicationPageEnvelope {
   const row = record(value)
   const module = record(row?.module)
@@ -345,6 +411,93 @@ async function applicationPage(value: unknown): Promise<DesktopApplicationPageEn
   return envelope
 }
 
+async function applicationQuery(value: unknown): Promise<DesktopApplicationQueryResult> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application query request must be an object')
+  const moduleId = requiredString(row.moduleId, 'moduleId')
+  const pageId = requiredString(row.pageId, 'pageId')
+  const where = row.where === undefined ? undefined : record(row.where)
+  const context = row.context === undefined ? undefined : record(row.context)
+  if (row.where !== undefined && !where) throw new Error('where must be an object')
+  if (row.context !== undefined && !context) throw new Error('context must be an object')
+  if (row.id !== undefined && typeof row.id !== 'string') throw new Error('id must be a string')
+  if (row.limit !== undefined && (!Number.isInteger(row.limit) || Number(row.limit) < 1 || Number(row.limit) > 1000)) {
+    throw new Error('limit must be an integer between 1 and 1000')
+  }
+  const input: DesktopApplicationQueryRequest = {
+    ...scope,
+    moduleId,
+    pageId,
+    ...(typeof row.id === 'string' && row.id.trim() ? { id: row.id.trim() } : {}),
+    ...(where ? { where } : {}),
+    ...(typeof row.limit === 'number' ? { limit: row.limit } : {}),
+    ...(context ? { context } : {}),
+  }
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/workspace/modules/${encodeURIComponent(moduleId)}/pages/${encodeURIComponent(pageId)}/query`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        ...(input.id ? { id: input.id } : {}),
+        ...(input.where ? { where: input.where } : {}),
+        ...(input.limit ? { limit: input.limit } : {}),
+        ...(input.context ? { context: input.context } : {}),
+      }),
+    },
+  )
+  const result = parseQueryResult(payload)
+  if (result.status !== 'executed' || !result.decision.allowed) {
+    throw new Error(result.decision.reason || 'The governed application query was denied')
+  }
+  return result
+}
+
+async function applicationAction(value: unknown): Promise<DesktopApplicationActionResult> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application action request must be an object')
+  const input = record(row.input)
+  if (!input) throw new Error('Application action input must be an object')
+  const moduleId = requiredString(row.moduleId, 'moduleId')
+  const pageId = requiredString(row.pageId, 'pageId')
+  const action = requiredString(row.action, 'action')
+  if (row.targetId !== undefined && typeof row.targetId !== 'string') throw new Error('targetId must be a string')
+  if (row.expectedVersion !== undefined && (!Number.isInteger(row.expectedVersion) || Number(row.expectedVersion) < 1)) {
+    throw new Error('expectedVersion must be a positive integer')
+  }
+  const idempotencyKey = typeof row.idempotencyKey === 'string' && row.idempotencyKey.trim()
+    ? row.idempotencyKey.trim()
+    : `desktop_${randomUUID()}`
+  const request: DesktopApplicationActionRequest = {
+    ...scope,
+    moduleId,
+    pageId,
+    action,
+    input,
+    ...(typeof row.targetId === 'string' && row.targetId.trim() ? { targetId: row.targetId.trim() } : {}),
+    ...(typeof row.expectedVersion === 'number' ? { expectedVersion: row.expectedVersion } : {}),
+    idempotencyKey,
+  }
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/workspace/modules/${encodeURIComponent(moduleId)}/pages/${encodeURIComponent(pageId)}/actions/${encodeURIComponent(action)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: request.projectId,
+        environmentId: request.environmentId,
+        idempotencyKey,
+        input: request.input,
+        ...(request.targetId ? { targetId: request.targetId } : {}),
+        ...(request.expectedVersion ? { expectedVersion: request.expectedVersion } : {}),
+      }),
+    },
+  )
+  return parseActionResult(payload, idempotencyKey)
+}
+
 function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-navigation', async (event, value: unknown) => {
     requireTrusted(event)
@@ -353,6 +506,14 @@ function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-page', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationPage(value)
+  })
+  ipcMain.handle('dsh:application-query', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationQuery(value)
+  })
+  ipcMain.handle('dsh:application-action', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationAction(value)
   })
 }
 
