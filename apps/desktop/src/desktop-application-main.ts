@@ -14,6 +14,9 @@ import type {
   DesktopApplicationPageEnvelope,
   DesktopApplicationPageRequest,
   DesktopApplicationPageSchema,
+  DesktopApplicationPreviewPageEnvelope,
+  DesktopApplicationPreviewPageRequest,
+  DesktopApplicationPreviewPersona,
   DesktopApplicationPermissionDecision,
   DesktopApplicationQueryItem,
   DesktopApplicationQueryRequest,
@@ -521,6 +524,51 @@ function parsePageEnvelope(value: unknown): DesktopApplicationPageEnvelope {
   return envelope
 }
 
+function parsePreviewPersona(value: unknown): DesktopApplicationPreviewPersona {
+  if (value === 'employee' || value === 'manager' || value === 'auditor' || value === 'developer') return value
+  throw new Error('Application preview persona must be employee, manager, auditor, or developer')
+}
+
+function parsePreviewPageEnvelope(value: unknown): DesktopApplicationPreviewPageEnvelope {
+  const row = record(value)
+  const preview = record(row?.preview)
+  const module = record(row?.module)
+  const designSystem = record(row?.designSystem)
+  if (!row || !preview || !module || !designSystem) throw new Error('OBIS returned an invalid application preview page envelope')
+  const permissions = parsePermissions(row.access)
+  const envelope: DesktopApplicationPreviewPageEnvelope = {
+    preview: {
+      id: requiredString(preview.id, 'preview.id'),
+      moduleId: requiredString(preview.moduleId, 'preview.moduleId'),
+      moduleVersion: requiredString(preview.moduleVersion, 'preview.moduleVersion'),
+      sourceRevision: typeof preview.sourceRevision === 'number' && Number.isInteger(preview.sourceRevision) && preview.sourceRevision > 0
+        ? preview.sourceRevision
+        : (() => { throw new Error('Application preview source revision is invalid') })(),
+      persona: parsePreviewPersona(preview.persona),
+    },
+    module: {
+      id: requiredString(module.id, 'module.id'),
+      version: requiredString(module.version, 'module.version'),
+      name: requiredString(module.name, 'module.name'),
+    },
+    page: parsePageSchema(row.page),
+    designSystem: {
+      id: requiredString(designSystem.id, 'designSystem.id'),
+      version: requiredString(designSystem.version, 'designSystem.version'),
+    },
+    permissions,
+  }
+  if (
+    envelope.preview.moduleId !== envelope.module.id
+    || envelope.preview.moduleVersion !== envelope.module.version
+    || permissions.moduleId !== envelope.module.id
+    || permissions.moduleVersion !== envelope.module.version
+  ) {
+    throw new Error('Application preview authority does not match the immutable module snapshot')
+  }
+  return envelope
+}
+
 async function applicationNavigation(value: unknown): Promise<DesktopApplicationNavigationRecord[]> {
   const scope = requireValidatedScope(value)
   const params = new URLSearchParams({ projectId: scope.projectId, environmentId: scope.environmentId })
@@ -545,6 +593,34 @@ async function applicationPage(value: unknown): Promise<DesktopApplicationPageEn
   const envelope = parsePageEnvelope(payload)
   if (envelope.module.id !== input.moduleId || envelope.page.id !== input.pageId) {
     throw new Error('OBIS resolved a different module page than the requested application route')
+  }
+  return envelope
+}
+
+async function applicationPreviewPage(value: unknown): Promise<DesktopApplicationPreviewPageEnvelope> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application preview request must be an object')
+  const input: DesktopApplicationPreviewPageRequest = {
+    ...scope,
+    previewId: requiredString(row.previewId, 'previewId'),
+    pageId: requiredString(row.pageId, 'pageId'),
+    persona: parsePreviewPersona(row.persona),
+  }
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/application/previews/${encodeURIComponent(input.previewId)}/pages/${encodeURIComponent(input.pageId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        persona: input.persona,
+      }),
+    },
+  )
+  const envelope = parsePreviewPageEnvelope(payload)
+  if (envelope.preview.id !== input.previewId || envelope.page.id !== input.pageId || envelope.preview.persona !== input.persona) {
+    throw new Error('OBIS resolved a different immutable application preview than requested')
   }
   return envelope
 }
@@ -704,6 +780,10 @@ function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-page', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationPage(value)
+  })
+  ipcMain.handle('dsh:application-preview-page', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationPreviewPage(value)
   })
   ipcMain.handle('dsh:application-query', async (event, value: unknown) => {
     requireTrusted(event)
