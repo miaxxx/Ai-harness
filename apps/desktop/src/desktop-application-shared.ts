@@ -136,6 +136,27 @@ export interface DesktopApplicationActionResult {
   output?: unknown
 }
 
+export interface DesktopApplicationApprovalRequest extends DesktopEnterpriseScopeRequest {
+  approvalId: string
+}
+
+export interface DesktopApplicationApprovalStatus {
+  id: string
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired'
+  version: number
+  action: string
+  gate: string
+  requesterId: string
+  updatedAt: string
+  currentStage: {
+    id: string
+    name?: string
+    quorum: number
+    approvals: number
+    rejections: number
+  }
+}
+
 export interface DesktopApplicationAiRequest extends DesktopApplicationPageRequest {
   mode: 'summary' | 'compose'
   prompt?: string
@@ -162,6 +183,7 @@ export interface DesktopApplicationBridge {
   page(input: DesktopApplicationPageRequest): Promise<DesktopApplicationPageEnvelope>
   query(input: DesktopApplicationQueryRequest): Promise<DesktopApplicationQueryResult>
   action(input: DesktopApplicationActionRequest): Promise<DesktopApplicationActionResult>
+  approval(input: DesktopApplicationApprovalRequest): Promise<DesktopApplicationApprovalStatus>
   ai(input: DesktopApplicationAiRequest): Promise<DesktopApplicationAiResult>
 }
 
