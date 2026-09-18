@@ -6,8 +6,10 @@ const bridge: DesktopUpdateBridge = {
   check: () => ipcRenderer.invoke('dsh:desktop-update-check') as Promise<DesktopUpdateState>,
   download: () => ipcRenderer.invoke('dsh:desktop-update-download') as Promise<DesktopUpdateState>,
   install: () => ipcRenderer.invoke('dsh:desktop-update-install') as Promise<void>,
-  onState: listener => {
-    const handler = (_event: Electron.IpcRendererEvent, value: DesktopUpdateState) => listener(value)
+  onState: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: DesktopUpdateState) => {
+      listener(value)
+    }
     ipcRenderer.on('dsh:desktop-update-state', handler)
     return () => ipcRenderer.removeListener('dsh:desktop-update-state', handler)
   },
