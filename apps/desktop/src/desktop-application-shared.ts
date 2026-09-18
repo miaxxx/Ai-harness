@@ -78,6 +78,28 @@ export interface DesktopApplicationPageEnvelope {
   runtime?: DesktopApplicationRuntimeBindings
 }
 
+export type DesktopApplicationPreviewPersona = 'employee' | 'manager' | 'auditor' | 'developer'
+
+export interface DesktopApplicationPreviewPageRequest extends DesktopEnterpriseScopeRequest {
+  previewId: string
+  pageId: string
+  persona: DesktopApplicationPreviewPersona
+}
+
+export interface DesktopApplicationPreviewPageEnvelope {
+  preview: {
+    id: string
+    moduleId: string
+    moduleVersion: string
+    sourceRevision: number
+    persona: DesktopApplicationPreviewPersona
+  }
+  module: { id: string; version: string; name: string }
+  page: DesktopApplicationPageSchema
+  designSystem: { id: string; version: string }
+  permissions: DesktopApplicationPermissionDecision
+}
+
 export interface DesktopApplicationPageRequest extends DesktopEnterpriseScopeRequest {
   moduleId: string
   pageId: string
@@ -181,6 +203,7 @@ export interface DesktopModuleNavigationItem extends DesktopNavigationItem {
 export interface DesktopApplicationBridge {
   navigation(scope: DesktopEnterpriseScopeRequest): Promise<DesktopApplicationNavigationRecord[]>
   page(input: DesktopApplicationPageRequest): Promise<DesktopApplicationPageEnvelope>
+  previewPage(input: DesktopApplicationPreviewPageRequest): Promise<DesktopApplicationPreviewPageEnvelope>
   query(input: DesktopApplicationQueryRequest): Promise<DesktopApplicationQueryResult>
   action(input: DesktopApplicationActionRequest): Promise<DesktopApplicationActionResult>
   approval(input: DesktopApplicationApprovalRequest): Promise<DesktopApplicationApprovalStatus>
