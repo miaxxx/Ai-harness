@@ -297,7 +297,7 @@ function parseQueryItem(value: unknown): DesktopApplicationQueryItem {
   const row = record(value)
   const values = record(row?.values)
   if (!row || !values) throw new Error('OBIS returned an invalid application query item')
-  if (!Number.isInteger(row.version) || Number(row.version) < 1) throw new Error('Application query item version is invalid')
+  if (typeof row.version !== 'number' || !Number.isInteger(row.version) || row.version < 1) throw new Error('Application query item version is invalid')
   return {
     id: requiredString(row.id, 'query.item.id'),
     object: requiredString(row.object, 'query.item.object'),
@@ -422,7 +422,7 @@ async function applicationQuery(value: unknown): Promise<DesktopApplicationQuery
   if (row.where !== undefined && !where) throw new Error('where must be an object')
   if (row.context !== undefined && !context) throw new Error('context must be an object')
   if (row.id !== undefined && typeof row.id !== 'string') throw new Error('id must be a string')
-  if (row.limit !== undefined && (!Number.isInteger(row.limit) || Number(row.limit) < 1 || Number(row.limit) > 1000)) {
+  if (row.limit !== undefined && (typeof row.limit !== 'number' || !Number.isInteger(row.limit) || row.limit < 1 || row.limit > 1000)) {
     throw new Error('limit must be an integer between 1 and 1000')
   }
   const input: DesktopApplicationQueryRequest = {
@@ -465,7 +465,7 @@ async function applicationAction(value: unknown): Promise<DesktopApplicationActi
   const pageId = requiredString(row.pageId, 'pageId')
   const action = requiredString(row.action, 'action')
   if (row.targetId !== undefined && typeof row.targetId !== 'string') throw new Error('targetId must be a string')
-  if (row.expectedVersion !== undefined && (!Number.isInteger(row.expectedVersion) || Number(row.expectedVersion) < 1)) {
+  if (row.expectedVersion !== undefined && (typeof row.expectedVersion !== 'number' || !Number.isInteger(row.expectedVersion) || row.expectedVersion < 1)) {
     throw new Error('expectedVersion must be a positive integer')
   }
   const idempotencyKey = typeof row.idempotencyKey === 'string' && row.idempotencyKey.trim()
