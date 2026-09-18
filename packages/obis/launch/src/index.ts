@@ -173,13 +173,21 @@ export class ObisLaunchService extends Service {
 
     if (this.baseUrl !== undefined) {
       ctx.connection.rpc.handle('/obis-launch', async (endpoint, payload, signal) => {
-        if (endpoint !== 'exchange') return badRequest(`Unknown OBIS launch endpoint ${endpoint}.`)
-        const body = record(payload)
-        const ticket = typeof body?.ticket === 'string' ? body.ticket.trim() : ''
-        const harnessOrigin = typeof body?.harnessOrigin === 'string' ? body.harnessOrigin.trim() : ''
-        if (!ticket || !harnessOrigin) return badRequest('ticket and harnessOrigin are required.')
         try {
-          return { ok: true, value: await this.exchange(ticket, harnessOrigin, signal) }
+          if (endpoint === 'exchange') {
+            const body = record(payload)
+            const ticket = typeof body?.ticket === 'string' ? body.ticket.trim() : ''
+            const harnessOrigin = typeof body?.harnessOrigin === 'string' ? body.harnessOrigin.trim() : ''
+            if (!ticket || !harnessOrigin) return badRequest('ticket and harnessOrigin are required.')
+            return { ok: true, value: await this.exchange(ticket, harnessOrigin, signal) }
+          }
+          if (endpoint === 'preview-page') {
+            if (payload !== undefined && payload !== null && Object.keys(record(payload) ?? {}).length > 0) {
+              return badRequest('preview-page does not accept caller-selected preview identifiers.')
+            }
+            return { ok: true, value: await this.previewPage(signal) }
+          }
+          return badRequest(`Unknown OBIS launch endpoint ${endpoint}.`)
         } catch (error) {
           return rpcError(error instanceof Error ? error.message : String(error))
         }
@@ -195,6 +203,44 @@ export class ObisLaunchService extends Service {
   /** Credential reference where the current delegated token is stored. */
   tokenReference(): CredentialRef {
     return this.reference
+  }
+
+  private async previewPage(signal: AbortSignal): Promise<unknown> {
+    if (this.baseUrl === undefined) throw new Error('Harness is not configured with an OBIS baseUrl.')
+    const launch = this.currentLaunch
+    if (!launch?.preview) throw new Error('The current OBIS launch is not an application preview.')
+    if (launch.autonomy !== 'read-only') throw new Error('Application preview launches must remain read-only.')
+    const credential = await this.ctx.credentials.resolve(this.reference)
+    if (!credential?.value) throw new Error('The delegated OBIS preview credential is unavailable.')
+    const preview = launch.preview
+    const response = await fetch(
+      `${this.baseUrl}/v1/application/previews/${encodeURIComponent(preview.previewId)}/pages/${encodeURIComponent(preview.pageId)}`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${credential.value}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: preview.projectId,
+          environmentId: launch.environmentId,
+          persona: preview.persona,
+        }),
+        signal,
+        redirect: 'error',
+      },
+    )
+    const payload = await response.json().catch(() => undefined) as unknown
+    if (!response.ok) {
+      const envelope = record(payload)
+      const error = record(envelope?.error)
+      const message = typeof error?.message === 'string'
+        ? error.message
+        : `OBIS application preview failed with ${response.status}.`
+      throw new Error(message)
+    }
+    return payload
   }
 
   private async exchange(ticket: string, harnessOrigin: string, signal: AbortSignal): Promise<SafeWorkspaceLaunchExchange> {
