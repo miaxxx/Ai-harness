@@ -136,6 +136,20 @@ export interface DesktopApplicationActionResult {
   output?: unknown
 }
 
+export interface DesktopApplicationAiRequest extends DesktopApplicationPageRequest {
+  mode: 'summary' | 'compose'
+  prompt?: string
+  context?: unknown
+}
+
+export interface DesktopApplicationAiResult {
+  mode: 'summary' | 'compose'
+  text: string
+  traceId: string
+  providerProfileId: string
+  modelId: string
+}
+
 export interface DesktopModuleNavigationItem extends DesktopNavigationItem {
   kind: 'module'
   moduleId: string
@@ -148,6 +162,7 @@ export interface DesktopApplicationBridge {
   page(input: DesktopApplicationPageRequest): Promise<DesktopApplicationPageEnvelope>
   query(input: DesktopApplicationQueryRequest): Promise<DesktopApplicationQueryResult>
   action(input: DesktopApplicationActionRequest): Promise<DesktopApplicationActionResult>
+  ai(input: DesktopApplicationAiRequest): Promise<DesktopApplicationAiResult>
 }
 
 declare global {
