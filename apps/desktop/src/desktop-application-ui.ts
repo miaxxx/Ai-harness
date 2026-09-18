@@ -61,7 +61,7 @@ function displayValue(value: unknown): string {
   try {
     return JSON.stringify(value)
   } catch {
-    return String(value)
+    return '[unserializable value]'
   }
 }
 
@@ -244,7 +244,11 @@ function renderNode(
   const host = el(tag, componentClass(node.component))
   host.dataset.component = node.component
   if (node.id) host.dataset.componentId = node.id
-  if (tag === 'form') host.addEventListener('submit', event => event.preventDefault())
+  if (tag === 'form') {
+    host.addEventListener('submit', (event) => {
+      event.preventDefault()
+    })
+  }
   const title = scalarProp(node, 'title', 'label')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
   for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError))
@@ -423,6 +427,7 @@ export async function renderDesktopApplicationPage(
           actionStatus.classList.remove('is-error')
           actionStatus.textContent = `Executing ${action} through OBIS…`
           try {
+            const retryKey = retryKeys.get(action)
             const result = await runtime.bridge.action({
               ...runtime.scope,
               moduleId: envelope.module.id,
@@ -431,7 +436,7 @@ export async function renderDesktopApplicationPage(
               input: actionInput as Record<string, unknown>,
               ...(target.value.trim() ? { targetId: target.value.trim() } : {}),
               ...(expectedVersion !== undefined ? { expectedVersion } : {}),
-              ...(retryKeys.get(action) ? { idempotencyKey: retryKeys.get(action) } : {}),
+              ...(retryKey ? { idempotencyKey: retryKey } : {}),
             })
             actionStatus.textContent = actionMessage(result)
             if (result.status === 'approval-required') retryKeys.set(action, result.idempotencyKey)
