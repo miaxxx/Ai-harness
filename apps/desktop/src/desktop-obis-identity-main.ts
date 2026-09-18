@@ -532,11 +532,11 @@ function installIdentityIpc(): void {
     const next: StoredObisIdentity = sameAuthority
       ? existing
       : {
-          version: STORE_VERSION,
-          baseURL,
-          tenantId,
-          deviceId: existing?.deviceId ?? `desktop_${randomUUID()}`,
-        }
+        version: STORE_VERSION,
+        baseURL,
+        tenantId,
+        deviceId: existing?.deviceId ?? `desktop_${randomUUID()}`,
+      }
     if (!sameAuthority) setEnterpriseRuntimeScope(undefined)
     await writeStored(next)
     return publicStatus(next)
