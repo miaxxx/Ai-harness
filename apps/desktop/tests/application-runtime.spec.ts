@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  applicationQueryColumns,
   isModuleNavigationItem,
   moduleNavigationItems,
 } from '../src/desktop-application-ui.ts'
@@ -42,6 +43,37 @@ void describe('enterprise application runtime navigation', () => {
     assert.equal(items[1]?.route, '/apps/finance%2Fpayables/queue%20review')
     assert.equal(items[1]?.section, 'Apps')
     assert.equal(items[1]?.order, 1010)
+  })
+
+  void it('derives a bounded table model only from governed query result fields', () => {
+    const columns = applicationQueryColumns({
+      requestId: 'query-1',
+      status: 'executed',
+      query: 'supplier.list',
+      decision: { allowed: true, matchedPolicies: ['read-supplier'], reason: 'Allowed' },
+      items: [
+        {
+          id: 'supplier-1',
+          object: 'Supplier',
+          values: { name: 'Northwind', risk: 'low', spend: 42 },
+          version: 3,
+          createdAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+        },
+        {
+          id: 'supplier-2',
+          object: 'Supplier',
+          values: { name: 'Contoso', owner: 'Procurement' },
+          version: 1,
+          createdAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+        },
+      ],
+      truncated: false,
+      errors: [],
+    }, 3)
+
+    assert.deepEqual(columns, ['id', 'name', 'risk', 'spend'])
   })
 
   void it('recognizes only fully resolved module navigation records', () => {
