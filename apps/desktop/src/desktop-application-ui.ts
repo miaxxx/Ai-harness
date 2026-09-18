@@ -462,11 +462,14 @@ export async function renderDesktopApplicationPage(
     page.append(source)
     host.append(page)
     try {
+      const runtimeLimit = envelope.runtime?.query?.maxLimit
+        ? Math.min(250, envelope.runtime.query.maxLimit)
+        : 250
       queryResult = await runtime.bridge.query({
         ...runtime.scope,
         moduleId: envelope.module.id,
         pageId: envelope.page.id,
-        limit: 250,
+        limit: runtimeLimit,
       })
       const status = source.querySelector<HTMLElement>('.enterprise-app-source-status')
       if (status) status.textContent = `${queryResult.items.length} records${queryResult.truncated ? ' · bounded' : ''}`
