@@ -325,11 +325,16 @@ async function decideApproval(input: DesktopApprovalDecisionInput): Promise<Desk
   })
 }
 
-async function transitionEnvironment(input: { environmentId: string; to: DesktopEnvironmentRuntimeState; reason?: string }): Promise<DesktopEnvironmentOperationsState> {
+async function transitionEnvironment(input: {
+  environmentId: string
+  to: DesktopEnvironmentRuntimeState
+  reason?: string
+}): Promise<DesktopEnvironmentOperationsState> {
   const environmentId = nonEmpty(input.environmentId, 'Environment')
   requireValidatedScope(environmentId)
   if (!ENVIRONMENT_STATES.has(input.to)) throw new Error('Invalid environment runtime state')
-  return authenticatedRequest<DesktopEnvironmentOperationsState>(`/v1/management/operations/environments/${encodeURIComponent(environmentId)}/state`, {
+  const path = `/v1/management/operations/environments/${encodeURIComponent(environmentId)}/state`
+  return authenticatedRequest<DesktopEnvironmentOperationsState>(path, {
     method: 'PATCH',
     body: JSON.stringify({ to: input.to, ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}) }),
   })
