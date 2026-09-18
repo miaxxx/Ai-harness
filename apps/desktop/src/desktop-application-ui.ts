@@ -1,6 +1,8 @@
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
 import type { DesktopNavigationItem } from './desktop-obis-identity-shared.ts'
 import type {
+  DesktopApplicationActionBinding,
+  DesktopApplicationActionField,
   DesktopApplicationActionResult,
   DesktopApplicationBridge,
   DesktopApplicationNavigationRecord,
@@ -269,6 +271,124 @@ function actionMessage(result: DesktopApplicationActionResult): string {
   return `${result.status} · ${result.decision.reason}`
 }
 
+interface RenderedActionForm {
+  container: HTMLElement
+  target: HTMLInputElement
+  version: HTMLInputElement
+  readInput: () => Record<string, unknown>
+}
+
+function actionFieldControl(
+  name: string,
+  field: DesktopApplicationActionField,
+): HTMLInputElement | HTMLTextAreaElement {
+  if (field.type === 'json') {
+    const input = el('textarea', 'enterprise-app-action-field enterprise-app-action-json')
+    input.placeholder = field.required ? 'Required JSON value' : 'Optional JSON value'
+    input.setAttribute('aria-label', name)
+    return input
+  }
+  const input = el('input', 'enterprise-app-action-field')
+  input.setAttribute('aria-label', name)
+  if (field.type === 'number' || field.type === 'integer') input.type = 'number'
+  else if (field.type === 'boolean') input.type = 'checkbox'
+  else if (field.type === 'datetime') input.type = 'datetime-local'
+  else input.type = 'text'
+  if (field.type === 'integer') input.step = '1'
+  input.placeholder = field.ref ? `${field.type} · ${field.ref}` : field.type
+  return input
+}
+
+function parseActionField(
+  name: string,
+  field: DesktopApplicationActionField,
+  control: HTMLInputElement | HTMLTextAreaElement,
+): unknown {
+  if (field.type === 'boolean') {
+    const checkbox = control as HTMLInputElement
+    if (!field.required && !checkbox.checked) return undefined
+    return checkbox.checked
+  }
+  const raw = control.value.trim()
+  if (!raw) {
+    if (field.required) throw new Error(`${name} is required.`)
+    return undefined
+  }
+  if (field.type === 'number' || field.type === 'integer') {
+    const value = Number(raw)
+    if (!Number.isFinite(value)) throw new Error(`${name} must be a number.`)
+    if (field.type === 'integer' && !Number.isInteger(value)) throw new Error(`${name} must be an integer.`)
+    return value
+  }
+  if (field.type === 'json') {
+    try {
+      return JSON.parse(raw) as unknown
+    } catch {
+      throw new Error(`${name} must be valid JSON.`)
+    }
+  }
+  return raw
+}
+
+function renderActionForm(binding: DesktopApplicationActionBinding): RenderedActionForm {
+  const container = el('details', 'enterprise-app-action-input')
+  const summary = el('summary')
+  summary.append(
+    text(el('strong'), binding.name),
+    text(el('span'), `${binding.target}${binding.risk ? ` · ${binding.risk} risk` : ''}`),
+  )
+  container.append(summary)
+
+  if (binding.approval) {
+    container.append(text(el('p', 'enterprise-app-binding'), `Approval gate · ${binding.approval}`))
+  }
+
+  const fields = el('div', 'enterprise-app-action-schema-fields')
+  const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement>()
+  for (const [name, field] of Object.entries(binding.input)) {
+    const label = el('label', 'enterprise-app-action-schema-field')
+    const caption = el('span')
+    caption.append(
+      text(el('strong'), name),
+      text(el('small'), `${field.type}${field.required ? ' · required' : ' · optional'}${field.ref ? ` · ${field.ref}` : ''}`),
+    )
+    const control = actionFieldControl(name, field)
+    controls.set(name, control)
+    label.append(caption, control)
+    fields.append(label)
+  }
+  if (!controls.size) fields.append(text(el('p', 'enterprise-app-empty-data'), 'This action has no input fields.'))
+
+  const execution = el('div', 'enterprise-app-action-execution-fields')
+  const target = el('input', 'enterprise-app-action-field')
+  target.placeholder = 'Target object id (optional)'
+  target.setAttribute('aria-label', 'Target object id')
+  const version = el('input', 'enterprise-app-action-field')
+  version.placeholder = 'Expected object version (optional)'
+  version.setAttribute('aria-label', 'Expected object version')
+  version.type = 'number'
+  version.min = '1'
+  version.step = '1'
+  execution.append(target, version)
+  container.append(fields, execution)
+
+  return {
+    container,
+    target,
+    version,
+    readInput: () => {
+      const result: Record<string, unknown> = {}
+      for (const [name, field] of Object.entries(binding.input)) {
+        const control = controls.get(name)
+        if (!control) continue
+        const value = parseActionField(name, field, control)
+        if (value !== undefined) result[name] = value
+      }
+      return result
+    },
+  }
+}
+
 export function moduleNavigationItems(records: readonly DesktopApplicationNavigationRecord[]): DesktopModuleNavigationItem[] {
   return records.map((record, index) => ({
     id: `module:${record.moduleId}:${record.id}`,
@@ -374,56 +494,53 @@ export async function renderDesktopApplicationPage(
     const actionHead = el('div', 'enterprise-app-action-head')
     actionHead.append(
       text(el('span', 'enterprise-page-eyebrow'), 'GOVERNED ACTIONS'),
-      text(el('p', 'enterprise-app-binding'), 'Page actions can only execute names declared by the published module and this page.'),
+      text(
+        el('p', 'enterprise-app-binding'),
+        'Inputs are generated from the active deployment IR. Page schema cannot invent fields or execution authority.',
+      ),
     )
     actionBar.append(actionHead)
 
-    const details = el('details', 'enterprise-app-action-input')
-    const summary = text(el('summary'), 'Action input')
-    const input = el('textarea', 'enterprise-app-json-input')
-    input.value = '{}'
-    input.spellcheck = false
-    input.setAttribute('aria-label', 'Action input JSON object')
-    const target = el('input', 'enterprise-app-action-field')
-    target.placeholder = 'Target object id (optional)'
-    const version = el('input', 'enterprise-app-action-field')
-    version.placeholder = 'Expected object version (optional)'
-    version.type = 'number'
-    version.min = '1'
-    details.append(summary, input, target, version)
-    actionBar.append(details)
-
-    const buttons = el('div', 'enterprise-app-action-buttons')
     const actionStatus = text(el('p', 'enterprise-app-action-status'), 'Ready')
     const retryKeys = new Map<string, string>()
+    const actionButtons: HTMLButtonElement[] = []
+    const bindings = new Map((envelope.runtime?.actions ?? []).map((binding) => [binding.name, binding]))
 
     for (const action of envelope.page.actions ?? []) {
-      const button = text(el('button', 'enterprise-secondary-button'), action) as HTMLButtonElement
-      button.type = 'button'
-      button.disabled = !envelope.permissions.executable
-      button.onclick = () => {
+      const binding = bindings.get(action)
+      if (!binding) {
+        const unsupported = el('section', 'enterprise-app-unsupported')
+        unsupported.append(
+          text(el('strong'), action),
+          text(el('p'), 'The active deployment did not provide a governed input schema for this page action.'),
+        )
+        actionBar.append(unsupported)
+        continue
+      }
+
+      const form = renderActionForm(binding)
+      const execute = text(el('button', 'enterprise-secondary-button'), `Execute ${action}`) as HTMLButtonElement
+      execute.type = 'button'
+      execute.disabled = !envelope.permissions.executable
+      actionButtons.push(execute)
+      execute.onclick = () => {
         void (async () => {
-          let actionInput: unknown
+          let actionInput: Record<string, unknown>
           try {
-            actionInput = JSON.parse(input.value) as unknown
-          } catch {
-            actionStatus.textContent = 'Action input must be valid JSON.'
+            actionInput = form.readInput()
+          } catch (error) {
+            actionStatus.textContent = error instanceof Error ? error.message : 'Action input is invalid.'
             actionStatus.classList.add('is-error')
             return
           }
-          if (!actionInput || typeof actionInput !== 'object' || Array.isArray(actionInput)) {
-            actionStatus.textContent = 'Action input must be a JSON object.'
-            actionStatus.classList.add('is-error')
-            return
-          }
-          const expectedVersion = version.value ? Number(version.value) : undefined
+          const expectedVersion = form.version.value ? Number(form.version.value) : undefined
           if (expectedVersion !== undefined && (!Number.isInteger(expectedVersion) || expectedVersion < 1)) {
             actionStatus.textContent = 'Expected version must be a positive integer.'
             actionStatus.classList.add('is-error')
             return
           }
 
-          for (const candidate of buttons.querySelectorAll<HTMLButtonElement>('button')) candidate.disabled = true
+          for (const button of actionButtons) button.disabled = true
           actionStatus.classList.remove('is-error')
           actionStatus.textContent = `Executing ${action} through OBIS…`
           try {
@@ -433,8 +550,8 @@ export async function renderDesktopApplicationPage(
               moduleId: envelope.module.id,
               pageId: envelope.page.id,
               action,
-              input: actionInput as Record<string, unknown>,
-              ...(target.value.trim() ? { targetId: target.value.trim() } : {}),
+              input: actionInput,
+              ...(form.target.value.trim() ? { targetId: form.target.value.trim() } : {}),
               ...(expectedVersion !== undefined ? { expectedVersion } : {}),
               ...(retryKey ? { idempotencyKey: retryKey } : {}),
             })
@@ -446,25 +563,30 @@ export async function renderDesktopApplicationPage(
                 ...runtime.scope,
                 moduleId: envelope.module.id,
                 pageId: envelope.page.id,
-                limit: 250,
+                limit: envelope.runtime?.query?.maxLimit
+                  ? Math.min(250, envelope.runtime.query.maxLimit)
+                  : 250,
               })
               queryError = undefined
               renderCanvas()
             }
-            if (result.status !== 'executed' && result.status !== 'approval-required') actionStatus.classList.add('is-error')
+            if (result.status !== 'executed' && result.status !== 'approval-required') {
+              actionStatus.classList.add('is-error')
+            }
           } catch (error) {
             actionStatus.textContent = error instanceof Error ? error.message : 'The governed action failed.'
             actionStatus.classList.add('is-error')
           } finally {
-            for (const candidate of buttons.querySelectorAll<HTMLButtonElement>('button')) {
-              candidate.disabled = !envelope.permissions.executable
-            }
+            for (const button of actionButtons) button.disabled = !envelope.permissions.executable
           }
         })()
       }
-      buttons.append(button)
+      const controls = el('div', 'enterprise-app-action-buttons')
+      controls.append(execute)
+      form.container.append(controls)
+      actionBar.append(form.container)
     }
-    actionBar.append(buttons, actionStatus)
+    actionBar.append(actionStatus)
     page.append(actionBar)
   }
 
