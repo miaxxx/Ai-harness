@@ -5,6 +5,8 @@ import { app, ipcMain, safeStorage } from 'electron'
 import type {
   DesktopApplicationActionBinding,
   DesktopApplicationActionRequest,
+  DesktopApplicationAiRequest,
+  DesktopApplicationAiResult,
   DesktopApplicationActionResult,
   DesktopApplicationNavigationRecord,
   DesktopApplicationPageEnvelope,
@@ -333,6 +335,20 @@ function parseQueryResult(value: unknown): DesktopApplicationQueryResult {
   }
 }
 
+function parseAiResult(value: unknown): DesktopApplicationAiResult {
+  const row = record(value)
+  if (!row || (row.mode !== 'summary' && row.mode !== 'compose')) {
+    throw new Error('OBIS returned an invalid application AI result')
+  }
+  return {
+    mode: row.mode,
+    text: requiredString(row.text, 'ai.text'),
+    traceId: requiredString(row.traceId, 'ai.traceId'),
+    providerProfileId: requiredString(row.providerProfileId, 'ai.providerProfileId'),
+    modelId: requiredString(row.modelId, 'ai.modelId'),
+  }
+}
+
 function parseActionResult(value: unknown, idempotencyKey: string): DesktopApplicationActionResult {
   const row = record(value)
   const decision = record(row?.decision)
@@ -581,6 +597,38 @@ async function applicationAction(value: unknown): Promise<DesktopApplicationActi
   return parseActionResult(payload, idempotencyKey)
 }
 
+async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application AI request must be an object')
+  const moduleId = requiredString(row.moduleId, 'moduleId')
+  const pageId = requiredString(row.pageId, 'pageId')
+  if (row.mode !== 'summary' && row.mode !== 'compose') throw new Error('Application AI mode must be summary or compose')
+  if (row.prompt !== undefined && typeof row.prompt !== 'string') throw new Error('Application AI prompt must be text')
+  const input: DesktopApplicationAiRequest = {
+    ...scope,
+    moduleId,
+    pageId,
+    mode: row.mode,
+    ...(typeof row.prompt === 'string' && row.prompt.trim() ? { prompt: row.prompt.trim() } : {}),
+    ...(row.context !== undefined ? { context: row.context } : {}),
+  }
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/workspace/modules/${encodeURIComponent(moduleId)}/pages/${encodeURIComponent(pageId)}/ai`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        mode: input.mode,
+        ...(input.prompt ? { prompt: input.prompt } : {}),
+        ...(input.context !== undefined ? { context: input.context } : {}),
+      }),
+    },
+  )
+  return parseAiResult(payload)
+}
+
 function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-navigation', async (event, value: unknown) => {
     requireTrusted(event)
@@ -597,6 +645,10 @@ function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-action', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationAction(value)
+  })
+  ipcMain.handle('dsh:application-ai', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationAi(value)
   })
 }
 
