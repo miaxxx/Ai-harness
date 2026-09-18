@@ -4,6 +4,7 @@ import {
   applicationQueryColumns,
   isModuleNavigationItem,
   moduleNavigationItems,
+  renderDesktopApplicationPreviewPage,
 } from '../src/desktop-application-ui.ts'
 
 const records = [
@@ -88,5 +89,12 @@ void describe('enterprise application runtime navigation', () => {
       order: 50,
       moduleId: 'legacy',
     }), false)
+  })
+})
+
+
+void describe('enterprise application immutable preview', () => {
+  void it('exports a dedicated preview renderer that is separate from production application execution', () => {
+    assert.equal(typeof renderDesktopApplicationPreviewPage, 'function')
   })
 })
