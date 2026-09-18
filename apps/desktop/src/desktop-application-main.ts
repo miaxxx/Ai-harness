@@ -302,7 +302,7 @@ function parseQueryItem(value: unknown): DesktopApplicationQueryItem {
     id: requiredString(row.id, 'query.item.id'),
     object: requiredString(row.object, 'query.item.object'),
     values,
-    version: Number(row.version),
+    version: row.version,
     createdAt: requiredString(row.createdAt, 'query.item.createdAt'),
     updatedAt: requiredString(row.updatedAt, 'query.item.updatedAt'),
   }
