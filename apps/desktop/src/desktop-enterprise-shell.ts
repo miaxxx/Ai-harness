@@ -430,7 +430,10 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
         if (application.module.version !== item.moduleVersion) {
           throw new Error('The published module version changed after navigation was resolved. Refresh the workspace and try again.')
         }
-        renderDesktopApplicationPage(page, application)
+        await renderDesktopApplicationPage(page, application, {
+          scope,
+          bridge: window.dshApplications,
+        })
       } catch (error) {
         renderEmptyOutlet(
           page,
