@@ -18,6 +18,10 @@ const bridge: DesktopApplicationBridge = {
     'dsh:application-action',
     input,
   ) as ReturnType<DesktopApplicationBridge['action']>,
+  ai: input => ipcRenderer.invoke(
+    'dsh:application-ai',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['ai']>,
 }
 
 contextBridge.exposeInMainWorld('dshApplications', bridge)
