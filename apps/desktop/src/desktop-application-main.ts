@@ -605,6 +605,16 @@ async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult
   const pageId = requiredString(row.pageId, 'pageId')
   if (row.mode !== 'summary' && row.mode !== 'compose') throw new Error('Application AI mode must be summary or compose')
   if (row.prompt !== undefined && typeof row.prompt !== 'string') throw new Error('Application AI prompt must be text')
+  if (typeof row.prompt === 'string' && row.prompt.length > 12_000) throw new Error('Application AI prompt is too large')
+  if (row.context !== undefined) {
+    let encoded: string
+    try {
+      encoded = JSON.stringify(row.context)
+    } catch {
+      throw new Error('Application AI context must be JSON-serializable')
+    }
+    if (encoded.length > 60_000) throw new Error('Application AI context is too large')
+  }
   const input: DesktopApplicationAiRequest = {
     ...scope,
     moduleId,
