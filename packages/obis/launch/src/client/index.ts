@@ -35,18 +35,6 @@ export interface SafeWorkspaceLaunchExchange {
 
 const SESSION_KEY = 'dsh.obisLaunch'
 
-interface ObisLaunchRpcResult {
-  ok: boolean
-  value?: unknown
-  error?: { message?: string }
-}
-
-interface ObisLaunchConnection {
-  rpc: {
-    call(path: string, method: string, input: unknown): Promise<ObisLaunchRpcResult>
-  }
-}
-
 function consumeTicketFromFragment(): string | undefined {
   if (typeof location === 'undefined' || !location.hash) return undefined
   const params = new URLSearchParams(location.hash.slice(1))
@@ -94,10 +82,11 @@ function previewNode(value: unknown): PreviewUiNode | undefined {
   const children = Array.isArray(row.children)
     ? row.children.map(previewNode).filter((item): item is PreviewUiNode => item !== undefined)
     : undefined
+  const props = previewRecord(row.props)
   return {
     component: row.component.trim(),
     ...(typeof row.id === 'string' && row.id.trim() ? { id: row.id.trim() } : {}),
-    ...(previewRecord(row.props) ? { props: row.props as Record<string, unknown> } : {}),
+    ...(props ? { props } : {}),
     ...(children?.length ? { children } : {}),
   }
 }
