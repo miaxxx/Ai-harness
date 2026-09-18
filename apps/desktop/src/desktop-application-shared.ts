@@ -38,11 +38,40 @@ export interface DesktopApplicationPermissionDecision {
   reasons: string[]
 }
 
+export type DesktopApplicationFieldType = 'string' | 'number' | 'integer' | 'boolean' | 'datetime' | 'json' | 'ref'
+
+export interface DesktopApplicationActionField {
+  type: DesktopApplicationFieldType
+  required: boolean
+  ref?: string
+}
+
+export interface DesktopApplicationActionBinding {
+  name: string
+  target: string
+  risk?: 'low' | 'medium' | 'high' | 'critical'
+  approval?: string
+  input: Record<string, DesktopApplicationActionField>
+}
+
+export interface DesktopApplicationRuntimeBindings {
+  query?: {
+    name: string
+    object: string
+    fields: string[]
+    filterable: string[]
+    defaultLimit?: number
+    maxLimit?: number
+  }
+  actions: DesktopApplicationActionBinding[]
+}
+
 export interface DesktopApplicationPageEnvelope {
   module: { id: string; version: string; name: string }
   page: DesktopApplicationPageSchema
   designSystem: { id: string; version: string }
   permissions: DesktopApplicationPermissionDecision
+  runtime?: DesktopApplicationRuntimeBindings
 }
 
 export interface DesktopApplicationPageRequest extends DesktopEnterpriseScopeRequest {
