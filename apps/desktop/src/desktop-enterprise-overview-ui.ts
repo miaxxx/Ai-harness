@@ -90,10 +90,31 @@ function operationsMetrics(snapshot: DesktopOperationsSnapshot): HTMLElement[] {
   const activeKinds = WORKLOADS.filter(kind => (snapshot.usage.active[kind] ?? 0) > 0)
   const rateKinds = WORKLOADS.filter(kind => (snapshot.usage.startsThisMinute[kind] ?? 0) > 0)
   return [
-    metric('ENVIRONMENT', stateLabel(snapshot.state.state), snapshot.state.reason ?? `State version ${snapshot.state.version}`, snapshot.state.state),
-    metric('ACTIVE WORKLOADS', integer(snapshot.usage.activeTotal), activeKinds.length ? activeKinds.map(kind => `${kind} ${snapshot.usage.active[kind]}`).join(' · ') : 'No active governed workloads'),
-    metric('STARTS THIS MINUTE', integer(Object.values(snapshot.usage.startsThisMinute).reduce((sum, value) => sum + (value ?? 0), 0)), rateKinds.length ? rateKinds.map(kind => `${kind} ${snapshot.usage.startsThisMinute[kind]}`).join(' · ') : snapshot.usage.minuteBucket),
-    metric('MAINTENANCE', integer(snapshot.maintenance.filter(item => item.status === 'queued' || item.status === 'running').length), `${snapshot.maintenance.length} recent task${snapshot.maintenance.length === 1 ? '' : 's'}`),
+    metric(
+      'ENVIRONMENT',
+      stateLabel(snapshot.state.state),
+      snapshot.state.reason ?? `State version ${snapshot.state.version}`,
+      snapshot.state.state,
+    ),
+    metric(
+      'ACTIVE WORKLOADS',
+      integer(snapshot.usage.activeTotal),
+      activeKinds.length
+        ? activeKinds.map((kind) => `${kind} ${snapshot.usage.active[kind]}`).join(' · ')
+        : 'No active governed workloads',
+    ),
+    metric(
+      'STARTS THIS MINUTE',
+      integer(Object.values(snapshot.usage.startsThisMinute).reduce((sum, value) => sum + value, 0)),
+      rateKinds.length
+        ? rateKinds.map((kind) => `${kind} ${snapshot.usage.startsThisMinute[kind]}`).join(' · ')
+        : snapshot.usage.minuteBucket,
+    ),
+    metric(
+      'MAINTENANCE',
+      integer(snapshot.maintenance.filter((item) => item.status === 'queued' || item.status === 'running').length),
+      `${snapshot.maintenance.length} recent task${snapshot.maintenance.length === 1 ? '' : 's'}`,
+    ),
   ]
 }
 
@@ -126,11 +147,23 @@ function renderOperations(host: HTMLElement, snapshot: DesktopOperationsSnapshot
   headRight.append(text(el('span', 'enterprise-control-status'), `Updated ${timestamp(snapshot.usage.updatedAt)}`))
   const transitions = el('div', 'enterprise-control-actions')
   for (const next of allowedTransitions(snapshot.state.state)) {
-    const button = actionButton(next === 'active' ? 'Activate' : next === 'draining' ? 'Drain' : next === 'maintenance' ? 'Enter maintenance' : 'Disable', next === 'disabled' ? 'danger' : next === 'active' ? 'primary' : 'quiet')
+    const label = next === 'active'
+      ? 'Activate'
+      : next === 'draining'
+        ? 'Drain'
+        : next === 'maintenance'
+          ? 'Enter maintenance'
+          : 'Disable'
+    const tone = next === 'disabled' ? 'danger' : next === 'active' ? 'primary' : 'quiet'
+    const button = actionButton(label, tone)
     button.addEventListener('click', () => void executeAction(button, async () => {
       const promptValue = window.prompt(`Reason for transition to ${next} (optional)`, snapshot.state.reason ?? '')
       if (promptValue === null) return
-      await window.dshEnterprise.transitionEnvironment({ environmentId: snapshot.state.environmentId, to: next, ...(promptValue.trim() ? { reason: promptValue.trim() } : {}) })
+      await window.dshEnterprise.transitionEnvironment({
+        environmentId: snapshot.state.environmentId,
+        to: next,
+        ...(promptValue.trim() ? { reason: promptValue.trim() } : {}),
+      })
       await refresh()
     }))
     transitions.append(button)
@@ -164,7 +197,11 @@ function renderOperations(host: HTMLElement, snapshot: DesktopOperationsSnapshot
       button.addEventListener('click', () => void executeAction(button, async () => {
         const reason = window.prompt(`Reason for ${type} maintenance (optional)`, '')
         if (reason === null) return
-        await window.dshEnterprise.requestMaintenance({ environmentId: snapshot.state.environmentId, type, ...(reason.trim() ? { reason: reason.trim() } : {}) })
+        await window.dshEnterprise.requestMaintenance({
+          environmentId: snapshot.state.environmentId,
+          type,
+          ...(reason.trim() ? { reason: reason.trim() } : {}),
+        })
         await refresh()
       }))
       controls.append(button)
@@ -302,12 +339,19 @@ function renderUsage(host: HTMLElement, usage: DesktopModelUsageRecord): void {
     text(el('small'), `${integer(usage.inputTokens)} in / ${integer(usage.outputTokens)} out · ${usage.durationMs} ms`),
   )
   const meta = el('div', 'enterprise-control-list-meta')
-  meta.append(text(el('span', `enterprise-control-pill is-${usage.status}`), usage.status), text(el('strong'), money(usage.costUsd)), text(el('small'), timestamp(usage.createdAt)))
+  meta.append(
+    text(el('span', `enterprise-control-pill is-${usage.status}`), usage.status),
+    text(el('strong'), money(usage.costUsd)),
+    text(el('small'), timestamp(usage.createdAt)),
+  )
   row.append(main, meta)
   host.append(row)
 }
 
-export async function renderEnterpriseControlCenter(host: HTMLElement, scope: { environmentId: string; projectId?: string }): Promise<void> {
+export async function renderEnterpriseControlCenter(
+  host: HTMLElement,
+  scope: { environmentId: string; projectId?: string },
+): Promise<void> {
   host.replaceChildren()
   const loading = el('section', 'enterprise-control-loading')
   loading.append(text(el('span', 'enterprise-control-kicker'), 'OBIS ENTERPRISE'), text(el('h1'), 'Loading governed environment…'))
