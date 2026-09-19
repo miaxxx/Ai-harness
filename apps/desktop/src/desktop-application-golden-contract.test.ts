@@ -17,6 +17,16 @@ function preview(layout: DesktopApplicationPreviewPageEnvelope['page']['layout']
       moduleVersion: '0.1.0',
       sourceRevision: 4,
       persona: 'employee',
+      workspace: {
+        resourceId: 'obis-preview-supplier-risk-abc123',
+        provider: 'remote',
+        infrastructureBacked: true,
+        runtimeEnvironmentId: 'k8s:obis-preview-supplier-risk-abc123',
+        isolationKey: 'namespace/obis-preview-supplier-risk-abc123',
+        namespace: 'obis-preview-supplier-risk-abc123',
+        status: 'ready',
+        expiresAt: '2026-09-19T18:00:00.000Z',
+      },
     },
     module: { id: 'supplier-risk', version: '0.1.0', name: 'Supplier Risk' },
     page: {
@@ -80,7 +90,9 @@ describe('OBIS application golden contract', () => {
     expect(host.querySelector('[data-preview-id="preview_supplier_risk_r4"]')).not.toBeNull()
     expect(host.querySelector('[data-component="DataTable"]')).not.toBeNull()
     expect(host.querySelector('[data-component="RiskIndicator"]')).not.toBeNull()
-    expect(host.textContent).toContain('Immutable governed preview')
+    expect(host.textContent).toContain('Ephemeral governed preview workspace')
+    expect(host.textContent).toContain('obis-preview-supplier-risk-abc123')
+    expect(host.textContent).toContain('k8s:obis-preview-supplier-risk-abc123')
   })
 
   it('fails closed for an unknown remote component instead of executing it', () => {
