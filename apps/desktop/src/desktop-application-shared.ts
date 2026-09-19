@@ -93,6 +93,18 @@ export interface DesktopApplicationPreviewPageEnvelope {
     moduleVersion: string
     sourceRevision: number
     persona: DesktopApplicationPreviewPersona
+    workspace: {
+      resourceId: string
+      provider: 'logical' | 'remote'
+      infrastructureBacked: boolean
+      runtimeEnvironmentId: string
+      isolationKey: string
+      namespace?: string
+      endpoint?: string
+      status: 'ready' | 'tearing-down' | 'expired'
+      createdAt?: string
+      expiresAt: string
+    }
   }
   module: { id: string; version: string; name: string }
   page: DesktopApplicationPageSchema
