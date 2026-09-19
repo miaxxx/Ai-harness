@@ -1,0 +1,49 @@
+name: OBIS Stage A lockfile generator
+
+on:
+  push:
+    branches: [feature/enterprise-v3.1-sprint-a]
+    paths:
+      - .github/workflows/obis-lockfile-generator.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/enterprise-v3.1-sprint-a
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Materialize OBIS package manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .stage-a-lockfiles/{kernel,enterprise,developer}
+          cat > .stage-a-lockfiles/kernel/package.json <<'EOF'
+          {"name":"@obis/kernel","private":true,"version":"0.1.0","type":"module","dependencies":{"@modelcontextprotocol/client":"^2.0.0","@xmldom/xmldom":"^0.9.12","fastify":"^5.6.0","mammoth":"^1.12.2","pdf-parse":"^2.4.5","pg":"^8.13.0","xml-crypto":"^6.1.2"},"devDependencies":{"@types/node":"^24.0.0","@types/pg":"^8.11.0","tsx":"^4.20.0","typescript":"^6.0.0"}}
+          EOF
+          cat > .stage-a-lockfiles/enterprise/package.json <<'EOF'
+          {"name":"@obis/enterprise-app","private":true,"version":"0.1.0","type":"module","dependencies":{"@vitejs/plugin-react":"^5.0.0","vite":"^7.0.0","typescript":"^6.0.0","react":"^19.0.0","react-dom":"^19.0.0"},"devDependencies":{"@types/react":"^19.0.0","@types/react-dom":"^19.0.0"}}
+          EOF
+          cat > .stage-a-lockfiles/developer/package.json <<'EOF'
+          {"name":"@obis/developer-platform","private":true,"version":"0.1.0","type":"module","dependencies":{"@modelcontextprotocol/fastify":"^2.0.0","@modelcontextprotocol/node":"^2.0.0","@modelcontextprotocol/server":"^2.0.0","@vitejs/plugin-react":"^5.0.0","fastify":"^5.6.0","react":"^19.0.0","react-dom":"^19.0.0","vite":"^7.0.0","zod":"^4.0.0"},"devDependencies":{"@types/node":"^24.0.0","@types/react":"^19.0.0","@types/react-dom":"^19.0.0","tsx":"^4.20.0","typescript":"^6.0.0"}}
+          EOF
+      - name: Resolve lockfiles without lifecycle scripts
+        run: |
+          npm install --prefix .stage-a-lockfiles/kernel --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --prefix .stage-a-lockfiles/enterprise --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --prefix .stage-a-lockfiles/developer --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit generated evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .stage-a-lockfiles/*/package.json .stage-a-lockfiles/*/package-lock.json
+          git commit -m "chore(stage-a): materialize OBIS lockfiles" || exit 0
+          git push origin HEAD:feature/enterprise-v3.1-sprint-a

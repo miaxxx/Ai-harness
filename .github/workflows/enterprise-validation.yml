@@ -1,0 +1,108 @@
+name: Enterprise Validation Gate
+
+on:
+  push:
+    branches: ['feature/enterprise-v3.1-sprint-a', 'feature/application-platform-v5-foundation']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness-validation:
+    name: Harness contracts, tests and desktop smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OBIS_REPO_TOKEN: ${{ secrets.OBIS_REPO_TOKEN }}
+      OBIS_DATABASE_URL: postgresql://obis:obis@127.0.0.1:5432/obis_e2e
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: obis
+          POSTGRES_PASSWORD: obis
+          POSTGRES_DB: obis_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U obis -d obis_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Validate package manager contract
+        shell: bash
+        run: |
+          test "$(node -p "require('./package.json').packageManager")" = "pnpm@11.7.0"
+          test -f pnpm-lock.yaml
+      - name: Install exact workspace graph
+        run: pnpm install --frozen-lockfile
+      - name: Build host contracts
+        run: pnpm run build:lib:host
+      - name: Lint
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run lint 2>&1 | tee harness-lint.log
+      - name: Upload lint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-lint-${{ github.sha }}
+          path: harness-lint.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: OBIS bridge and tool contract tests
+        run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
+      - name: Desktop enterprise application runtime tests
+        run: pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
+      - name: Desktop build smoke
+        run: pnpm run build:desktop
+      - name: Verify private OBIS checkout credential
+        shell: bash
+        run: |
+          if [ -z "$OBIS_REPO_TOKEN" ]; then
+            echo "::error::OBIS_REPO_TOKEN is required to certify the private obis-dev repository against AI Harness."
+            exit 1
+          fi
+      - name: Checkout current OBIS v5 branch
+        uses: actions/checkout@v6
+        with:
+          repository: miaxxx/obis-dev
+          ref: feature/application-platform-v5-foundation
+          path: _compat/obis
+          token: ${{ env.OBIS_REPO_TOKEN }}
+          persist-credentials: false
+      - name: Install OBIS Kernel fixture dependencies
+        run: npm --prefix _compat/obis/10-kernel install --no-audit --no-fund
+      - name: Cross-repo fixture E2E
+        run: pnpm exec tsx tests/obis-cross-repo.e2e.ts
+      - name: Upload desktop build smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build-smoke-${{ github.sha }}
+          path: |
+            apps/desktop/dist
+            apps/desktop/dist-renderer
+          if-no-files-found: warn
+          retention-days: 7
