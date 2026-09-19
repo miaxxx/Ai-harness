@@ -534,7 +534,8 @@ function parsePreviewPageEnvelope(value: unknown): DesktopApplicationPreviewPage
   const preview = record(row?.preview)
   const module = record(row?.module)
   const designSystem = record(row?.designSystem)
-  if (!row || !preview || !module || !designSystem) throw new Error('OBIS returned an invalid application preview page envelope')
+  const workspace = record(preview?.workspace)
+  if (!row || !preview || !module || !designSystem || !workspace) throw new Error('OBIS returned an invalid application preview page envelope')
   const permissions = parsePermissions(row.access)
   const envelope: DesktopApplicationPreviewPageEnvelope = {
     preview: {
@@ -545,6 +546,24 @@ function parsePreviewPageEnvelope(value: unknown): DesktopApplicationPreviewPage
         ? preview.sourceRevision
         : (() => { throw new Error('Application preview source revision is invalid') })(),
       persona: parsePreviewPersona(preview.persona),
+      workspace: {
+        resourceId: requiredString(workspace.resourceId, 'preview.workspace.resourceId'),
+        provider: workspace.provider === 'logical' || workspace.provider === 'remote'
+          ? workspace.provider
+          : (() => { throw new Error('Application preview workspace provider is invalid') })(),
+        infrastructureBacked: typeof workspace.infrastructureBacked === 'boolean'
+          ? workspace.infrastructureBacked
+          : (() => { throw new Error('Application preview workspace infrastructureBacked is invalid') })(),
+        runtimeEnvironmentId: requiredString(workspace.runtimeEnvironmentId, 'preview.workspace.runtimeEnvironmentId'),
+        isolationKey: requiredString(workspace.isolationKey, 'preview.workspace.isolationKey'),
+        ...(typeof workspace.namespace === 'string' && workspace.namespace.trim() ? { namespace: workspace.namespace.trim() } : {}),
+        ...(typeof workspace.endpoint === 'string' && workspace.endpoint.trim() ? { endpoint: workspace.endpoint.trim() } : {}),
+        status: workspace.status === 'ready' || workspace.status === 'tearing-down' || workspace.status === 'expired'
+          ? workspace.status
+          : (() => { throw new Error('Application preview workspace status is invalid') })(),
+        ...(typeof workspace.createdAt === 'string' && workspace.createdAt.trim() ? { createdAt: workspace.createdAt.trim() } : {}),
+        expiresAt: requiredString(workspace.expiresAt, 'preview.workspace.expiresAt'),
+      },
     },
     module: {
       id: requiredString(module.id, 'module.id'),
