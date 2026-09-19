@@ -648,8 +648,13 @@ export function renderDesktopApplicationPreviewPage(
 
   const notice = el('section', 'enterprise-app-unsupported')
   notice.append(
-    text(el('strong'), 'Immutable governed preview'),
-    text(el('p'), 'This view renders the draft UI schema and entitlement result only. Query, Action, Approval and AI execution are disabled until the exact module revision passes governance and is published.'),
+    text(el('strong'), envelope.preview.workspace.infrastructureBacked ? 'Ephemeral governed preview workspace' : 'Immutable governed preview'),
+    text(
+      el('p'),
+      envelope.preview.workspace.infrastructureBacked
+        ? `Isolated workspace ${envelope.preview.workspace.namespace ?? envelope.preview.workspace.resourceId} · runtime ${envelope.preview.workspace.runtimeEnvironmentId} · expires ${envelope.preview.workspace.expiresAt}. UI rendering remains read-only until the exact module revision passes governance and is published.`
+        : 'This view renders the draft UI schema and entitlement result only. Query, Action, Approval and AI execution are disabled until the exact module revision passes governance and is published.',
+    ),
   )
   page.append(notice)
 
