@@ -1,0 +1,67 @@
+name: Generate OBIS npm lockfiles
+
+on:
+  push:
+    branches: [feature/application-platform-v5-foundation]
+    paths:
+      - '.github/workflows/obis-lockfile-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/application-platform-v5-foundation
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate registry-resolved lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="tools/obis-lockfile-bootstrap"
+          rm -rf "$root/output"
+          mkdir -p "$root/output"
+          for dir in 10-kernel 20-enterprise 30-developer; do
+            rm -f "$root/$dir/package-lock.json"
+            npm install --prefix "$root/$dir" --package-lock-only --ignore-scripts --no-audit --no-fund
+            cp "$root/$dir/package-lock.json" "$root/output/$dir.package-lock.json"
+            rm -f "$root/$dir/package-lock.json"
+          done
+      - name: Validate generated locks
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const root='tools/obis-lockfile-bootstrap';
+          for(const dir of ['10-kernel','20-enterprise','30-developer']){
+            const pkg=JSON.parse(fs.readFileSync(root+'/'+dir+'/package.json','utf8'));
+            const lock=JSON.parse(fs.readFileSync(root+'/output/'+dir+'.package-lock.json','utf8'));
+            if(lock.lockfileVersion<3) throw new Error(dir+': expected lockfileVersion >= 3');
+            if(lock.name!==pkg.name||lock.version!==pkg.version) throw new Error(dir+': package identity mismatch');
+            const base=lock.packages?.[''];
+            if(!base||base.name!==pkg.name||base.version!==pkg.version) throw new Error(dir+': root package metadata mismatch');
+            if(!Object.keys(lock.packages||{}).some(key=>key&&key.startsWith('node_modules/'))) throw new Error(dir+': no resolved dependency packages');
+          }
+          NODE
+          sha256sum tools/obis-lockfile-bootstrap/output/*.package-lock.json > tools/obis-lockfile-bootstrap/output/SHA256SUMS
+      - name: Commit generated locks to bootstrap branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/obis-lockfile-bootstrap/output
+          if git diff --cached --quiet; then
+            echo "Generated lockfiles are unchanged."
+            exit 0
+          fi
+          git commit -m "chore(lockfile-bootstrap): [lockfile-bootstrap] generate OBIS npm locks"
+          git push origin HEAD:feature/application-platform-v5-foundation
