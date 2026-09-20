@@ -257,18 +257,19 @@ export function apply(ctx: Context): void {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('obis:launch-ready', { detail: exchange }))
       if (exchange.launch.preview) {
+        const previewLaunch = exchange.launch.preview
         void connection.rpc.call('/obis-launch', 'preview-page', undefined).then((previewResult) => {
           if (!previewResult.ok) throw new Error(previewResult.error.message ?? 'OBIS application preview failed')
           const page = parsePreviewPage(previewResult.value)
           if (
-            page.preview.id !== exchange.launch.preview?.previewId
-            || page.page.id !== exchange.launch.preview.pageId
-            || page.preview.persona !== exchange.launch.preview.persona
+            page.preview.id !== previewLaunch.previewId
+            || page.page.id !== previewLaunch.pageId
+            || page.preview.persona !== previewLaunch.persona
           ) throw new Error('OBIS application preview response did not match the launch-bound preview.')
           renderPreviewOverlay(page)
           window.dispatchEvent(new CustomEvent('obis:application-preview-ready', {
             detail: {
-              preview: exchange.launch.preview,
+              preview: previewLaunch,
               environmentId: exchange.launch.environmentId,
               autonomy: exchange.launch.autonomy,
               page,
