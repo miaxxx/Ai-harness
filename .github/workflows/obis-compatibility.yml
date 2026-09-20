@@ -59,9 +59,9 @@ jobs:
           cp packages/obis/launch/lib/types/client/index.js packages/obis/launch/lib/client.js
       - name: Verify OBIS package entry contracts
         run: |
-          node -e "await import('@deepseek-ai/dsh-obis-bridge')"
-          node -e "await import('@deepseek-ai/dsh-tool-obis')"
-          node -e "await import('@deepseek-ai/dsh-obis-launch')"
-          node -e "await import('@deepseek-ai/dsh-obis-launch/invariant')"
+          (cd packages/obis/bridge && node -e "await import('@deepseek-ai/dsh-obis-bridge')")
+          (cd packages/obis/tool-obis && node -e "await import('@deepseek-ai/dsh-tool-obis')")
+          (cd packages/obis/launch && node -e "await import('@deepseek-ai/dsh-obis-launch')")
+          (cd packages/obis/launch && node -e "await import('@deepseek-ai/dsh-obis-launch/invariant')")
       - name: Run OBIS integration contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
