@@ -46,6 +46,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Validate whole-repo solution graph
         run: pnpm exec tsc -b tsconfig.json --dry --pretty false
+      - name: Build host runtime dependencies
+        run: pnpm run build:lib:host
       - name: Typecheck OBIS integration packages
         run: |
           pnpm exec tsc -b packages/obis/bridge packages/obis/tool-obis
