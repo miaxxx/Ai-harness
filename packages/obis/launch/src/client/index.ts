@@ -251,7 +251,7 @@ export function apply(ctx: Context): void {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   if (connection === undefined) throw new Error('OBIS launch requires the client connection service.')
   void connection.rpc.call('/obis-launch', 'exchange', { ticket, harnessOrigin }).then((result) => {
-    if (!result.ok) throw new Error(result.error.message ?? 'OBIS launch exchange failed')
+    if (!result.ok) throw new Error(result.error.message)
     const exchange = result.value as SafeWorkspaceLaunchExchange
     persistSafeLaunch(exchange)
     if (typeof window !== 'undefined') {
@@ -259,7 +259,7 @@ export function apply(ctx: Context): void {
       if (exchange.launch.preview) {
         const previewLaunch = exchange.launch.preview
         void connection.rpc.call('/obis-launch', 'preview-page', undefined).then((previewResult) => {
-          if (!previewResult.ok) throw new Error(previewResult.error.message ?? 'OBIS application preview failed')
+          if (!previewResult.ok) throw new Error(previewResult.error.message)
           const page = parsePreviewPage(previewResult.value)
           if (
             page.preview.id !== previewLaunch.previewId
