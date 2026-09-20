@@ -1,0 +1,189 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without v prefix
+        required: true
+      channel:
+        description: Release channel
+        required: true
+        type: choice
+        options: [canary, beta, stable, enterprise-lts]
+      publish:
+        description: Publish GitHub release and optional S3-compatible feed
+        required: true
+        default: false
+        type: boolean
+      stage_b_signing:
+        description: Enable configured macOS/Windows signing and notarization secrets
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          channel="$INPUT_CHANNEL"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#desktop-v}"; fi
+          if [ -z "$channel" ]; then
+            case "$version" in
+              *canary*) channel=canary ;;
+              *enterprise-lts*) channel=enterprise-lts ;;
+              *beta*|*rc*) channel=beta ;;
+              *) channel=stable ;;
+            esac
+          fi
+          node scripts/desktop-release-artifacts.mjs validate --version "$version" --channel "$channel"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Test release artifact contract
+        run: node --test scripts/desktop-release-artifacts.test.mjs
+      - run: pnpm run build:lib
+      - run: pnpm --dir apps/desktop run build
+      - run: pnpm exec vitest run apps/desktop/tests/update.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts apps/desktop/tests/content.spec.ts
+
+  package:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: mac
+          - os: windows-2025
+            target: win
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.stage_b_signing == true && 'true' || 'false' }}
+      CSC_LINK: ${{ inputs.stage_b_signing == true && (matrix.target == 'mac' && secrets.MAC_CSC_LINK || secrets.WIN_CSC_LINK) || '' }}
+      CSC_KEY_PASSWORD: ${{ inputs.stage_b_signing == true && (matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || secrets.WIN_CSC_KEY_PASSWORD) || '' }}
+      APPLE_ID: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_ID || '' }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      APPLE_TEAM_ID: ${{ inputs.stage_b_signing == true && matrix.target == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+      OBIS_DESKTOP_UPDATE_CHANNEL: ${{ needs.validate.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Stamp release version
+        shell: bash
+        run: node -e "const fs=require('fs');const p='apps/desktop/package.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n')" '${{ needs.validate.outputs.version }}'
+      - run: pnpm run build:lib
+      - if: matrix.target == 'mac'
+        run: pnpm --dir apps/desktop run dist:mac:release
+      - if: matrix.target == 'win'
+        run: pnpm --dir apps/desktop run dist:win:release
+      - name: Finalize update metadata and integrity manifest
+        shell: bash
+        run: >-
+          node scripts/desktop-release-artifacts.mjs finalize
+          --root apps/desktop/dist-electron
+          --version '${{ needs.validate.outputs.version }}'
+          --channel '${{ needs.validate.outputs.channel }}'
+          --target '${{ matrix.target }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ needs.validate.outputs.version }}
+          path: apps/desktop/dist-electron/**
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: ${{ github.event_name == 'push' || inputs.publish == true }}
+    needs: [validate, package]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Build cross-platform release index
+        run: >-
+          node scripts/desktop-release-artifacts.mjs index
+          --root release
+          --version '${{ needs.validate.outputs.version }}'
+          --channel '${{ needs.validate.outputs.channel }}'
+      - name: Publish immutable GitHub release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CHANNEL: ${{ needs.validate.outputs.channel }}
+        run: |
+          set -euo pipefail
+          tag="desktop-v${VERSION}"
+          flags=()
+          if [ "$CHANNEL" != stable ]; then flags+=(--prerelease); fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "Desktop ${VERSION}" --notes "Channel: ${CHANNEL}" "${flags[@]}"
+          else
+            gh release edit "$tag" --title "Desktop ${VERSION}" --notes "Channel: ${CHANNEL}" "${flags[@]}"
+          fi
+          find release -type f -print0 | xargs -0 -r gh release upload "$tag" --clobber
+      - name: Publish optional S3/COS-compatible channel feed
+        if: ${{ vars.DESKTOP_UPDATE_BUCKET != '' }}
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_UPDATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_UPDATE_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.DESKTOP_UPDATE_REGION }}
+          AWS_ENDPOINT_URL: ${{ vars.DESKTOP_UPDATE_ENDPOINT_URL }}
+          BUCKET: ${{ vars.DESKTOP_UPDATE_BUCKET }}
+          CHANNEL: ${{ needs.validate.outputs.channel }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "$AWS_ENDPOINT_URL" ]; then args+=(--endpoint-url "$AWS_ENDPOINT_URL"); fi
+          destination="s3://${BUCKET}/${CHANNEL}/"
+          # Publish immutable payloads before channel metadata so clients can never
+          # observe metadata that references an artifact which is not uploaded yet.
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*.yml' --exclude '*.yaml' --exclude '*.json' --cache-control 'public,max-age=31536000,immutable'
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*' --include '*.yml' --include '*.yaml' --cache-control 'no-cache,max-age=0'
+          aws "${args[@]}" s3 sync release "$destination" --no-progress --exclude '*' --include '*.json' --cache-control 'no-cache,max-age=0'
+
+# Stage A packages are intentionally unsigned unless stage_b_signing is explicitly enabled.
+# Stage B secret placeholders:
+# MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
+# DESKTOP_UPDATE_ACCESS_KEY_ID / DESKTOP_UPDATE_SECRET_ACCESS_KEY
+# DESKTOP_UPDATE_BUCKET / DESKTOP_UPDATE_REGION / DESKTOP_UPDATE_ENDPOINT_URL

@@ -20,12 +20,13 @@ jobs:
       - name: Test persistent ACP runtime
         run: pnpm exec vitest run packages/acp/acp/tests tests/runtime-portability.e2e.ts
       # Binary acceptance must exercise release-shaped runtime modules rather
-      # than source imports. `build:lib:host` is the repository-owned host
-      # dependency graph: it typechecks project references and emits the JS
-      # package closure that the ACP Runtime bin resolves under plain Node.
-      # Product app bundles remain separate release artifacts below.
+      # than source imports. The ACP Runtime first needs the Host dependency
+      # graph; Desktop additionally consumes the Client graph and generated
+      # Remote facades, so both closures are built before the product client.
       - name: Build host runtime closure
         run: pnpm run build:lib:host
+      - name: Build client runtime closure
+        run: pnpm run build:lib:client
       - name: Build Desktop product client
         run: pnpm --dir apps/desktop run build
       - name: Test VS Code ACP session controller

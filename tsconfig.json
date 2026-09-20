@@ -4,12 +4,16 @@
   // consumers — tsx running examples/ and scripts/ (no nearer tsconfig)
   // resolves workspace imports through this file. `files: []` keeps it
   // program-less, so the host/client cordis Context merges never meet.
+  // OBIS bridge/tool projects are explicit solution members so the ordinary
+  // whole-repo build cannot omit enterprise integration type regressions.
   // NEVER add include/files entries, and NEVER flatten this solution into a
   // single ts.Program (scripts seed tsconfig.host.json or tsconfig.client.json).
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
     { "path": "./tsconfig.host.json" },
+    { "path": "./packages/obis/bridge" },
+    { "path": "./packages/obis/tool-obis" },
     { "path": "./tsconfig.client.json" }
   ]
 }

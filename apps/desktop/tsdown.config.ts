@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown'
 /** Bundle the ESM main process and CommonJS sandboxed preload separately. */
 export default defineConfig([
   {
-    entry: ['lib/types/main/main.js'],
+    entry: ['lib/types/main/enterprise-main.js'],
     outDir: 'dist',
     format: ['esm'],
     platform: 'node',
