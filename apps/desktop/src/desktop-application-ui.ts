@@ -252,7 +252,7 @@ function renderFilter(node: DesktopApplicationUiNode, result: DesktopApplication
   const select = el('select', 'enterprise-app-action-field')
   select.append(new Option('All', ''))
   const values = new Set<string>()
-  for (const item of result?.items ?? []) {
+  for (const item of result ? result.items : []) {
     const value = displayValue(item.values[field])
     if (value) values.add(value)
   }
@@ -273,7 +273,7 @@ function renderPicker(node: DesktopApplicationUiNode, result: DesktopApplication
   const field = scalarProp(node, 'field') ?? 'name'
   const select = el('select', 'enterprise-app-action-field')
   select.append(new Option('Select…', ''))
-  for (const item of result?.items ?? []) {
+  for (const item of result ? result.items : []) {
     select.append(new Option(displayValue(item.values[field] ?? item.id), item.id))
   }
   wrap.append(text(el('span'), scalarProp(node, 'label', 'title') ?? readableComponent(node.component)), select)
@@ -314,7 +314,7 @@ function renderRiskDistribution(node: DesktopApplicationUiNode, result: DesktopA
   const field = scalarProp(node, 'field') ?? 'risk'
   const grid = el('div', 'enterprise-app-risk-distribution')
   const counts = new Map<string, number>()
-  for (const item of result?.items ?? []) {
+  for (const item of result ? result.items : []) {
     const value = displayValue(item.values[field] ?? item.values.riskLevel ?? item.values.status)
     if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
   }
@@ -403,7 +403,9 @@ function renderNode(
       const button = text(el('button', 'enterprise-secondary-button'), scalarProp(child, 'label', 'title') ?? `Tab ${index + 1}`) as HTMLButtonElement
       button.type = 'button'
       button.setAttribute('role', 'tab')
-      button.onclick = () => activate(index)
+      button.onclick = () => {
+        activate(index)
+      }
       tabList.append(button)
     })
     host.append(tabList, panel)
@@ -434,7 +436,9 @@ function renderNode(
   host.dataset.component = node.component
   if (node.id) host.dataset.componentId = node.id
   if (tag === 'form') {
-    host.addEventListener('submit', (event) => event.preventDefault())
+    host.addEventListener('submit', event => {
+      event.preventDefault()
+    })
   }
   const title = scalarProp(node, 'title', 'label')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
