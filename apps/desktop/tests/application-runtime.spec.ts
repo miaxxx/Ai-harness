@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
 import {
   applicationQueryColumns,
@@ -6,6 +7,12 @@ import {
   moduleNavigationItems,
   renderDesktopApplicationPreviewPage,
 } from '../src/desktop-application-ui.ts'
+import {
+  DESKTOP_APPLICATION_COMPONENTS,
+  DESKTOP_APPLICATION_PATTERNS,
+  DESKTOP_APPLICATION_TOKENS,
+  OBIS_UI_RUNTIME_CONTRACT_VERSION,
+} from '../src/desktop-application-contract.ts'
 
 const records = [
   {
@@ -96,5 +103,24 @@ void describe('enterprise application runtime navigation', () => {
 void describe('enterprise application immutable preview', () => {
   void it('exports a dedicated preview renderer that is separate from production application execution', () => {
     assert.equal(typeof renderDesktopApplicationPreviewPage, 'function')
+  })
+})
+
+
+void describe('OBIS shared UI runtime compatibility', () => {
+  void it('matches the pinned OBIS shared UI runtime fixture exactly', async () => {
+    const fixture = JSON.parse(await readFile(
+      new URL('./fixtures/obis-ui-runtime-contract.json', import.meta.url),
+      'utf8',
+    )) as {
+      version: string
+      components: string[]
+      tokens: string[]
+      patterns: string[]
+    }
+    assert.equal(OBIS_UI_RUNTIME_CONTRACT_VERSION, fixture.version)
+    assert.deepEqual([...DESKTOP_APPLICATION_COMPONENTS], fixture.components)
+    assert.deepEqual([...DESKTOP_APPLICATION_TOKENS], fixture.tokens)
+    assert.deepEqual([...DESKTOP_APPLICATION_PATTERNS], fixture.patterns)
   })
 })

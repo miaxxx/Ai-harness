@@ -5,6 +5,10 @@ on:
     branches: ['feature/**']
     paths:
       - 'packages/obis/**'
+      - 'apps/desktop/src/desktop-application-*.ts'
+      - 'apps/desktop/src/desktop-application-*.tsx'
+      - 'apps/desktop/tests/application-runtime.spec.ts'
+      - 'apps/desktop/tests/fixtures/obis-ui-runtime-contract.json'
       - '.github/workflows/obis-compatibility.yml'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -13,6 +17,10 @@ on:
   pull_request:
     paths:
       - 'packages/obis/**'
+      - 'apps/desktop/src/desktop-application-*.ts'
+      - 'apps/desktop/src/desktop-application-*.tsx'
+      - 'apps/desktop/tests/application-runtime.spec.ts'
+      - 'apps/desktop/tests/fixtures/obis-ui-runtime-contract.json'
       - '.github/workflows/obis-compatibility.yml'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -67,3 +75,7 @@ jobs:
           (cd packages/obis/launch && node -e "await import('@deepseek-ai/dsh-obis-launch/invariant')")
       - name: Run OBIS integration contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
+      - name: Verify Desktop shared renderer contract
+        run: |
+          pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts
+          pnpm exec vitest run apps/desktop/tests/application-golden-contract.spec.ts
