@@ -215,11 +215,11 @@ function applyLocalTableView(root: HTMLElement): void {
   const filterField = root.dataset.localFilterField ?? ''
   const filterValue = root.dataset.localFilterValue ?? ''
   for (const table of root.querySelectorAll<HTMLTableElement>('table.enterprise-app-data-table')) {
-    const headers = [...table.querySelectorAll('thead th')].map((item) => item.textContent || '')
+    const headers = [...table.querySelectorAll('thead th')].map(item => item.textContent || '')
     const filterIndex = filterField ? headers.indexOf(filterField) : -1
     for (const row of table.querySelectorAll<HTMLTableRowElement>('tbody tr')) {
       const cells = [...row.cells]
-      const matchesSearch = !search || cells.some((cell) => (cell.textContent || '').toLocaleLowerCase().includes(search))
+      const matchesSearch = !search || cells.some(cell => (cell.textContent || '').toLocaleLowerCase().includes(search))
       const filterCell = filterIndex >= 0 ? cells[filterIndex] : undefined
       const matchesFilter = !filterValue || filterIndex < 0 || (filterCell ? filterCell.textContent || '' : '') === filterValue
       row.hidden = !(matchesSearch && matchesFilter)
