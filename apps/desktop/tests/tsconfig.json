@@ -3,11 +3,25 @@
   "compilerOptions": {
     "noEmit": true,
     "rewriteRelativeImportExtensions": false,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["./**/*.ts", "../src/css-modules.d.ts", "../src/desktop-application-ui.ts", "../src/desktop-application-shared.ts", "../src/desktop-enterprise-runtime-shared.ts", "../src/desktop-obis-identity-shared.ts"],
+  "include": [
+    "./**/*.ts",
+    "../src/css-modules.d.ts",
+    "../src/desktop-application-ui.ts",
+    "../src/desktop-application-shared.ts",
+    "../src/desktop-enterprise-runtime-shared.ts",
+    "../src/desktop-obis-identity-shared.ts",
+    "../src/desktop-application-contract.ts"
+  ],
   "references": [
-    { "path": "../tsconfig.renderer.json" },
-    { "path": "../tsconfig.main.json" }
+    {
+      "path": "../tsconfig.renderer.json"
+    },
+    {
+      "path": "../tsconfig.main.json"
+    }
   ]
 }
