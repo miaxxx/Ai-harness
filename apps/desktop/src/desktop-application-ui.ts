@@ -1,4 +1,9 @@
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
+import {
+  DESKTOP_APPLICATION_COMPONENTS,
+  validateDesktopApplicationContract,
+  type DesktopApplicationContractIssue,
+} from './desktop-application-contract.ts'
 import type { DesktopNavigationItem } from './desktop-obis-identity-shared.ts'
 import type {
   DesktopApplicationActionBinding,
@@ -17,11 +22,7 @@ import type {
 const STRUCTURAL_COMPONENTS = new Set([
   'Page', 'Section', 'Stack', 'Grid', 'Form', 'Table', 'Tabs', 'Drawer', 'Modal', 'Dashboard', 'Detail',
 ])
-const ENTERPRISE_COMPONENTS = new Set([
-  'Chart', 'Search', 'Filter', 'DataTable', 'ObjectDetail', 'ObjectPicker', 'PeoplePicker', 'ApprovalQueue',
-  'Timeline', 'ActivityFeed', 'RiskIndicator', 'AISummary', 'AIComposer',
-])
-const SUPPORTED_COMPONENTS = new Set([...STRUCTURAL_COMPONENTS, ...ENTERPRISE_COMPONENTS])
+const SUPPORTED_COMPONENTS = new Set<string>(DESKTOP_APPLICATION_COMPONENTS)
 
 export interface DesktopApplicationRenderRuntime {
   scope: DesktopEnterpriseScopeRequest
@@ -80,6 +81,21 @@ export function applicationQueryColumns(result: DesktopApplicationQueryResult, m
     }
   }
   return ['id', ...keys]
+}
+
+function renderContractIssues(issues: readonly DesktopApplicationContractIssue[]): HTMLElement {
+  const block = el('section', 'enterprise-app-unsupported')
+  block.dataset.rendererContract = 'blocked'
+  block.append(
+    text(el('span', 'enterprise-page-eyebrow'), 'RENDERER CONTRACT BLOCKED'),
+    text(el('strong'), 'This application schema is not compatible with the certified Desktop renderer contract.'),
+  )
+  const list = el('ul')
+  for (const issue of issues) {
+    list.append(text(el('li'), `${issue.path} · ${issue.message}`))
+  }
+  block.append(list)
+  return block
 }
 
 function renderUnsupported(node: DesktopApplicationUiNode): HTMLElement {
@@ -658,13 +674,9 @@ export function renderDesktopApplicationPreviewPage(
   )
   page.append(notice)
 
-  if (envelope.designSystem.id !== 'obis-enterprise') {
-    const blocked = el('section', 'enterprise-app-unsupported')
-    blocked.append(
-      text(el('strong'), 'Unsupported design system'),
-      text(el('p'), `This Desktop build cannot preview ${envelope.designSystem.id}@${envelope.designSystem.version}.`),
-    )
-    page.append(blocked)
+  const contractIssues = validateDesktopApplicationContract(envelope.page, envelope.designSystem)
+  if (contractIssues.length) {
+    page.append(renderContractIssues(contractIssues))
     host.append(page)
     return
   }
@@ -705,13 +717,9 @@ export async function renderDesktopApplicationPage(
   head.append(title, authority)
   page.append(head)
 
-  if (envelope.designSystem.id !== 'obis-enterprise') {
-    const blocked = el('section', 'enterprise-app-unsupported')
-    blocked.append(
-      text(el('strong'), 'Unsupported design system'),
-      text(el('p'), `This Desktop build cannot render ${envelope.designSystem.id}@${envelope.designSystem.version}.`),
-    )
-    page.append(blocked)
+  const contractIssues = validateDesktopApplicationContract(envelope.page, envelope.designSystem)
+  if (contractIssues.length) {
+    page.append(renderContractIssues(contractIssues))
     host.append(page)
     return
   }
