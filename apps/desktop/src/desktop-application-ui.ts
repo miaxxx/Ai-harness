@@ -20,7 +20,7 @@ import type {
 } from './desktop-application-shared.ts'
 
 const STRUCTURAL_COMPONENTS = new Set([
-  'Page', 'Section', 'Stack', 'Grid', 'Form', 'Table', 'Tabs', 'Drawer', 'Modal', 'Dashboard', 'Detail',
+  'Page', 'Section', 'Stack', 'Grid', 'Form', 'Table', 'Tabs', 'Drawer', 'Modal', 'Dashboard',
 ])
 const SUPPORTED_COMPONENTS = new Set<string>(DESKTOP_APPLICATION_COMPONENTS)
 
@@ -206,6 +206,132 @@ function renderActivity(result: DesktopApplicationQueryResult): HTMLElement {
   return list
 }
 
+function stringListProp(node: DesktopApplicationUiNode, key: string): string[] {
+  const value = node.props?.[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function localViewRoot(node: HTMLElement): HTMLElement | null {
+  return node.closest<HTMLElement>('.enterprise-application-page')
+}
+
+function applyLocalTableView(root: HTMLElement): void {
+  const search = (root.dataset.localSearch ?? '').trim().toLocaleLowerCase()
+  const filterField = root.dataset.localFilterField ?? ''
+  const filterValue = root.dataset.localFilterValue ?? ''
+  for (const table of root.querySelectorAll<HTMLTableElement>('table.enterprise-app-data-table')) {
+    const headers = [...table.querySelectorAll('thead th')].map(item => item.textContent ?? '')
+    const filterIndex = filterField ? headers.indexOf(filterField) : -1
+    for (const row of table.querySelectorAll<HTMLTableRowElement>('tbody tr')) {
+      const cells = [...row.cells]
+      const matchesSearch = !search || cells.some(cell => (cell.textContent ?? '').toLocaleLowerCase().includes(search))
+      const matchesFilter = !filterValue || filterIndex < 0 || (cells[filterIndex]?.textContent ?? '') === filterValue
+      row.hidden = !(matchesSearch && matchesFilter)
+    }
+  }
+}
+
+function renderSearch(node: DesktopApplicationUiNode): HTMLElement {
+  const wrap = el('label', 'enterprise-app-local-search')
+  const input = el('input', 'enterprise-app-action-field')
+  input.type = 'search'
+  input.placeholder = scalarProp(node, 'placeholder') ?? 'Search visible governed rows…'
+  wrap.append(text(el('span'), scalarProp(node, 'label', 'title') ?? 'Search'), input)
+  input.addEventListener('input', () => {
+    const root = localViewRoot(input)
+    if (!root) return
+    root.dataset.localSearch = input.value
+    applyLocalTableView(root)
+  })
+  return wrap
+}
+
+function renderFilter(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const wrap = el('label', 'enterprise-app-local-filter')
+  const field = scalarProp(node, 'field')
+  wrap.append(text(el('span'), scalarProp(node, 'label', 'title') ?? (field ? `Filter ${field}` : 'Filter')))
+  if (!field) {
+    wrap.append(text(el('small'), 'props.field is required.'))
+    return wrap
+  }
+  const select = el('select', 'enterprise-app-action-field')
+  select.append(new Option('All', ''))
+  const values = new Set<string>()
+  for (const item of result?.items ?? []) {
+    const value = displayValue(item.values[field])
+    if (value) values.add(value)
+  }
+  for (const value of [...values].sort()) select.append(new Option(value, value))
+  select.addEventListener('change', () => {
+    const root = localViewRoot(select)
+    if (!root) return
+    root.dataset.localFilterField = field
+    root.dataset.localFilterValue = select.value
+    applyLocalTableView(root)
+  })
+  wrap.append(select)
+  return wrap
+}
+
+function renderPicker(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const wrap = el('label', 'enterprise-app-picker')
+  const field = scalarProp(node, 'field') ?? 'name'
+  const select = el('select', 'enterprise-app-action-field')
+  select.append(new Option('Select…', ''))
+  for (const item of result?.items ?? []) {
+    select.append(new Option(displayValue(item.values[field] ?? item.id), item.id))
+  }
+  wrap.append(text(el('span'), scalarProp(node, 'label', 'title') ?? readableComponent(node.component)), select)
+  return wrap
+}
+
+function renderDeclarativeForm(node: DesktopApplicationUiNode): HTMLElement {
+  const fields = Array.isArray(node.props?.fields) ? node.props?.fields : []
+  const grid = el('div', 'enterprise-app-action-schema-grid')
+  for (const [index, raw] of fields.entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const field = raw as Record<string, unknown>
+    const name = typeof field.name === 'string' && field.name.trim() ? field.name.trim() : `field-${index}`
+    const label = el('label', 'enterprise-app-action-schema-field')
+    label.append(text(el('span'), typeof field.label === 'string' && field.label.trim() ? field.label : name))
+    const options = Array.isArray(field.options) ? field.options.filter((item): item is string => typeof item === 'string') : []
+    if (options.length) {
+      const select = el('select', 'enterprise-app-action-field')
+      select.name = name
+      select.append(new Option('Select…', ''))
+      for (const option of options) select.append(new Option(option, option))
+      label.append(select)
+    } else {
+      const input = el('input', 'enterprise-app-action-field')
+      input.name = name
+      const type = typeof field.type === 'string' ? field.type : 'text'
+      input.type = ['number','date','email','checkbox'].includes(type) ? type : 'text'
+      input.required = field.required === true
+      label.append(input)
+    }
+    grid.append(label)
+  }
+  if (!grid.childElementCount) grid.append(text(el('p', 'enterprise-app-binding'), 'This declarative form has no registered fields.'))
+  return grid
+}
+
+function renderRiskDistribution(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const field = scalarProp(node, 'field') ?? 'risk'
+  const grid = el('div', 'enterprise-app-risk-distribution')
+  const counts = new Map<string, number>()
+  for (const item of result?.items ?? []) {
+    const value = displayValue(item.values[field] ?? item.values.riskLevel ?? item.values.status)
+    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  for (const [value, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+    const metric = el('div', 'enterprise-app-risk-metric')
+    metric.append(text(el('strong'), String(count)), text(el('span'), value))
+    grid.append(metric)
+  }
+  if (!grid.childElementCount) grid.append(text(el('p', 'enterprise-app-empty-data'), `No values are available for risk field ${field}.`))
+  return grid
+}
+
 function renderLeaf(
   node: DesktopApplicationUiNode,
   page: DesktopApplicationPageEnvelope,
@@ -224,10 +350,10 @@ function renderLeaf(
   if (value) block.append(text(el('strong', 'enterprise-app-component-value'), value))
   if (description) block.append(text(el('p', 'enterprise-app-component-copy'), description))
 
-  if (node.component === 'DataTable' || node.component === 'Table') {
+  if (node.component === 'DataTable' || node.component === 'Table' || node.component === 'ApprovalQueue') {
     if (queryResult) block.append(renderDataTable(queryResult))
     else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? (page.page.source?.query ? `Governed query · ${page.page.source.query}` : 'No governed query binding declared for this table.')))
-  } else if (node.component === 'ObjectDetail') {
+  } else if (node.component === 'ObjectDetail' || node.component === 'Detail') {
     if (queryResult) block.append(renderObjectDetail(queryResult.items[0]))
     else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Object detail waits for a governed page query.'))
   } else if (node.component === 'Chart') {
@@ -236,9 +362,14 @@ function renderLeaf(
   } else if (node.component === 'Timeline' || node.component === 'ActivityFeed') {
     if (queryResult) block.append(renderActivity(queryResult))
     else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Activity waits for a governed page query.'))
-  } else if (node.component === 'RiskIndicator' && queryResult?.items[0]) {
-    const risk = queryResult.items[0].values.risk ?? queryResult.items[0].values.riskLevel ?? queryResult.items[0].values.status
-    block.append(text(el('strong', 'enterprise-app-component-value'), displayValue(risk ?? 'Available')))
+  } else if (node.component === 'RiskIndicator') {
+    block.append(renderRiskDistribution(node, queryResult))
+  } else if (node.component === 'Search') {
+    block.append(renderSearch(node))
+  } else if (node.component === 'Filter') {
+    block.append(renderFilter(node, queryResult))
+  } else if (node.component === 'ObjectPicker' || node.component === 'PeoplePicker') {
+    block.append(renderPicker(node, queryResult))
   } else if (node.component === 'AISummary' || node.component === 'AIComposer') {
     block.append(text(el('p', 'enterprise-app-binding'), 'AI authority stays in the validated OBIS × Harness runtime. This component cannot mint tools or credentials from page schema.'))
   }
@@ -259,17 +390,60 @@ function renderNode(
     return leaf
   }
 
+  if (node.component === 'Tabs') {
+    const host = el('section', componentClass(node.component))
+    host.dataset.component = node.component
+    const children = node.children ?? []
+    const tabList = el('div', 'enterprise-app-tab-list')
+    const panel = el('div', 'enterprise-app-tab-panel')
+    const activate = (index: number): void => {
+      panel.replaceChildren()
+      const child = children[index]
+      if (child) panel.append(renderNode(child, page, queryResult, queryError))
+      for (const [buttonIndex, button] of [...tabList.querySelectorAll<HTMLButtonElement>('button')].entries()) {
+        button.setAttribute('aria-selected', String(buttonIndex === index))
+      }
+    }
+    children.forEach((child, index) => {
+      const button = text(el('button', 'enterprise-secondary-button'), scalarProp(child, 'label', 'title') ?? `Tab ${index + 1}`) as HTMLButtonElement
+      button.type = 'button'
+      button.setAttribute('role', 'tab')
+      button.onclick = () => activate(index)
+      tabList.append(button)
+    })
+    host.append(tabList, panel)
+    activate(0)
+    return host
+  }
+
+  if (node.component === 'Drawer' || node.component === 'Modal') {
+    const host = el('section', componentClass(node.component))
+    host.dataset.component = node.component
+    const toggle = text(el('button', 'enterprise-secondary-button'), scalarProp(node, 'openLabel') ?? `Open ${node.component}`) as HTMLButtonElement
+    toggle.type = 'button'
+    toggle.setAttribute('aria-expanded', 'false')
+    const panel = el('div', 'enterprise-app-disclosure-panel')
+    panel.hidden = true
+    for (const child of node.children ?? []) panel.append(renderNode(child, page, queryResult, queryError))
+    toggle.onclick = () => {
+      panel.hidden = !panel.hidden
+      toggle.setAttribute('aria-expanded', String(!panel.hidden))
+      toggle.textContent = panel.hidden ? (scalarProp(node, 'openLabel') ?? `Open ${node.component}`) : `Close ${node.component}`
+    }
+    host.append(toggle, panel)
+    return host
+  }
+
   const tag = node.component === 'Form' ? 'form' : 'section'
   const host = el(tag, componentClass(node.component))
   host.dataset.component = node.component
   if (node.id) host.dataset.componentId = node.id
   if (tag === 'form') {
-    host.addEventListener('submit', (event) => {
-      event.preventDefault()
-    })
+    host.addEventListener('submit', (event) => event.preventDefault())
   }
   const title = scalarProp(node, 'title', 'label')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
+  if (node.component === 'Form') host.append(renderDeclarativeForm(node))
   for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError))
   return host
 }
