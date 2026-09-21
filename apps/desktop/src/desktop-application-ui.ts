@@ -206,11 +206,6 @@ function renderActivity(result: DesktopApplicationQueryResult): HTMLElement {
   return list
 }
 
-function stringListProp(node: DesktopApplicationUiNode, key: string): string[] {
-  const value = node.props?.[key]
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-}
-
 function localViewRoot(node: HTMLElement): HTMLElement | null {
   return node.closest<HTMLElement>('.enterprise-application-page')
 }
