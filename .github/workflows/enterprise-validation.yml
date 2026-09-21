@@ -76,7 +76,7 @@ jobs:
       - name: Desktop enterprise application runtime tests
         run: |
           pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
-          pnpm exec vitest run apps/desktop/src/desktop-application-golden-contract.test.ts
+          pnpm exec vitest run apps/desktop/tests/application-golden-contract.spec.ts
       - name: Desktop build smoke
         run: pnpm run build:desktop
       - name: Verify private OBIS checkout credential
