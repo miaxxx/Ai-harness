@@ -2,7 +2,7 @@ name: Enterprise Validation Gate
 
 on:
   push:
-    branches: ['feature/enterprise-v3.1-sprint-a', 'feature/application-platform-v5-foundation']
+    branches: ['feature/enterprise-v3.1-sprint-a', 'feature/application-platform-v5-foundation', 'feature/next-control-plane-v6']
   pull_request:
   workflow_dispatch:
 
@@ -74,7 +74,9 @@ jobs:
       - name: OBIS bridge and tool contract tests
         run: pnpm exec vitest run packages/obis/bridge/tests packages/obis/tool-obis/tests
       - name: Desktop enterprise application runtime tests
-        run: pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
+        run: |
+          pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
+          pnpm exec vitest run apps/desktop/src/desktop-application-golden-contract.test.ts
       - name: Desktop build smoke
         run: pnpm run build:desktop
       - name: Verify private OBIS checkout credential
@@ -84,14 +86,24 @@ jobs:
             echo "::error::OBIS_REPO_TOKEN is required to certify the private obis-dev repository against AI Harness."
             exit 1
           fi
-      - name: Checkout current OBIS v5 branch
+      - name: Checkout current OBIS v6 branch
         uses: actions/checkout@v6
         with:
           repository: miaxxx/obis-dev
-          ref: feature/application-platform-v5-foundation
+          ref: feature/next-control-plane-v6
           path: _compat/obis
           token: ${{ env.OBIS_REPO_TOKEN }}
           persist-credentials: false
+      - name: Verify shared renderer contract matches OBIS exactly
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFile } from 'node:fs/promises'
+          const harness=JSON.parse(await readFile('apps/desktop/tests/fixtures/obis-ui-runtime-contract.json','utf8'))
+          const obis=JSON.parse(await readFile('_compat/obis/25-ui-runtime/compatibility.json','utf8'))
+          assert.deepEqual(harness,obis)
+          console.log('shared-renderer-cross-repo-contract: PASS')
+          NODE
       - name: Install OBIS Kernel fixture dependencies
         run: npm --prefix _compat/obis/10-kernel install --no-audit --no-fund
       - name: Cross-repo fixture E2E
