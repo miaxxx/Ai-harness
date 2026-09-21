@@ -215,12 +215,13 @@ function applyLocalTableView(root: HTMLElement): void {
   const filterField = root.dataset.localFilterField ?? ''
   const filterValue = root.dataset.localFilterValue ?? ''
   for (const table of root.querySelectorAll<HTMLTableElement>('table.enterprise-app-data-table')) {
-    const headers = [...table.querySelectorAll('thead th')].map(item => item.textContent ?? '')
+    const headers = [...table.querySelectorAll('thead th')].map((item) => item.textContent || '')
     const filterIndex = filterField ? headers.indexOf(filterField) : -1
     for (const row of table.querySelectorAll<HTMLTableRowElement>('tbody tr')) {
       const cells = [...row.cells]
-      const matchesSearch = !search || cells.some(cell => (cell.textContent ?? '').toLocaleLowerCase().includes(search))
-      const matchesFilter = !filterValue || filterIndex < 0 || (cells[filterIndex]?.textContent ?? '') === filterValue
+      const matchesSearch = !search || cells.some((cell) => (cell.textContent || '').toLocaleLowerCase().includes(search))
+      const filterCell = filterIndex >= 0 ? cells[filterIndex] : undefined
+      const matchesFilter = !filterValue || filterIndex < 0 || (filterCell ? filterCell.textContent || '' : '') === filterValue
       row.hidden = !(matchesSearch && matchesFilter)
     }
   }
@@ -281,7 +282,8 @@ function renderPicker(node: DesktopApplicationUiNode, result: DesktopApplication
 }
 
 function renderDeclarativeForm(node: DesktopApplicationUiNode): HTMLElement {
-  const fields = Array.isArray(node.props?.fields) ? node.props?.fields : []
+  const rawFields = node.props ? node.props.fields : undefined
+  const fields = Array.isArray(rawFields) ? rawFields : []
   const grid = el('div', 'enterprise-app-action-schema-grid')
   for (const [index, raw] of fields.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
@@ -436,12 +438,14 @@ function renderNode(
   host.dataset.component = node.component
   if (node.id) host.dataset.componentId = node.id
   if (tag === 'form') {
-    host.addEventListener('submit', event => {
+    host.addEventListener('submit', (event) => {
       event.preventDefault()
     })
   }
   const title = scalarProp(node, 'title', 'label')
+  const description = scalarProp(node, 'description')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
+  if (description) host.append(text(el('p', 'enterprise-app-component-copy'), description))
   if (node.component === 'Form') host.append(renderDeclarativeForm(node))
   for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError))
   return host
