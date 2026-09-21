@@ -78,4 +78,4 @@ jobs:
       - name: Verify Desktop shared renderer contract
         run: |
           pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts
-          pnpm exec vitest run apps/desktop/src/desktop-application-golden-contract.test.ts
+          pnpm exec vitest run apps/desktop/tests/application-golden-contract.spec.ts
