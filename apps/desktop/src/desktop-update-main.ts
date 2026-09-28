@@ -1,7 +1,8 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
+import electronUpdater from 'electron-updater'
+import type { ProgressInfo, UpdateInfo } from 'electron-updater'
 import {
   desktopUpdateFeedUrl,
   evaluateDesktopUpdate,
@@ -14,6 +15,8 @@ import type {
   DesktopUpdatePolicy,
   DesktopUpdateState,
 } from './desktop-update-shared.ts'
+
+const { autoUpdater } = electronUpdater
 
 const APP_ORIGIN = 'dsh-app://app'
 const CAPABILITY_TIMEOUT_MS = 5_000

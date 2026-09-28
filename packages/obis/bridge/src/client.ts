@@ -227,6 +227,25 @@ export class ObisBridgeClient {
     return this.request('GET', `/v1/agent-runs/${encodeURIComponent(runId)}?${params}`, undefined, options)
   }
 
+  evaluateAction(
+    action: string,
+    input: {
+      environmentId: string
+      runId: string
+      input: JsonRecord
+      targetId?: string
+      expectedObjectVersion?: number
+    },
+    options: RequestOptions = {},
+  ): Promise<JsonRecord> {
+    return this.request(
+      'POST',
+      `/v1/harness/actions/${encodeURIComponent(action)}/evaluate`,
+      input,
+      options,
+    )
+  }
+
   proposeAction(
     action: string,
     input: {
@@ -253,6 +272,57 @@ export class ObisBridgeClient {
   getTask(taskId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/tasks/${encodeURIComponent(taskId)}?${params}`, undefined, options)
+  }
+
+  async listTasks(
+    environmentId: string,
+    input: { status?: string; limit?: number } = {},
+    options: RequestOptions = {},
+  ): Promise<JsonRecord[]> {
+    const params = new URLSearchParams({ environmentId })
+    if (input.status) params.set('status', input.status)
+    if (input.limit !== undefined) params.set('limit', String(input.limit))
+    const result = await this.request<{ items: JsonRecord[] }>(
+      'GET',
+      `/v1/harness/tasks?${params}`,
+      undefined,
+      options,
+    )
+    return result.items
+  }
+
+  async listApprovals(
+    environmentId: string,
+    input: { status?: string } = {},
+    options: RequestOptions = {},
+  ): Promise<JsonRecord[]> {
+    const params = new URLSearchParams({ environmentId })
+    if (input.status) params.set('status', input.status)
+    const result = await this.request<{ items: JsonRecord[] }>(
+      'GET',
+      `/v1/harness/approvals?${params}`,
+      undefined,
+      options,
+    )
+    return result.items
+  }
+
+  decideApproval(
+    approvalId: string,
+    input: {
+      environmentId: string
+      expectedVersion: number
+      decision: 'approve' | 'reject'
+      comment?: string
+    },
+    options: RequestOptions = {},
+  ): Promise<JsonRecord> {
+    return this.request(
+      'POST',
+      `/v1/harness/approvals/${encodeURIComponent(approvalId)}/decisions`,
+      input,
+      options,
+    )
   }
 
   async listSkills(environmentId: string, options: RequestOptions = {}): Promise<JsonRecord[]> {

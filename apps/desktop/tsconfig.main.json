@@ -14,6 +14,7 @@
     "src/preload.ts",
     "src/shared.ts",
     "src/desktop-obis-identity-main.ts",
+    "src/desktop-obis-identity-protocol.ts",
     "src/desktop-obis-identity-preload.ts",
     "src/desktop-obis-identity-shared.ts",
     "src/desktop-enterprise-runtime-shared.ts",
