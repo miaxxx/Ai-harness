@@ -45,6 +45,24 @@ function mockClient() {
         headers: { 'content-type': 'application/json' },
       })
     }
+    if (request.url.includes('/v1/harness/tasks?')) {
+      return new Response(JSON.stringify({ items: [{ id: 'task-1', status: 'open' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (request.url.includes('/v1/harness/approvals?')) {
+      return new Response(JSON.stringify({ items: [{ id: 'approval-1', status: 'pending' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (request.url.includes('/v1/harness/actions/Supplier.changeRisk/evaluate')) {
+      return new Response(JSON.stringify({ allowed: true, reason: 'within envelope' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     return new Response(JSON.stringify({ status: 'executed', items: [{ id: 'order-1' }] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -123,5 +141,36 @@ describe('OBIS OHP bridge', () => {
     expect(request?.headers.get('accept')).toBe('text/event-stream')
     expect(request?.headers.get('ohp-capability-lease')).toBe('lease-1')
     expect(request?.headers.get('ohp-agent-run')).toBe('run-1')
+  })
+
+  it('covers OHP P0 evaluation, task list and approval decision without adding model tools', async () => {
+    const { client, seen } = mockClient()
+    await expect(client.evaluateAction('Supplier.changeRisk', {
+      environmentId: 'production',
+      runId: 'run-1',
+      input: { risk: 'high' },
+    }, { agentRunId: 'run-1', capabilityLease: 'lease-1' })).resolves.toEqual({
+      allowed: true,
+      reason: 'within envelope',
+    })
+    await expect(client.listTasks('production', { status: 'open', limit: 20 })).resolves.toEqual([
+      { id: 'task-1', status: 'open' },
+    ])
+    await expect(client.listApprovals('production', { status: 'pending' })).resolves.toEqual([
+      { id: 'approval-1', status: 'pending' },
+    ])
+    await client.decideApproval('approval-1', {
+      environmentId: 'production',
+      expectedVersion: 1,
+      decision: 'approve',
+    })
+
+    expect(createObisTools(client).map(tool => tool.name)).not.toContain('obis_execute_action')
+    expect(seen.some(request => request.url.endsWith('/v1/harness/actions/Supplier.changeRisk/evaluate'))).toBe(true)
+    expect(seen.some(request => request.url.includes('/v1/harness/tasks?') && request.method === 'GET')).toBe(true)
+    expect(seen.some(request => request.url.includes('/v1/harness/approvals?') && request.method === 'GET')).toBe(true)
+    expect(seen.some(request =>
+      request.url.endsWith('/v1/harness/approvals/approval-1/decisions') && request.method === 'POST',
+    )).toBe(true)
   })
 })

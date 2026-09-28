@@ -7,13 +7,10 @@ const bridge: DesktopObisIdentityBridge = {
     'dsh:obis-identity-configure',
     configuration,
   ) as ReturnType<DesktopObisIdentityBridge['configure']>,
-  startDeviceAuthorization: () => ipcRenderer.invoke(
-    'dsh:obis-identity-device-start',
-  ) as ReturnType<DesktopObisIdentityBridge['startDeviceAuthorization']>,
-  exchangeDeviceAuthorization: deviceCode => ipcRenderer.invoke(
-    'dsh:obis-identity-device-exchange',
-    deviceCode,
-  ) as ReturnType<DesktopObisIdentityBridge['exchangeDeviceAuthorization']>,
+  signInWithPassword: credentials => ipcRenderer.invoke(
+    'dsh:obis-identity-password-login',
+    credentials,
+  ) as ReturnType<DesktopObisIdentityBridge['signInWithPassword']>,
   refresh: () => ipcRenderer.invoke('dsh:obis-identity-refresh') as ReturnType<DesktopObisIdentityBridge['refresh']>,
   logout: () => ipcRenderer.invoke('dsh:obis-identity-logout') as ReturnType<DesktopObisIdentityBridge['logout']>,
   context: () => ipcRenderer.invoke('dsh:obis-context') as ReturnType<DesktopObisIdentityBridge['context']>,

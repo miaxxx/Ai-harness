@@ -6,6 +6,7 @@
   },
   "include": [
     "src/desktop-application-shared.ts",
+    "src/desktop-application-contract.ts",
     "src/desktop-application-ui.ts",
     "src/renderer.tsx",
     "src/product-runtime.ts",

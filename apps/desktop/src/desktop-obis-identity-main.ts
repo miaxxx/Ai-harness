@@ -5,23 +5,33 @@ import { app, ipcMain, safeStorage } from 'electron'
 import type {
   DesktopEnterpriseContext,
   DesktopHarnessDevice,
-  DesktopObisDeviceAuthorization,
-  DesktopObisDeviceExchange,
   DesktopObisIdentityConfiguration,
   DesktopObisIdentityStatus,
   DesktopObisMembership,
   DesktopResolvedWorkspace,
   DesktopUserPreference,
 } from './desktop-obis-identity-shared.ts'
+import { isDesktopObisMembership } from './desktop-obis-identity-shared.ts'
 import type {
   DesktopEnterpriseRuntimeScope,
   DesktopEnterpriseScopeRequest,
 } from './desktop-enterprise-runtime-shared.ts'
 import { setEnterpriseRuntimeScope } from './desktop-enterprise-scope-main.ts'
+import {
+  ObisHttpError,
+  OHP_VERSION,
+  fetchMe,
+  isObisTokenPair,
+  loginWithPassword,
+  obisJsonRequest,
+  registerHarnessInstallation,
+  type HarnessInstallationEnvelope,
+  type ObisJsonRequest,
+  type ObisTokenPair,
+} from './desktop-obis-identity-protocol.ts'
 
 const APP_ORIGIN = 'dsh-app://app'
 const STORE_VERSION = 1
-const OHP_VERSION = '1.0'
 
 interface StoredObisIdentity {
   version: 1
@@ -39,39 +49,7 @@ interface StoredObisIdentity {
   memberships?: DesktopObisMembership[]
 }
 
-interface TokenPair {
-  sessionId: string
-  accessToken: string
-  refreshToken: string
-  expiresAt: string
-  refreshExpiresAt: string
-}
-
-interface MeResponse {
-  user: { id: string; displayName: string; primaryEmail?: string }
-  membership: DesktopObisMembership
-  memberships?: DesktopObisMembership[]
-}
-
-interface InstallationEnvelope {
-  installation: { id: string; deviceId: string; status: string }
-  compatibility: unknown
-}
-
-interface JsonRequest<T> {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH'
-  body?: unknown
-  accessToken?: string
-  allowAccepted?: boolean
-  ohp?: boolean
-  responseType?: (value: unknown) => T
-}
-
-class ObisHttpError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message)
-  }
-}
+type TokenPair = ObisTokenPair
 
 function storePath(): string {
   return join(app.getPath('userData'), 'obis-enterprise.json')
@@ -100,14 +78,7 @@ function validateBaseURL(raw: string): string {
   return parsed.toString().replace(/\/$/, '')
 }
 
-function validMembership(value: unknown): value is DesktopObisMembership {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const row = value as Partial<DesktopObisMembership>
-  return typeof row.tenantId === 'string'
-    && Array.isArray(row.roles)
-    && row.roles.every(role => typeof role === 'string')
-    && typeof row.status === 'string'
-}
+const validMembership = isDesktopObisMembership
 
 function parseStored(value: unknown): StoredObisIdentity | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
@@ -219,56 +190,16 @@ function withoutSession(stored: StoredObisIdentity): StoredObisIdentity {
   }
 }
 
-function apiError(payload: unknown, status: number): string {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload) || !('error' in payload)) {
-    return `OBIS request failed with ${status}`
-  }
-  const error = (payload as { error?: unknown }).error
-  if (typeof error === 'string') return error
-  if (typeof error === 'object' && error !== null && !Array.isArray(error) && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message) return message
-  }
-  return `OBIS request failed with ${status}`
-}
-
 function isTokenPair(value: unknown): value is TokenPair {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const row = value as Partial<TokenPair>
-  return typeof row.sessionId === 'string'
-    && typeof row.accessToken === 'string'
-    && typeof row.refreshToken === 'string'
-    && typeof row.expiresAt === 'string'
-    && typeof row.refreshExpiresAt === 'string'
-}
-
-function isPendingDeviceExchange(value: unknown): value is Extract<DesktopObisDeviceExchange, { status: 'authorization_pending' | 'slow_down' }> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const status = (value as { status?: unknown }).status
-  return status === 'authorization_pending' || status === 'slow_down'
+  return isObisTokenPair(value)
 }
 
 async function requestJson<T>(
   stored: StoredObisIdentity,
   path: string,
-  input: JsonRequest<T> = {},
+  input: ObisJsonRequest = {},
 ): Promise<{ status: number; value: T }> {
-  const headers = new Headers({ accept: 'application/json' })
-  if (input.body !== undefined) headers.set('content-type', 'application/json')
-  if (input.accessToken) headers.set('authorization', `Bearer ${input.accessToken}`)
-  if (input.ohp) headers.set('ohp-version', OHP_VERSION)
-
-  const response = await fetch(`${stored.baseURL}${path}`, {
-    method: input.method ?? 'GET',
-    headers,
-    ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
-  })
-  const payload: unknown = await response.json().catch(() => undefined)
-  if (!response.ok && !(input.allowAccepted && response.status === 202)) {
-    throw new ObisHttpError(response.status, apiError(payload, response.status))
-  }
-  const value = input.responseType ? input.responseType(payload) : payload as T
-  return { status: response.status, value }
+  return obisJsonRequest<T>(stored.baseURL, path, input)
 }
 
 function channel(): 'canary' | 'stable' | 'enterprise-lts' {
@@ -305,7 +236,7 @@ async function ensureInstallation(
 ): Promise<StoredObisIdentity> {
   if (stored.installationId) {
     try {
-      const heartbeat = await requestJson<InstallationEnvelope>(
+      const heartbeat = await requestJson<HarnessInstallationEnvelope>(
         stored,
         `/v1/harness/installations/${encodeURIComponent(stored.installationId)}/heartbeat`,
         {
@@ -326,21 +257,19 @@ async function ensureInstallation(
     }
   }
 
-  const registered = await requestJson<InstallationEnvelope>(stored, '/v1/harness/installations', {
-    method: 'POST',
-    body: installationBody(stored),
+  const registered = await registerHarnessInstallation({
+    baseURL: stored.baseURL,
     accessToken,
-    ohp: true,
+    registration: installationBody(stored),
   })
-  const installationId = registered.value.installation.id
-  if (!installationId) throw new Error('OBIS Harness registration returned an invalid installation')
+  const installationId = registered.installation.id
   const next = { ...stored, installationId }
   await writeStored(next)
   return next
 }
 
 async function attachIdentity(stored: StoredObisIdentity, tokens: TokenPair): Promise<StoredObisIdentity> {
-  const me = await requestJson<MeResponse>(stored, '/v1/me', { accessToken: tokens.accessToken })
+  const me = await fetchMe({ baseURL: stored.baseURL, accessToken: tokens.accessToken })
   const base: StoredObisIdentity = {
     ...withoutSession(stored),
     encryptedAccessToken: encrypted(tokens.accessToken),
@@ -348,9 +277,9 @@ async function attachIdentity(stored: StoredObisIdentity, tokens: TokenPair): Pr
     sessionId: tokens.sessionId,
     expiresAt: tokens.expiresAt,
     refreshExpiresAt: tokens.refreshExpiresAt,
-    user: me.value.user,
-    membership: me.value.membership,
-    ...(me.value.memberships ? { memberships: me.value.memberships } : {}),
+    user: me.user,
+    membership: me.membership,
+    ...(me.memberships ? { memberships: me.memberships } : {}),
   }
   const next = await ensureInstallation(base, tokens.accessToken)
   await writeStored(next)
@@ -399,12 +328,12 @@ async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
     && (stored.expiresAt === undefined || Date.parse(stored.expiresAt) > Date.now() + 30_000)
   if (stillValid) {
     try {
-      const me = await requestJson<MeResponse>(stored, '/v1/me', { accessToken })
+      const me = await fetchMe({ baseURL: stored.baseURL, accessToken })
       const next = await ensureInstallation({
         ...stored,
-        user: me.value.user,
-        membership: me.value.membership,
-        ...(me.value.memberships ? { memberships: me.value.memberships } : {}),
+        user: me.user,
+        membership: me.membership,
+        ...(me.memberships ? { memberships: me.memberships } : {}),
       }, accessToken)
       await writeStored(next)
       return publicStatus(next)
@@ -542,42 +471,26 @@ function installIdentityIpc(): void {
     return publicStatus(next)
   })
 
-  ipcMain.handle('dsh:obis-identity-device-start', async (event) => {
+  ipcMain.handle('dsh:obis-identity-password-login', async (event, value: unknown): Promise<DesktopObisIdentityStatus> => {
     requireTrusted(event)
-    const stored = await ensureStored()
-    if (!stored) throw new Error('Configure the OBIS URL and tenant before signing in')
-    return (await requestJson<DesktopObisDeviceAuthorization>(
-      stored,
-      '/v1/auth/github/device/start',
-      { method: 'POST' },
-    )).value
-  })
-
-  ipcMain.handle('dsh:obis-identity-device-exchange', async (event, deviceCode: unknown): Promise<DesktopObisDeviceExchange> => {
-    requireTrusted(event)
-    if (typeof deviceCode !== 'string' || deviceCode.trim() === '') {
-      throw new Error('GitHub device code is required')
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new Error('Email and password are required')
+    }
+    const credentials = value as { email?: unknown; password?: unknown }
+    if (typeof credentials.email !== 'string' || !credentials.email.trim() || typeof credentials.password !== 'string' || !credentials.password) {
+      throw new Error('Email and password are required')
     }
     const stored = await ensureStored()
     if (!stored) throw new Error('Configure the OBIS URL and tenant before signing in')
-    const response = await requestJson<TokenPair | DesktopObisDeviceExchange>(
-      stored,
-      '/v1/auth/github/device/exchange',
-      {
-        method: 'POST',
-        body: { tenantId: stored.tenantId, deviceCode: deviceCode.trim(), deviceId: stored.deviceId },
-        allowAccepted: true,
-      },
-    )
-    if (response.status === 202) {
-      if (!isPendingDeviceExchange(response.value)) {
-        throw new Error('OBIS device exchange returned an invalid pending response')
-      }
-      return response.value
-    }
-    if (!isTokenPair(response.value)) throw new Error('OBIS device exchange returned an invalid token envelope')
+    const tokens = await loginWithPassword({
+      baseURL: stored.baseURL,
+      tenantId: stored.tenantId,
+      email: credentials.email.trim(),
+      password: credentials.password,
+      deviceId: stored.deviceId,
+    })
     setEnterpriseRuntimeScope(undefined)
-    return { status: 'authenticated', identity: publicStatus(await attachIdentity(stored, response.value)) }
+    return publicStatus(await attachIdentity(stored, tokens))
   })
 
   ipcMain.handle('dsh:obis-identity-refresh', async (event) => {

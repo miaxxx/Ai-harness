@@ -1,7 +1,4 @@
-import type {
-  DesktopObisDeviceAuthorization,
-  DesktopObisIdentityStatus,
-} from './desktop-obis-identity-shared.ts'
+import type { DesktopObisIdentityStatus } from './desktop-obis-identity-shared.ts'
 import './desktop-obis-identity.css'
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
@@ -23,7 +20,10 @@ function setMessage(node: HTMLElement, message: string, kind: 'info' | 'error' =
   node.dataset.kind = kind
 }
 
-function publicError(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+function publicError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/^Error invoking remote method '[^']+': (?:[\w$]+Error: )?/, '')
+}
 
 function renderShell(root: HTMLElement, title: string, description: string): { card: HTMLElement; message: HTMLElement } {
   root.replaceChildren()
@@ -62,48 +62,24 @@ function configurationGate(root: HTMLElement): void {
 
 function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
   const { card, message } = renderShell(root, 'Sign in to your enterprise workspace', `This desktop is governed by ${status.baseURL ?? 'OBIS'} for tenant ${status.tenantId ?? 'unknown'}. AI Harness can reason locally, but enterprise context and execution remain controlled by OBIS.`)
-  let currentAuthorization: DesktopObisDeviceAuthorization | undefined
-  let cancelled = false
-  const code = element('div', 'obis-enterprise-code')
-  const actions = element('div', 'obis-enterprise-actions')
-  const signIn = button('Sign in with GitHub', () => {
+  const form = element('div', 'obis-enterprise-fields')
+  const emailLabel = element('label'); emailLabel.textContent = 'Email'
+  const email = element('input'); email.type = 'email'; email.autocomplete = 'username'; email.placeholder = 'name@example.com'
+  const passwordLabel = element('label'); passwordLabel.textContent = 'Password'
+  const password = element('input'); password.type = 'password'; password.autocomplete = 'current-password'
+  emailLabel.append(email); passwordLabel.append(password); form.append(emailLabel, passwordLabel)
+  const signIn = button('Sign in', () => {
     signIn.disabled = true
-    setMessage(message, 'Requesting a one-time GitHub device authorization…')
-    void window.dshEnterprise.startDeviceAuthorization().then(async (authorization) => {
-      currentAuthorization = authorization
-      code.textContent = authorization.userCode
-      setMessage(message, 'Complete the authorization in your browser. This window will continue automatically.')
-      await window.dshDesktop.openExternal(authorization.verificationUri)
-      const deadline = Date.now() + authorization.expiresInSeconds * 1000
-      const authorizationCurrent = (): boolean => currentAuthorization?.deviceCode === authorization.deviceCode
-      let waitSeconds = Math.max(1, authorization.intervalSeconds)
-      while (!cancelled && authorizationCurrent() && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
-        if (!authorizationCurrent()) return
-        try {
-          const result = await window.dshEnterprise.exchangeDeviceAuthorization(authorization.deviceCode)
-          if (result.status === 'authenticated') {
-            setMessage(message, 'Authenticated. Opening the governed AI Workspace…')
-            await identityGate(root)
-            return
-          }
-          if (result.status === 'slow_down') waitSeconds = Math.max(waitSeconds + 5, result.retryAfterSeconds ?? 0)
-        } catch (error: unknown) {
-          currentAuthorization = undefined
-          setMessage(message, publicError(error), 'error')
-          signIn.disabled = false
-          return
-        }
-      }
-      if (!cancelled && authorizationCurrent()) {
-        currentAuthorization = undefined
-        setMessage(message, 'The one-time sign-in code expired. Start a new authorization.', 'error')
-        signIn.disabled = false
-      }
-    }).catch((error: unknown) => { setMessage(message, publicError(error), 'error'); signIn.disabled = false })
+    setMessage(message, 'Signing in…')
+    void window.dshEnterprise.signInWithPassword({ email: email.value, password: password.value })
+      .then(async () => {
+        password.value = ''
+        setMessage(message, 'Authenticated. Opening the governed AI Workspace…')
+        await identityGate(root)
+      })
+      .catch((error: unknown) => { password.value = ''; setMessage(message, publicError(error), 'error'); signIn.disabled = false })
   })
-  actions.append(signIn); card.append(code, actions)
-  window.addEventListener('beforeunload', () => { cancelled = true }, { once: true })
+  card.append(form, signIn)
 }
 
 function installIdentityBadge(status: DesktopObisIdentityStatus): void {
@@ -136,7 +112,22 @@ async function identityGate(root: HTMLElement): Promise<void> {
     return
   }
   if (!status.authenticated) { loginView(root, status); return }
-  if (!productMounted && productMount) { productMounted = true; root.replaceChildren(); await productMount() }
+  if (!productMounted && productMount) {
+    productMounted = true
+    try {
+      root.replaceChildren()
+      await productMount()
+    } catch (error: unknown) {
+      productMounted = false
+      const { card, message } = renderShell(
+        root,
+        'Signed in',
+        `This desktop is authenticated to ${status.baseURL ?? 'OBIS'} as ${status.user?.primaryEmail ?? status.user?.displayName ?? 'the signed-in user'}.`,
+      )
+      setMessage(message, publicError(error), 'error')
+      card.append(button('Retry', () => { void identityGate(root) }))
+    }
+  }
   installIdentityBadge(status)
 }
 

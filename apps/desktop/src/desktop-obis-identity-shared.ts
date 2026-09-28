@@ -9,6 +9,16 @@ export interface DesktopObisMembership {
   status: string
 }
 
+/** True when `value` is a tenant membership the Desktop identity client can persist. */
+export function isDesktopObisMembership(value: unknown): value is DesktopObisMembership {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const row = value as Partial<DesktopObisMembership>
+  return typeof row.tenantId === 'string'
+    && Array.isArray(row.roles)
+    && row.roles.every(role => typeof role === 'string')
+    && typeof row.status === 'string'
+}
+
 export interface DesktopObisIdentityStatus {
   configured: boolean
   required: boolean
@@ -28,17 +38,10 @@ export interface DesktopObisIdentityConfiguration {
   tenantId: string
 }
 
-export interface DesktopObisDeviceAuthorization {
-  deviceCode: string
-  userCode: string
-  verificationUri: string
-  expiresInSeconds: number
-  intervalSeconds: number
+export interface DesktopObisPasswordCredentials {
+  email: string
+  password: string
 }
-
-export type DesktopObisDeviceExchange =
-  | { status: 'authorization_pending' | 'slow_down'; retryAfterSeconds?: number }
-  | { status: 'authenticated'; identity: DesktopObisIdentityStatus }
 
 export interface DesktopEnterpriseEnvironment {
   id: string
@@ -397,8 +400,7 @@ export interface DesktopEnterpriseOverview {
 export interface DesktopObisIdentityBridge {
   status(): Promise<DesktopObisIdentityStatus>
   configure(configuration: DesktopObisIdentityConfiguration): Promise<DesktopObisIdentityStatus>
-  startDeviceAuthorization(): Promise<DesktopObisDeviceAuthorization>
-  exchangeDeviceAuthorization(deviceCode: string): Promise<DesktopObisDeviceExchange>
+  signInWithPassword(credentials: DesktopObisPasswordCredentials): Promise<DesktopObisIdentityStatus>
   refresh(): Promise<DesktopObisIdentityStatus>
   logout(): Promise<DesktopObisIdentityStatus>
   context(): Promise<DesktopEnterpriseContext>
