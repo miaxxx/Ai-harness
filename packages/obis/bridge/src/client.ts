@@ -208,7 +208,14 @@ export class ObisBridgeClient {
   }
 
   createAgentRun(
-    input: { environmentId: string; agentId: string; goal: string; autonomy?: string },
+    input: {
+      environmentId: string
+      agentId: string
+      goal: string
+      autonomy?: string
+      projectId?: string
+      applicationModuleId?: string
+    },
     options: RequestOptions = {},
   ): Promise<AgentRunBinding> {
     return this.request('POST', '/v1/agent-runs', input, options)

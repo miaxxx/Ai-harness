@@ -126,4 +126,60 @@ describe('tool-obis native composition', () => {
     await toolFiber.dispose()
     await promptFiber.dispose()
   })
+
+  it('rejects projectId without applicationModuleId before registering tools', async () => {
+    const ctx = new Context()
+    const promptFiber = ctx.plugin(SystemPrompt)
+    await promptFiber
+    const toolFiber = ctx.plugin(ToolRuntime)
+    await toolFiber
+    const credentialFiber = ctx.plugin(TestCredentialProvider)
+    await credentialFiber
+    const approvalFiber = ctx.plugin(ApprovalService)
+    await approvalFiber
+
+    const fiber = ctx.plugin(toolObis, {
+      baseUrl: 'https://obis.example.test',
+      environmentId: 'prod',
+      credentialRef: 'OBIS_ACCESS_TOKEN',
+      projectId: 'procurement-project',
+    })
+    await expect(fiber).rejects.toThrow(/projectId and applicationModuleId must be supplied together/)
+
+    const dispose = ctx.tools.register(placeholder('obis_context'))
+    dispose()
+
+    await approvalFiber.dispose()
+    await credentialFiber.dispose()
+    await toolFiber.dispose()
+    await promptFiber.dispose()
+  })
+
+  it('rejects applicationModuleId without projectId before registering tools', async () => {
+    const ctx = new Context()
+    const promptFiber = ctx.plugin(SystemPrompt)
+    await promptFiber
+    const toolFiber = ctx.plugin(ToolRuntime)
+    await toolFiber
+    const credentialFiber = ctx.plugin(TestCredentialProvider)
+    await credentialFiber
+    const approvalFiber = ctx.plugin(ApprovalService)
+    await approvalFiber
+
+    const fiber = ctx.plugin(toolObis, {
+      baseUrl: 'https://obis.example.test',
+      environmentId: 'prod',
+      credentialRef: 'OBIS_ACCESS_TOKEN',
+      applicationModuleId: 'supplier-risk',
+    })
+    await expect(fiber).rejects.toThrow(/projectId and applicationModuleId must be supplied together/)
+
+    const dispose = ctx.tools.register(placeholder('obis_context'))
+    dispose()
+
+    await approvalFiber.dispose()
+    await credentialFiber.dispose()
+    await toolFiber.dispose()
+    await promptFiber.dispose()
+  })
 })

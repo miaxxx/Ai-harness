@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ObisBridgeClient } from '../src/client.ts'
+import { bindObisRun } from '../src/run-binding.ts'
 import { createObisTools } from '../src/tools.ts'
 
 interface SeenRequest {
@@ -17,6 +18,18 @@ function mockClient() {
     const body = text ? JSON.parse(text) as unknown : undefined
     seen.push({ url: request.url, method: request.method, headers: request.headers, body })
 
+    if (request.url.endsWith('/v1/agent-runs') && request.method === 'POST') {
+      return new Response(JSON.stringify({ id: 'run-1', environmentId: 'production', status: 'running' }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (request.url.endsWith('/v1/agent-runs/run-1/attach') && request.method === 'POST') {
+      return new Response(JSON.stringify({ id: 'run-1', harnessSessionId: 'session-1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     if (request.url.includes('/v1/agent-runs/run-1/events?')) {
       const first = {
         id: 'event-1', type: 'planning', runId: 'run-1', occurredAt: '2026-09-07T00:00:00.000Z',
@@ -172,5 +185,68 @@ describe('OBIS OHP bridge', () => {
     expect(seen.some(request =>
       request.url.endsWith('/v1/harness/approvals/approval-1/decisions') && request.method === 'POST',
     )).toBe(true)
+  })
+
+  it('stamps published module ids on AgentRun creation and bindObisRun', async () => {
+    const { client, seen } = mockClient()
+    await client.createAgentRun({
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Review supplier',
+      projectId: 'procurement-project',
+      applicationModuleId: 'supplier-risk',
+    })
+    expect(seen[0]?.body).toMatchObject({
+      projectId: 'procurement-project',
+      applicationModuleId: 'supplier-risk',
+    })
+
+    await expect(bindObisRun(client, {
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Review supplier',
+      harnessSessionId: 'session-1',
+      projectId: 'procurement-project',
+    }, {})).rejects.toThrow(/projectId and applicationModuleId must be supplied together/)
+    await expect(bindObisRun(client, {
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Review supplier',
+      harnessSessionId: 'session-1',
+      applicationModuleId: 'supplier-risk',
+    }, {})).rejects.toThrow(/projectId and applicationModuleId must be supplied together/)
+
+    await bindObisRun(client, {
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Review supplier',
+      autonomy: 'human-approved',
+      harnessSessionId: 'session-1',
+      installationId: 'install-1',
+      projectId: 'procurement-project',
+      applicationModuleId: 'supplier-risk',
+    }, { idempotencyKey: 'bind-1' })
+    const created = seen.find(request => request.method === 'POST' && request.url.endsWith('/v1/agent-runs') && request.body && (request.body as { goal?: string }).goal === 'Review supplier' && (request.body as { autonomy?: string }).autonomy === 'human-approved')
+    expect(created?.body).toMatchObject({
+      projectId: 'procurement-project',
+      applicationModuleId: 'supplier-risk',
+      autonomy: 'human-approved',
+    })
+    expect(seen.some(request => request.url.endsWith('/v1/agent-runs/run-1/attach'))).toBe(true)
+  })
+
+  it('binds a workspace-wide AgentRun when no module ids are supplied', async () => {
+    const { client, seen } = mockClient()
+    await bindObisRun(client, {
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Workspace AI',
+      harnessSessionId: 'session-2',
+    }, {})
+    expect(seen[0]?.body).toEqual({
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Workspace AI',
+    })
   })
 })

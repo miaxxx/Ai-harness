@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-29-obis-launch-shared-renderer.md
+2026-09-29-obis-launch-shared-renderer.md: 47a8cfc2452727dc953da3b44b6f7f2bdfc411e8
+2026-09-29-obis-launch-shared-renderer.zh.md: 6a51deaa8952748f83d327baa83730848aa6478f

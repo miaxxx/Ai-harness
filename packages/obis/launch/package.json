@@ -1,9 +1,14 @@
 {
   "name": "@deepseek-ai/dsh-obis-launch",
   "description": "Secure OBIS Workspace launch handoff for Harness host and web client",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/obis/launch"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -37,7 +42,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^"
+    "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^"
@@ -45,7 +51,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^"
+    "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
   },
   "files": [
     "lib/index.js",

@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[English](2026-09-07-obis-governed-workspace.md) | 中文
+
 ## Problem
 
 OBIS 企业工具最初接受静态 `runId` 和 capability lease。这足以验证 Bridge，但不足以支撑真实产品工作区：Harness Session 可以在没有持久 OBIS 工作身份的情况下查询企业信息，模型还需要自己提供乐观并发用的 `AgentRun.version`，而动作链只停留在 proposal，尚未进入产品的人类确认与最终 OBIS 执行路径。
@@ -24,4 +26,4 @@ OBIS 企业工具最初接受静态 `runId` 和 capability lease。这足以验�
 
 ## Consequences
 
-一个 Harness Session 对应一个持久 OBIS AgentRun 和 task。Session resume 会复用相同的确定性 create key 和 opaque Harness Session id。read-only 与 recommend autonomy 不能因此获得 proposal execution authority：capability lease 只能缩小权限，而 adapter 只会对本身允许执行的 run autonomy 请求人类执行确认。没有 approval answerer 时默认 fail closed。业务 approval 与 Harness confirmation 保持两个独立门槛，OBIS 动作仍可能停留在 `approval-required`，不会被误认为成功执行。
+一个 Harness Session 对应一个持久 OBIS AgentRun 和 task。Session resume 会复用相同的确定性 create key 和 opaque Harness Session id。read-only 与 recommend autonomy 不能因此获得 proposal execution authority：capability lease 只能缩小权限，而 adapter 只会对本身允许执行的 run autonomy 请求人类执行确认。没有 approval answerer 时默认 fail closed。业务 approval 与 Harness confirmation 保持两个独立门槛，OBIS 动作仍可能停留在 `approval-required`，不会被误认为成功执行。已发布 Application Module 可以盖在该 AgentRun 上；模块快照决策见 [OBIS AgentRun Module Binding](2026-09-29-obis-agent-run-module-binding.zh.md)。

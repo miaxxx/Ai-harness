@@ -6,7 +6,8 @@
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
   "files": [
-    "src/client/index.ts"
+    "src/client/index.ts",
+    "src/client/renderer.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },

@@ -144,7 +144,7 @@ function captureFetch(options: { approvalRun?: Record<string, unknown>; executeR
   return { requests, fetchMock }
 }
 
-async function mounted() {
+async function mounted(options: { config?: Record<string, unknown> } = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -156,8 +156,13 @@ async function mounted() {
     credentialRef: 'OBIS_ACCESS_TOKEN',
     installationId: 'install-1',
     autonomy: 'human-approved',
+    ...options.config,
   })
   return ctx
+}
+
+function attachLaunch(ctx: Context, launch: unknown): void {
+  (ctx as unknown as { obisLaunch: unknown }).obisLaunch = launch
 }
 
 async function execute(ctx: Context, agent: Agent, callId: string, name: string, args: Record<string, unknown>) {
@@ -205,6 +210,61 @@ describe('OBIS governed workspace behavior', () => {
       installationId: 'install-1',
     })
   })
+
+  it('stamps launch-bound project and module ids onto created AgentRuns', async () => {
+    const { requests } = captureFetch()
+    const ctx = await mounted()
+    attachLaunch(ctx, {
+      snapshot: () => ({ projectId: 'procurement-project' }),
+      applicationModuleId: () => 'supplier-risk',
+    })
+    await execute(ctx, fakeAgent(), 'call-launch-bind', 'obis_context', {})
+    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).toMatchObject({
+      projectId: 'procurement-project',
+      applicationModuleId: 'supplier-risk',
+    })
+  })
+
+  it('prefers explicit config module ids over the launch Host snapshot', async () => {
+    const { requests } = captureFetch()
+    const ctx = await mounted({
+      config: { projectId: 'config-project', applicationModuleId: 'config-module' },
+    })
+    attachLaunch(ctx, {
+      snapshot: () => ({ projectId: 'procurement-project' }),
+      applicationModuleId: () => 'supplier-risk',
+    })
+    await execute(ctx, fakeAgent(), 'call-config-bind', 'obis_context', {})
+    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).toMatchObject({
+      projectId: 'config-project',
+      applicationModuleId: 'config-module',
+    })
+  })
+
+  it('ignores incomplete launch snapshots and non-object launch services', async () => {
+    const { requests } = captureFetch()
+    const incomplete = await mounted()
+    attachLaunch(incomplete, { snapshot: () => ({ projectId: 'procurement-project' }) })
+    await execute(incomplete, fakeAgent('session-incomplete'), 'call-incomplete', 'obis_context', {})
+    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).not.toHaveProperty('projectId')
+
+    const noSnapshot = await mounted()
+    attachLaunch(noSnapshot, { applicationModuleId: () => 'supplier-risk' })
+    await execute(noSnapshot, fakeAgent('session-no-snapshot'), 'call-no-snapshot', 'obis_context', {})
+
+    const missing = await mounted()
+    attachLaunch(missing, null)
+    await execute(missing, fakeAgent('session-null'), 'call-null', 'obis_context', {})
+
+    const primitive = await mounted()
+    attachLaunch(primitive, 'not-a-service')
+    await execute(primitive, fakeAgent('session-primitive'), 'call-primitive', 'obis_context', {})
+    expect(requests.filter(request => request.url.pathname === '/v1/agent-runs')).toHaveLength(4)
+    for (const request of requests.filter(item => item.url.pathname === '/v1/agent-runs')) {
+      expect(request.body).not.toHaveProperty('applicationModuleId')
+    }
+  })
+
 
   it('asks the native approval seam and executes internally only after allowed-once', async () => {
     const { requests } = captureFetch()

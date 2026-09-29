@@ -17,8 +17,10 @@ import {
 export const name = 'tool-obis'
 export const inject = ['credentials', 'tools', 'systemPrompt', 'approval']
 
+/** Workspace autonomy forwarded onto created AgentRuns when config omits `runId`. */
 export type WorkspaceAutonomy = 'read-only' | 'recommend' | 'draft' | 'human-approved' | 'bounded-autonomous'
 
+/** Native OBIS tool adapter configuration. Token values stay in `ctx.credentials`. */
 export interface Config {
   baseUrl: string
   environmentId: string
@@ -28,6 +30,10 @@ export interface Config {
   autonomy?: WorkspaceAutonomy
   runId?: string
   capabilityLease?: string
+  /** Project id stamped onto created AgentRuns. Must be paired with applicationModuleId. */
+  projectId?: string
+  /** Published application module id stamped onto created AgentRuns. Must be paired with projectId. */
+  applicationModuleId?: string
 }
 
 export const Config = z.object({
@@ -39,6 +45,8 @@ export const Config = z.object({
   autonomy: z.union(['read-only', 'recommend', 'draft', 'human-approved', 'bounded-autonomous'] as const).default('human-approved'),
   runId: z.string(),
   capabilityLease: z.string(),
+  projectId: z.string(),
+  applicationModuleId: z.string(),
 })
 
 const output = {
@@ -125,6 +133,35 @@ function findDefinition(definitions: readonly ObisToolDefinition[], toolName: To
   return definition
 }
 
+function configModuleBinding(config: Config): { projectId: string; applicationModuleId: string } | undefined {
+  const projectId = config.projectId?.trim()
+  const applicationModuleId = config.applicationModuleId?.trim()
+  if (!projectId && !applicationModuleId) return undefined
+  if (!projectId || !applicationModuleId) {
+    throw new TypeError('tool-obis projectId and applicationModuleId must be supplied together.')
+  }
+  return { projectId, applicationModuleId }
+}
+
+function launchModuleBinding(ctx: Context): { projectId: string; applicationModuleId: string } | undefined {
+  let launch: unknown
+  try {
+    launch = (ctx as unknown as { obisLaunch?: unknown }).obisLaunch
+  } catch {
+    // Optional Host service: Cordis throws when obis-launch is not composed into this context.
+    return undefined
+  }
+  if (!launch || typeof launch !== 'object') return undefined
+  const source = launch as {
+    snapshot?: () => { projectId?: string } | undefined
+    applicationModuleId?: () => string | undefined
+  }
+  const projectId = typeof source.snapshot === 'function' ? source.snapshot()?.projectId?.trim() : undefined
+  const applicationModuleId = typeof source.applicationModuleId === 'function' ? source.applicationModuleId()?.trim() : undefined
+  if (!projectId || !applicationModuleId) return undefined
+  return { projectId, applicationModuleId }
+}
+
 function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy'>> & Omit<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy'> {
   const baseUrl = config.baseUrl.trim()
   const environmentId = config.environmentId.trim()
@@ -135,6 +172,7 @@ function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'env
   if (!environmentId) throw new TypeError('tool-obis environmentId is required.')
   if (!credentialReference) throw new TypeError('tool-obis credentialRef is required.')
   credentialRef(credentialReference)
+  const moduleBinding = configModuleBinding(config)
   return {
     baseUrl,
     environmentId,
@@ -144,6 +182,7 @@ function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'env
     ...(config.installationId?.trim() ? { installationId: config.installationId.trim() } : {}),
     ...(config.runId?.trim() ? { runId: config.runId.trim() } : {}),
     ...(config.capabilityLease?.trim() ? { capabilityLease: config.capabilityLease.trim() } : {}),
+    ...(moduleBinding ? { projectId: moduleBinding.projectId, applicationModuleId: moduleBinding.applicationModuleId } : {}),
   }
 }
 
@@ -162,6 +201,9 @@ export function apply(ctx: Context, input: Config): void {
     const current = bindings.get(key)
     if (current) return current
     const pending = (async () => {
+      const moduleBinding = (config.projectId && config.applicationModuleId)
+        ? { projectId: config.projectId, applicationModuleId: config.applicationModuleId }
+        : launchModuleBinding(ctx)
       const run = config.runId
         ? await client.getAgentRun(config.runId, config.environmentId)
         : await client.createAgentRun({
@@ -169,6 +211,7 @@ export function apply(ctx: Context, input: Config): void {
           agentId: config.agentId,
           goal: humanGoal(agent),
           autonomy: config.autonomy,
+          ...(moduleBinding ? { projectId: moduleBinding.projectId, applicationModuleId: moduleBinding.applicationModuleId } : {}),
         }, { idempotencyKey: `workspace:${key}` })
       return await client.attachAgentRun(run.id, {
         environmentId: config.environmentId,

@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-09-07-obis-governed-workspace.zh.md)
+
 ## Problem
 
 OBIS enterprise tools originally accepted a static `runId` and capability lease. That was sufficient for bridge validation but not for a product workspace: a Harness Session could ask enterprise questions without a durable OBIS work identity, the model had to supply optimistic `AgentRun.version`, and an action proposal stopped before the product's human-confirmation and final OBIS execution path.
@@ -24,4 +26,4 @@ The ordinary Harness tool result contains the proposal, human-confirmation outco
 
 ## Consequences
 
-One Harness Session maps to one durable OBIS AgentRun and task. Session resume reuses the same deterministic create key and opaque Harness Session id. Read-only and recommendation autonomy cannot gain proposal-execution authority: a capability lease can only narrow authority, and the adapter only requests human execution confirmation for run autonomy modes that permit execution. A missing approval answerer fails closed. Business approval remains distinct from Harness confirmation and can still leave the OBIS action in `approval-required` state.
+One Harness Session maps to one durable OBIS AgentRun and task. Session resume reuses the same deterministic create key and opaque Harness Session id. Read-only and recommendation autonomy cannot gain proposal-execution authority: a capability lease can only narrow authority, and the adapter only requests human execution confirmation for run autonomy modes that permit execution. A missing approval answerer fails closed. Business approval remains distinct from Harness confirmation and can still leave the OBIS action in `approval-required` state. A published application module may be stamped onto that AgentRun; the module snapshot decision lives in [OBIS AgentRun Module Binding](2026-09-29-obis-agent-run-module-binding.md).

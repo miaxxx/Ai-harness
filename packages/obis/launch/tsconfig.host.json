@@ -14,6 +14,7 @@
     { "path": "../../../vendor/schemastery" },
     { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../credentials/credentials" },
-    { "path": "../../host/apiproxy" }
+    { "path": "../../host/apiproxy" },
+    { "path": "../../runtime-diagnostics/invariants" }
   ]
 }
