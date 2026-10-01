@@ -315,6 +315,8 @@ export type DesktopBusinessEntry = 'applications' | 'spaces' | 'knowledge' | 'bu
 
 /** Native host controls; no credentials or arbitrary URLs cross this interface. */
 export interface DesktopBusinessBridge {
+  /** Prepare the authenticated initial document behind the conversation. */
+  prepare(): Promise<void>
   openPage(input: DesktopApplicationPageRequest): Promise<void>
   openEntry(entry: DesktopBusinessEntry): Promise<void>
   onSessionEnded(listener: () => void): () => void

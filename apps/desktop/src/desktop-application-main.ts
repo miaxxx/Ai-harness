@@ -942,6 +942,10 @@ async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult
 }
 
 function installApplicationIpc(): void {
+  ipcMain.handle('dsh:business-prepare', async (event) => {
+    requireTrusted(event)
+    await openBusinessWindow('applications', undefined, undefined, false)
+  })
   ipcMain.handle('dsh:business-hide', (event) => { requireTrusted(event); hideBusinessPage() })
   ipcMain.handle('dsh:business-bounds', (event, value: unknown) => {
     requireTrusted(event)

@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('dshBusiness', {
     ipcRenderer.on('dsh:business-session-ended', receive)
     return () => { ipcRenderer.removeListener('dsh:business-session-ended', receive) }
   },
+  prepare: (): Promise<void> => ipcRenderer.invoke('dsh:business-prepare') as Promise<void>,
   openEntry: (entry: import('./desktop-application-shared.ts').DesktopBusinessEntry): Promise<void> => ipcRenderer.invoke('dsh:business-entry', entry) as Promise<void>,
   hide: (): Promise<void> => ipcRenderer.invoke('dsh:business-hide') as Promise<void>,
   setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<void> => ipcRenderer.invoke('dsh:business-bounds', bounds) as Promise<void>,

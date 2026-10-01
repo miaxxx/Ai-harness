@@ -43,3 +43,5 @@ Unsent empty sessions have no durable log. Prompt admission recreates the owned 
 ## Testing
 
 `apps/desktop/tests/business-window.spec.ts` verifies invalid origins, isolated sessions, absence of preload, off-origin navigation refusal and scoped Module URLs. Desktop login and golden-page tests cover native authority reads. Actual startup, authenticated Next pages and Web/Preview/Desktop comparisons require separate runtime evidence.
+
+Business entry changes retain the visible remote view while Next handles same-origin routes. Startup prepares the initial document behind chat. This keeps business loading independent of conversation visibility; server requests still validate current authority.

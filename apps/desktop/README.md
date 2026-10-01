@@ -69,3 +69,5 @@ Unsent empty sessions have no durable log. Prompt admission recreates the owned 
 ## Model selection
 
 In Settings → Model API, enter the endpoint and key, then choose **Detect models** to retrieve its OpenAI-compatible `GET /models` directory. A directory containing one or several models is selectable before saving. After saving, the composer shows the current model to the left of Send; its menu can refresh the directory and select another model. Switching verifies the model and reconnects the managed Runtime before subsequent or restored conversations use it. Wait for active replies to finish before switching. An unavailable directory preserves the manually configured model and shows a warning; listing alone does not prove inference access.
+
+Authenticated startup prepares the first business document behind chat. Business entry changes keep the view visible and dispatch validated same-origin routes to Next; the initial document uses normal navigation when no Next handler is mounted.

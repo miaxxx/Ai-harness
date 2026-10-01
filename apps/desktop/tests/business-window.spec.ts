@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
-  options: [] as Array<Record<string, unknown>>, urls: [] as string[], visible: false,
+  options: [] as Array<Record<string, unknown>>, urls: [] as string[], visible: false, documentUrl: '',
   listeners: new Map<string, (event: { preventDefault(): void }, url: string) => void>(),
-  load: vi.fn(async (_url: string) => {}),
+  load: vi.fn(async (_url: string) => {}), route: vi.fn(async () => false),
   cookie: vi.fn(), remove: vi.fn(), close: vi.fn(),
 }))
 vi.mock('electron', () => ({
@@ -11,9 +11,11 @@ vi.mock('electron', () => ({
   WebContentsView: class {
     webContents = { setWindowOpenHandler: vi.fn(), isDestroyed: () => false, close: state.close,
       on: (name: string, listener: (event: { preventDefault(): void }, url: string) => void) => { state.listeners.set(name, listener) },
-      loadURL: async (url: string) => { state.urls.push(url); await state.load(url) }, insertCSS: vi.fn(),
+      executeJavaScript: state.route, getURL: () => state.documentUrl,
+      loadURL: async (url: string) => { state.urls.push(url); await state.load(url); state.documentUrl = url }, insertCSS: vi.fn(),
     }
     constructor(options: Record<string, unknown>) { state.options.push(options) }
+    setBackgroundColor() { /* Matches the server workspace background. */ }
     setBounds() { /* Geometry is validated before Electron receives it. */ }
     setVisible(value: boolean) { state.visible = value }
   },
@@ -37,6 +39,7 @@ describe('shared Next business workspace', () => {
     setBusinessBounds({ x: 300, y: 40, width: 980, height: 780 })
     configureBusinessIdentity(async () => ({ sessionToken: 'opaque-test', expiresAt: '2027-01-01T00:00:00Z' }))
     await openBusinessWindow('knowledge')
+    expect(state.route).not.toHaveBeenCalled()
     await openBusinessWindow('applications', { projectId: 'procurement', environmentId: 'test', moduleId: 'supplier/risk', pageId: 'home' })
     expect(state.options).toHaveLength(1)
     expect(state.options[0]?.['webPreferences']).toMatchObject({ sandbox: true, nodeIntegration: false, contextIsolation: true })
@@ -64,6 +67,7 @@ describe('shared Next business workspace', () => {
     })
     const older = openBusinessWindow('spaces')
     await started
+    expect(state.visible).toBe(true)
     await openBusinessWindow('knowledge')
     rejectOld(new Error('ERR_ABORTED (-3)'))
     await expect(older).resolves.toBeUndefined()
@@ -83,6 +87,14 @@ describe('shared Next business workspace', () => {
     await older
     expect(state.urls).toHaveLength(count)
     expect(state.visible).toBe(true)
+  })
+  it('keeps the business view visible and uses Next navigation when the document accepts it', async () => {
+    state.route.mockResolvedValueOnce(true)
+    const count = state.urls.length
+    await openBusinessWindow('spaces')
+    expect(state.visible).toBe(true)
+    expect(state.urls).toHaveLength(count)
+    expect(state.route).toHaveBeenLastCalledWith(expect.stringContaining('/workspace/spaces'))
   })
   it('does not reopen a business page when logout happens while credentials are being issued', async () => {
     let deliver!: (value: { sessionToken: string; expiresAt: string }) => void

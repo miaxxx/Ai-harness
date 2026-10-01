@@ -97,9 +97,10 @@ export async function refreshBusinessIdentity(issue: () => Promise<BusinessSessi
  * @param entry Fixed route; callers cannot supply an arbitrary URL.
  * @param page Optional Module page already authorized by the native API owner.
  * @param authorize Optional current Kernel page check, owned by this navigation revision.
- * @returns Resolves after the source-bound cookie and server page are loaded.
+ * @param reveal Whether to show the page; false prepares the first entry behind chat.
+ * @returns Resolves when Next accepts the route, or the initial document finishes loading.
  */
-export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, authorize?: () => Promise<void>): Promise<void> {
+export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, authorize?: () => Promise<void>, reveal = true): Promise<void> {
   const raw = process.env.DSH_DESKTOP_BUSINESS_WEB_URL?.trim()
   if (!raw) throw new Error('请配置 DSH_DESKTOP_BUSINESS_WEB_URL 后打开业务工作台。')
   const base = new URL(raw)
@@ -127,6 +128,8 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
     view = new WebContentsView({ webPreferences: {
       session: businessSession, sandbox: true, contextIsolation: true, nodeIntegration: false,
     } })
+    view.setVisible(false)
+    view.setBackgroundColor('#f4f5f7')
     host.contentView.addChildView(view)
     const contents = view.webContents
     contents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -147,13 +150,16 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
     ? `/workspace/apps/${encodeURIComponent(page.moduleId)}/${encodeURIComponent(page.pageId)}?${new URLSearchParams({ projectId: page.projectId, environmentId: page.environmentId })}`
     : paths[entry]
   view.setBounds(bounds)
-  view.setVisible(false)
+  if (reveal) view.setVisible(true)
   try {
-    await view.webContents.loadURL(new URL(target, base).href)
+    const routed = view.webContents.getURL().startsWith(base.origin + '/')
+      && await view.webContents.executeJavaScript(`window.dispatchEvent(new CustomEvent('obis:navigate', { detail: ${JSON.stringify(target)}, cancelable: true })) === false`)
+    if (revision !== generation) return
+    if (!routed) await view.webContents.loadURL(new URL(target, base).href)
   } catch (error) {
     // A newer navigation or chat selection owns the view after cancellation.
     if (revision !== generation) return
     throw error
   }
-  if (revision === generation) view.setVisible(true)
+  if (revision === generation && reveal) view.setVisible(true)
 }

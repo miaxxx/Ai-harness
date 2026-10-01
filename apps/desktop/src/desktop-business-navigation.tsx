@@ -26,6 +26,11 @@ function BusinessNavigation({ wide, scope, modules, tenantName }: NavigationProp
   const [error, setError] = useState<string>()
   const [items, setItems] = useState(modules)
   const navigationRevision = useRef(0)
+  useEffect(() => {
+    void reportWorkspaceBounds().then(() => {
+      if (navigationRevision.current === 0) return window.dshBusiness.prepare()
+    }).catch((reason: unknown) => { console.warn('[desktop-business] background preparation failed:', reason) })
+  }, [])
   const showChat = (): void => { navigationRevision.current++; setSelected(undefined); setError(undefined); void window.dshBusiness.hide() }
   useEffect(() => {
     const unsubscribe = window.dshBusiness.onSessionEnded(() => {
