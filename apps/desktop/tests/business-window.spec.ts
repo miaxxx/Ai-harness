@@ -37,10 +37,13 @@ describe('shared Next business workspace', () => {
     } as never)
     expect(() =>{  setBusinessBounds({ x: 200, y: 0, width: 2000, height: 800 }) }).toThrow('尺寸无效')
     setBusinessBounds({ x: 300, y: 40, width: 980, height: 780 })
-    configureBusinessIdentity(async () => ({ sessionToken: 'opaque-test', expiresAt: '2027-01-01T00:00:00Z' }))
+    const issue = vi.fn(async () => ({ sessionToken: 'opaque-test', expiresAt: '2027-01-01T00:00:00Z' }))
+    configureBusinessIdentity(issue)
     await openBusinessWindow('knowledge')
     expect(state.route).not.toHaveBeenCalled()
     await openBusinessWindow('applications', { projectId: 'procurement', environmentId: 'test', moduleId: 'supplier/risk', pageId: 'home' })
+    expect(issue).toHaveBeenCalledTimes(1)
+    expect(state.cookie).toHaveBeenCalledTimes(1)
     expect(state.options).toHaveLength(1)
     expect(state.options[0]?.['webPreferences']).toMatchObject({ sandbox: true, nodeIntegration: false, contextIsolation: true })
     expect(state.options[0]?.['webPreferences']).not.toHaveProperty('preload')
@@ -60,6 +63,15 @@ describe('shared Next business workspace', () => {
     await clearBusinessIdentity()
     expect(state.remove).toHaveBeenCalledWith('https://app.example.com', '__Host-obis_web')
   })
+  it('renews an expired linked session before accepting another route', async () => {
+    const issue = vi.fn(async () => ({ sessionToken: 'renewed', expiresAt: '2027-01-01T00:00:00Z' }))
+    configureBusinessIdentity(issue)
+    await openBusinessWindow('spaces')
+    await refreshBusinessIdentity(async () => ({ sessionToken: 'expired', expiresAt: new Date(Date.now() - 1).toISOString() }))
+    await openBusinessWindow('knowledge')
+    expect(issue).toHaveBeenCalledTimes(2)
+    expect(state.cookie).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'renewed' }))
+  })
   it('ignores superseded load cancellation while preserving the newest page', async () => {
     let rejectOld!: (reason: Error) => void
     const started = new Promise<void>((resolve) => {
@@ -76,18 +88,6 @@ describe('shared Next business workspace', () => {
     state.load.mockRejectedValueOnce(new Error('connection refused'))
     await expect(openBusinessWindow('applications')).rejects.toThrow('connection refused')
   })
-  it('does not replace a newer fixed entry when an older Module authorization finishes', async () => {
-    let finish!: () => void
-    const older = openBusinessWindow('applications', {
-      projectId: 'procurement', environmentId: 'test', moduleId: 'supplier', pageId: 'home',
-    }, () => new Promise<void>((resolve) => { finish = resolve }))
-    await openBusinessWindow('knowledge')
-    const count = state.urls.length
-    finish()
-    await older
-    expect(state.urls).toHaveLength(count)
-    expect(state.visible).toBe(true)
-  })
   it('keeps the business view visible and uses Next navigation when the document accepts it', async () => {
     state.route.mockResolvedValueOnce(true)
     const count = state.urls.length
@@ -97,6 +97,7 @@ describe('shared Next business workspace', () => {
     expect(state.route).toHaveBeenLastCalledWith(expect.stringContaining('/workspace/spaces'))
   })
   it('does not reopen a business page when logout happens while credentials are being issued', async () => {
+    await clearBusinessIdentity()
     let deliver!: (value: { sessionToken: string; expiresAt: string }) => void
     configureBusinessIdentity(() => new Promise((resolve) => { deliver = resolve }))
     const pending = openBusinessWindow('spaces')

@@ -96,11 +96,10 @@ export async function refreshBusinessIdentity(issue: () => Promise<BusinessSessi
  * Render a fixed business entry inside the shared right workspace.
  * @param entry Fixed route; callers cannot supply an arbitrary URL.
  * @param page Optional Module page already authorized by the native API owner.
- * @param authorize Optional current Kernel page check, owned by this navigation revision.
  * @param reveal Whether to show the page; false prepares the first entry behind chat.
  * @returns Resolves when Next accepts the route, or the initial document finishes loading.
  */
-export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, authorize?: () => Promise<void>, reveal = true): Promise<void> {
+export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, reveal = true): Promise<void> {
   const raw = process.env.DSH_DESKTOP_BUSINESS_WEB_URL?.trim()
   if (!raw) throw new Error('请配置 DSH_DESKTOP_BUSINESS_WEB_URL 后打开业务工作台。')
   const base = new URL(raw)
@@ -108,16 +107,15 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
   if (base.protocol !== 'https:') throw new Error('业务工作台必须使用 HTTPS。')
   if (!host || host.isDestroyed() || !bounds) throw new Error('请先选择客户端中的业务工作区。')
   if (!identityProvider) throw new Error('业务身份尚未就绪。')
+  const started = performance.now()
   const revision = ++generation
-  if (authorize) {
-    try { await authorize() } catch (error) { if (revision !== generation) return; throw error }
-    if (revision !== generation) return
-  }
-  const issued = await identityProvider(linkedSession)
+  const issued = linkedSession && Date.parse(linkedSession.expiresAt) > Date.now()
+    ? linkedSession : await identityProvider(linkedSession)
   if (revision !== generation) return
+  const replaceCookie = issued !== linkedSession
   linkedSession = issued
   const businessSession = session.fromPartition('persist:obis-business')
-  await mutateCookie(async () => {
+  if (replaceCookie) await mutateCookie(async () => {
     if (revision !== generation) return
     await businessSession.cookies.set({ url: base.origin, name: '__Host-obis_web', value: issued.sessionToken,
       path: '/', secure: true, httpOnly: true, sameSite: 'lax', expirationDate: Date.parse(issued.expiresAt) / 1000 })
@@ -162,4 +160,5 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
     throw error
   }
   if (revision === generation && reveal) view.setVisible(true)
+  console.info('[desktop-business] navigation accepted', Math.round(performance.now() - started), 'ms')
 }

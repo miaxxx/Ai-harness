@@ -10,7 +10,7 @@ Builder 发布的业务页面已由 OBIS Next Workspace 使用 React 渲染。�
 
 ## 决策
 
-Desktop 在 Mona/Harness 对话窗口右侧的沙箱 WebContentsView 中加载配置的 OBIS Next 根地址。可选 sidebar.navigation 插槽把业务入口放在原有工作区和会话浏览器上方；切回聊天保留已挂载的对话。固定入口包括应用、公共空间、资料库和 Builder。远程视图没有原生预加载脚本，拒绝权限请求、新窗口和跨来源跳转。原生模块链接在打开 Next 路由前验证发送方、作用域和 Kernel 页面权限。凭证不进入路由参数。
+Desktop 在 Mona/Harness 对话窗口右侧的沙箱 WebContentsView 中加载配置的 OBIS Next 根地址。可选 sidebar.navigation 插槽把业务入口放在原有工作区和会话浏览器上方；切回聊天保留已挂载的对话。固定入口包括应用、公共空间、资料库和 Builder。远程视图没有原生预加载脚本，拒绝权限请求、新窗口和跨来源跳转。原生模块链接验证发送方和项目、环境作用域。Next BFF 在解析路由时执行 Kernel 页面授权；原生导航不重复获取页面。凭证不进入路由参数。
 
 Desktop 后台从已认证人员源会话派生不透明 Web 会话，并写入 Next HttpOnly Cookie。仅 BFF 能将 Cookie 换取委托 API 凭证。入口切换检查原生凭证是否就绪，并在有效期内复用关联 Cookie。退出和租户切换清除 Cookie；跳转登录页隐藏业务视图并提示业务登录，不重载对话。退出后才完成的凭证签发不能重新打开业务视图。DOM 渲染器保留给原生预览和 Harness 启动浮层，其组件注册由 [Desktop 共用 UI Runtime 注册表](../feature/2026-09-30-desktop-shared-ui-runtime-registry.zh.md)负责。
 
