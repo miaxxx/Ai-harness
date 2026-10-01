@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-07-obis-governed-workspace.md
-2026-09-07-obis-governed-workspace.md: a8c06fd1e1c083924ceb0e6d99df348dd1ed11aa
-2026-09-07-obis-governed-workspace.zh.md: 2e8a7e8896d415fb725ae926de007787ffc43385
+2026-09-07-obis-governed-workspace.md: 6fd997a9db99b6186152c4132d398b6dd6d32d9e
+2026-09-07-obis-governed-workspace.zh.md: 3759963806db760babc42e3777377de15699b8ba

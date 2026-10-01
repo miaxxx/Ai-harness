@@ -1,8 +1,8 @@
 # Agent Note: OHP P0 Client Surface Completeness
 
-[English](2026-09-26-ohp-p0-client-surface.md) | 中文
-
 Status: implemented
+
+[English](2026-09-26-ohp-p0-client-surface.md) | 中文
 
 ## Problem
 
@@ -10,7 +10,7 @@ OHP 1.0 的 README 与 Kernel 已经提供动作预检、任务列表以及业�
 
 ## Decision
 
-`ObisBridgeClient` 补齐剩余的 OHP 1.0 P0 HTTP 操作：`evaluateAction`、`listTasks`、`listApprovals` 与 `decideApproval`。面向模型的 `createObisTools` 仍然不包含 execute、evaluate 与审批决定工具。预检仍是策略预览；审批决定仍属于人类或产品运行时权威路径。
+`ObisBridgeClient` 补齐剩余的 OHP 1.0 P0 HTTP 操作：`evaluateAction`、`listTasks`、`listApprovals` 与 `decideApproval`。面向模型的 `createObisTools` 仍然不包含 execute、evaluate 与审批决定工具。有权的任务、审批与 skill 列表作为读取工具走同一套集合 GET；预检仍是策略预览；审批决定仍属于人类或产品运行时权威路径。
 
 ## Alternatives considered
 
@@ -20,4 +20,4 @@ OHP 1.0 的 README 与 Kernel 已经提供动作预检、任务列表以及业�
 
 ## Consequences
 
-包测试钉住这些额外客户端路径，同时不扩大模型工具集。Kernel OpenAPI 现在列出 README 已命名的任务列表与审批操作。托管 runner 上的 Stage A 验证仍不在本变更范围内。
+包测试钉住这些额外客户端路径。`createObisTools` 把有权的任务、审批与 skill 列表作为读取工具暴露出来；execute、evaluate 与审批决定仍不进入模型工具注册表。这些列表工具见 [OBIS Model Inbox Catalog Tools](../feature/2026-09-30-obis-model-inbox-catalog.zh.md)。Kernel OpenAPI 现在列出 README 已命名的任务列表与审批操作。托管 runner 上的 Stage A 验证仍不在本变更范围内。

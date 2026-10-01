@@ -34,6 +34,7 @@ import type {
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
+import * as desktopBusinessPlugin from './desktop-business-navigation.tsx'
 import * as localePlugin from '@deepseek-ai/dsh-client-locale/client'
 import * as themePlugin from '@deepseek-ai/dsh-client-ui-theme/client'
 import * as layoutPlugin from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -251,6 +252,7 @@ class DesktopSession {
   private readonly entries: AcpTranscriptEntry[] = []
   private readonly messages = new Map<string, AcpMessageEntry>()
   private readonly tools = new Map<string, AcpToolEntry>()
+  private replaying = false
   private readonly pendingUserDisplays: Array<{ readonly text: string }> = []
   private plan: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }> = []
   private loaded: boolean
@@ -265,6 +267,8 @@ class DesktopSession {
     private readonly cwd: string,
     conversation: { events: ConversationEventRegistry; views: ConversationViewRegistry },
     private readonly onChanged: (session: DesktopSession) => void,
+    private readonly prepareForPrompt: () => Promise<DesktopSession>,
+    private readonly consumePreparedInput: () => void,
     private readonly previewArtifacts: (paths: readonly string[]) => void,
     options: { loaded: boolean; blank: boolean },
   ) {
@@ -304,9 +308,28 @@ class DesktopSession {
     this.publish()
   }
 
+  beginReplay(): void {
+    this.replaying = true
+    this.running = false
+    this.entries.splice(0)
+    this.messages.clear()
+    this.tools.clear()
+    this.setPlan([])
+    this.publish()
+  }
+
+  finishReplay(loaded: boolean): void {
+    this.replaying = false
+    this.loaded = loaded
+    this.running = loaded && this.pendingUserDisplays.length > 0
+    this.publish()
+  }
+
   markLoaded(): void {
     this.loaded = true
   }
+
+  needsEmptyRecovery(): boolean { return !this.loaded && this.blank }
 
   async ensureLoaded(): Promise<void> {
     if (this.loaded) return
@@ -323,7 +346,7 @@ class DesktopSession {
     const update = notification.update
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        this.acceptMessage('user', update.messageId, this.pendingUserDisplays.length > 0
+        this.acceptMessage('user', update.messageId, !this.replaying && this.pendingUserDisplays.length > 0
           ? [{ type: 'text', text: this.pendingUserDisplays.shift()?.text ?? '' }]
           : userTextContent(update.content))
         break
@@ -454,7 +477,8 @@ class DesktopSession {
       turnOpen = false
     }
 
-    for (const entry of this.entries) {
+    const activeTurnStart = this.entries.findLastIndex(entry => entry.kind === 'message' && entry.role === 'user')
+    for (const [entryIndex, entry] of this.entries.entries()) {
       if (entry.kind === 'message' && entry.role === 'user') {
         closeTurn()
         openTurn()
@@ -476,7 +500,7 @@ class DesktopSession {
         assistantBlocks = accumulateDesktopAssistantBlocks(assistantBlocks, entry.blocks, followsTool)
         stepHasTool = false
         for (const event of projectDesktopAssistant(
-          assistantBlocks, this.running, turn, step, messageId(entry.id),
+          assistantBlocks, this.running && entryIndex > activeTurnStart, turn, step, messageId(entry.id),
         )) append(event)
         continue
       }
@@ -561,6 +585,19 @@ class DesktopSession {
       .join('\n')
     const prompt = splitDesktopPrompt(text)
     if (prompt.length === 0) return rpcFailure('Desktop ACP currently accepts text prompts only.')
+    try {
+      const ready = await this.prepareForPrompt()
+      if (ready !== this) {
+        const result = await ready.prompt(content)
+        if (result.ok) ready.consumePreparedInput()
+        return result
+      }
+    } catch (error) {
+      const failure = rpcFailure<{ accepted: true }>(error instanceof Error ? error.message : String(error))
+      if (!failure.ok) this.promptError = { op: 'send', error: failure.error }
+      this.publish()
+      return failure
+    }
     const display = desktopPromptDisplay(prompt)
     this.promptAttempted = true
     this.promptError = null
@@ -588,6 +625,7 @@ class DesktopSession {
         this.publish()
         this.onChanged(this)
       })
+      this.consumePreparedInput()
       return { ok: true, value: { accepted: true } }
     } catch (error: unknown) {
       const failure = rpcFailure<{ accepted: true }>(error instanceof Error ? error.message : String(error))
@@ -627,6 +665,7 @@ class DesktopSession {
 }
 
 class DesktopSessions {
+  private readonly preparedDrafts = new Map<SessionId, number>()
   readonly list: SnapshotStore<SessionListState> = createSnapshotStore({
     ids: [], byId: {}, current: undefined, phase: 'ready',
     subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
@@ -634,6 +673,7 @@ class DesktopSessions {
   readonly searchResultLimit = SEARCH_RESULT_LIMIT
   readonly currentProvideInfo: HostObservable<SessionMaybeProvideInfo>
   private readonly records = new Map<SessionId, SessionRecord>()
+  private readonly restorations = new Map<SessionId, Promise<void>>()
   private readonly titles = new Map<SessionId, string | undefined>()
   private readonly channel: SessionProvideChannel
 
@@ -692,6 +732,12 @@ class DesktopSessions {
     return id
   }
 
+  replay(frame: Extract<DesktopRendererFrame, { type: 'session-replay' }>): void {
+    const session = this.records.get(frame.sessionId as SessionId)?.session
+    if (frame.phase === 'starting') session?.beginReplay()
+    else session?.finishReplay(frame.phase === 'ready')
+  }
+
   accept(frame: Extract<DesktopRendererFrame, { type: 'session-update' }>): void {
     this.records.get(frame.sessionId as SessionId)?.session.accept(frame.notification)
   }
@@ -721,9 +767,88 @@ class DesktopSessions {
   resumeCurrent(): void {
     const current = this.list.getSnapshot().current
     if (current === undefined) return
-    void this.records.get(current)?.session.ensureLoaded().catch((error: unknown) => {
+    void this.restoreSession(current).catch((error: unknown) => {
       console.error('[desktop-product] failed to restore current session:', error)
     })
+  }
+
+  private restoreSession(id: SessionId): Promise<void> {
+    const pending = this.restorations.get(id)
+    if (pending !== undefined) return pending
+    const operation = this.restoreRecord(id).finally(() => { this.restorations.delete(id) })
+    this.restorations.set(id, operation)
+    return operation
+  }
+
+  private async restoreRecord(id: SessionId): Promise<void> {
+    const record = this.records.get(id)
+    if (record === undefined) return
+    if (!record.session.needsEmptyRecovery()) return record.session.ensureLoaded()
+    // Empty sessions have no durable log. Renew their host identity, then move
+    // the unsent input through the conversation plugin's existing input face.
+    const cwd = record.summary.cwd
+    if (cwd === undefined) throw new Error('空会话缺少工作区')
+    const nextId = await window.dshDesktop.createSession(cwd, id) as SessionId
+    await this.replaceEmptyRecord(id, nextId)
+  }
+
+  private async replaceEmptyRecord(id: SessionId, nextId: SessionId): Promise<DesktopSession> {
+    const record = this.records.get(id)
+    if (!record || !record.summary.cwd) throw new Error('空会话缺少工作区')
+    const cwd = record.summary.cwd
+    const previousCtx = this.scope(id)
+    const previousInput = previousCtx === undefined ? undefined : this.rootCtx.conversation.input.for(previousCtx)
+    const nextRecord = this.adopt({ sessionId: nextId, cwd }, { loaded: true, blank: true })
+    this.provideInfo(nextId)
+    const nextCtx = this.scope(nextId)
+    if (previousInput !== undefined && nextCtx !== undefined) {
+      const draft = previousInput.state.getSnapshot()
+      const nextInput = this.rootCtx.conversation.input.for(nextCtx)
+      nextInput.setDraft(draft.draft)
+      for (const occurrence of [...draft.occurrences].reverse()) {
+        const { source, ref, label, appearance, clipboardText } = occurrence
+        const accepted = nextInput.insertReference({ source, ref, label, ...(appearance ? { appearance } : {}), clipboardText }, {
+          start: occurrence.offset, end: occurrence.offset + occurrence.length,
+          draftRev: nextInput.state.getSnapshot().draftRev,
+        })
+        if (!accepted) throw new Error('未发送的业务引用未能迁移，请重新选择。')
+      }
+      nextInput.addImages(draft.imageIds)
+      this.preparedDrafts.set(nextId, nextInput.state.getSnapshot().draftRev)
+      previousInput.setDraft('')
+      for (const imageId of draft.imageIds) previousInput.removeImage(imageId)
+    }
+    this.list.update((state) => {
+      state.ids = state.ids.filter(candidate => candidate !== id)
+      if (!state.ids.includes(nextId)) state.ids.unshift(nextId)
+      state.byId = Object.fromEntries(Object.entries(state.byId).filter(([key]) => key !== id))
+      if (state.current === id) state.current = nextId
+    })
+    this.records.delete(id)
+    this.titles.delete(id)
+    this.preparedDrafts.delete(id)
+    await record.fiber?.dispose()
+    return nextRecord.session
+  }
+
+  private consumePreparedInput(id: SessionId): void {
+    const revision = this.preparedDrafts.get(id)
+    this.preparedDrafts.delete(id)
+    const ctx = this.scope(id)
+    if (revision === undefined || ctx === undefined) return
+    const input = this.rootCtx.conversation.input.for(ctx)
+    const draft = input.state.getSnapshot()
+    if (draft.draftRev !== revision) return
+    input.setDraft('')
+    for (const imageId of draft.imageIds) input.removeImage(imageId)
+  }
+
+  private async prepareForPrompt(id: SessionId): Promise<DesktopSession> {
+    const nextId = await window.dshDesktop.prepareSession(id) as SessionId
+    if (nextId !== id) return this.replaceEmptyRecord(id, nextId)
+    const record = this.records.get(id)
+    if (!record) throw new Error('会话已关闭')
+    return record.session
   }
 
   rebuildConversationRegistries(): void {
@@ -740,6 +865,8 @@ class DesktopSessions {
         row.cwd,
         this.conversation,
         (changed) => { this.noteChanged(changed) },
+        () => this.prepareForPrompt(id),
+        () => { this.consumePreparedInput(id) },
         (paths) => {
           const target = selectAutoPreviewArtifact(paths)
           if (target !== undefined) void this.preview.openPath(target).catch((error: unknown) => {
@@ -821,7 +948,7 @@ class DesktopSessions {
       draft.current = id
       draft.currentAddress = undefined
     })
-    void record.session.ensureLoaded().catch((error: unknown) => {
+    void this.restoreSession(id).catch((error: unknown) => {
       console.error('[desktop-product] failed to load session:', error)
     })
   }
@@ -1232,16 +1359,21 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, desktopContentPlugin(sessions))
   await mountPlugin(ctx, desktopPreviewPlugin(preview))
   await mountPlugin(ctx, desktopBrandPlugin)
+  await mountPlugin(ctx, desktopBusinessPlugin)
   await mountPlugin(ctx, rendererPlugin)
   sessions.rebuildConversationRegistries()
 
   const unsubscribeFrames = window.dshDesktop.subscribe((frame) => {
+    if (frame.type === 'session-replay') {
+      sessions.replay(frame)
+      return
+    }
     if (frame.type === 'session-update') {
       sessions.accept(frame)
       return
     }
     if (frame.status === 'starting' || frame.status === 'stopped') sessions.runtimeDetached()
-    if (frame.status === 'ready') sessions.resumeCurrent()
+    if (frame.status === 'ready' && !frame.sessionsRestoredByHost) sessions.resumeCurrent()
     if (frame.status === 'failed') {
       sessions.runtimeDetached()
       console.error('[desktop-product] ACP Runtime failed:', frame.message ?? 'unknown error')
@@ -1251,6 +1383,7 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
     preview.openUrl(url)
   })
 
+  const unmount = ctx.uiRenderer.mount(container)
   const initialWorkspace = await window.dshDesktop.workspace()
   await workspaces.initialize(initialWorkspace)
   workspaces.syncSessions()
@@ -1262,7 +1395,6 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   sessions.open(initial)
 
   const unsubscribeSessions = sessions.list.subscribe(() => { workspaces.syncSessions() })
-  const unmount = ctx.uiRenderer.mount(container)
 
   return () => {
     unsubscribeFrames()

@@ -14,7 +14,9 @@ Desktop 产品需要一份控制对话所用 ACP 运行时的 OpenAI 兼容模�
 
 保存时会先通过选定的 OpenAI Chat Completions 或 Responses 协议发送一次有上限、带函数工具声明的文字请求。协议、凭据、模型 ID 或工具请求不兼容时，会在修改现有设置与运行时之前失败。第二次有上限的请求检测可选图片输入；失败时记录为仅文字模型，不拒绝仍可使用的端点。若网关通过常见扩展公布上下文与输出容量，可选的 `GET /models` 元数据会提供这些数值。
 
-只有验收成功后，托管的 ACP 运行时才会重启。`examples/acp-agent/cordis.yml` 仅在存在 Desktop 模型环境时选择 `llm-pi-ai` provider；它通过 `baseURLEnv` 引用从不可变启动环境快照解析端点，不在配置中直接求值 `process.env`。该路由使用内置 OpenAI catalog，因此已知模型 ID 会继承准确的 token、模态和 effort 事实，而用户选择的协议与已验证端点值优先。未知模型默认仅文字、32K 上下文、8K 输出能力且不发送推理强度。保守兼容开关会省略通用网关经常拒绝的 developer role、严格工具声明、store 和流式 usage 扩展。CLI、快照和其他 ACP 启动方式继续默认使用普通 DeepSeek provider。
+只有验收成功后，托管的 ACP 运行时才会重启。`examples/acp-agent/cordis.yml` 仅在存在 Desktop 模型环境时选择 `llm-pi-ai` provider；它通过 `baseURLEnv` 引用从不可变启动环境快照解析端点，不在配置中直接求值 `process.env`。该路由使用内置 OpenAI catalog，因此已知模型 ID 会继承准确的 token、模态和 effort 事实，而用户选择的协议与已验证端点值优先。未知模型默认仅文字、32K 上下文、8K 输出能力且不发送推理强度。保守兼容开关会省略通用网关经常拒绝的 developer role、严格工具声明、store 、流式 usage 扩展和 Chat Completions 的 `reasoning_effort`。自定义接口使用服务端推理默认值，避免把 catalog 的关闭值（如 `none`）发送给不支持该值的网关。CLI、快照和其他 ACP 启动方式继续默认使用普通 DeepSeek provider。
+
+模型检测和切换由同一个 Desktop 设置插件负责。`models/main/catalog.ts` 对主进程中的 `GET /models` 请求设置边界，目录不可用时回退到已配置模型。`models/renderer/controller.ts` 在设置与既有 `conversation.input.model` 槽位间共享脱敏状态，模型菜单位于发送按钮之前。`models/main/manager.ts` 串行处理经过验证的切换，回复进行中拒绝更改，Runtime 重连失败时恢复原配置。草稿接口不能复用另一接口的已保存密钥。尚未提交消息的空会话没有持久日志；重连后重新建立空会话，并保留草稿文字、图片和主进程附件引用。已有消息的会话继续通过正常的历史加载路径恢复。目录成员仅供参考；选择不同模型时仍通过配置的协议验证实际推理调用。
 
 ## 考虑过的替代方案
 

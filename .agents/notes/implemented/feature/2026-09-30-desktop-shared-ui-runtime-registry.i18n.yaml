@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-30-desktop-shared-ui-runtime-registry.md
+2026-09-30-desktop-shared-ui-runtime-registry.md: aeca0303ce9b79ec741a6f57b7b22796cb25d246
+2026-09-30-desktop-shared-ui-runtime-registry.zh.md: 18a12bd249f1287b9564cec5b1bb3cac64e4942f

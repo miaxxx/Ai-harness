@@ -1491,6 +1491,26 @@ export interface Config {
 
 Source: [`packages/feedback/message-feedback/src/index.ts:49`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-obis-launch"></a>
+
+## `@deepseek-ai/dsh-obis-launch`
+
+Requires: `credentials` · `connection`
+
+```ts config-catalog
+/** Host plugin config for the OBIS Kernel base URL and delegated-token credential reference. */
+export interface Config {
+  /** OBIS kernel/API base URL. When absent, the bridge stays inert. */
+  baseUrl?: string
+  /** Harness credential reference that receives the short-lived delegated token. */
+  credentialRef?: string
+  /** Optional stable installation/device identifier forwarded to OBIS. */
+  deviceId?: string
+}
+```
+
+Source: [`packages/obis/launch/src/index.ts:77`](../packages/obis/launch/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -2708,6 +2728,49 @@ export interface Config {
 
 Source: [`packages/lsp/tool-lsp/src/index.ts:58`](../packages/lsp/tool-lsp/src/index.ts)
 
+<a id="deepseek-aidsh-tool-obis"></a>
+
+## `@deepseek-ai/dsh-tool-obis`
+
+Requires: `credentials` · `tools` · `systemPrompt` · `approval`
+
+```ts config-catalog
+/** Native OBIS tool adapter configuration. Token values stay in `ctx.credentials`. */
+export interface Config {
+  /** OBIS Kernel HTTP base URL. */
+  baseUrl: string
+  /** Environment checked by Kernel for every governed call. */
+  environmentId: string
+  /** Host credential reference resolved for each operation. */
+  credentialRef: string
+  /** Registered Harness installation used for device-bound leases. */
+  installationId?: string
+  /** Agent identity recorded on created runs; defaults to workspace. */
+  agentId?: string
+  /** Requested run autonomy; defaults to human-approved. */
+  autonomy?: WorkspaceAutonomy
+  /** Existing governed run; must be paired with capabilityLease. */
+  runId?: string
+  /** Lease for an existing run; must be paired with runId. */
+  capabilityLease?: string
+  /** Project id stamped onto created AgentRuns. Must be paired with applicationModuleId. */
+  projectId?: string
+  /** Published application module id stamped onto created AgentRuns. Must be paired with projectId. */
+  applicationModuleId?: string
+  /** Validated workspace project restricting user-selected business references. */
+  workspaceProjectId?: string
+  /** Autonomy for explicitly referenced Modules; defaults to read-only. */
+  referenceAutonomy?: 'read-only' | 'human-approved'
+  /** Maximum wait for a public SSE event; defaults to 5000 milliseconds. */
+  eventReadTimeoutMs?: number
+}
+
+/** Workspace autonomy forwarded onto created AgentRuns when config omits `runId`. */
+export type WorkspaceAutonomy = 'read-only' | 'recommend' | 'draft' | 'human-approved' | 'bounded-autonomous'
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts:26`](../packages/obis/tool-obis/src/index.ts)
+
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -3402,6 +3465,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-llm-mock-server` ([`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts))
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
+- `@deepseek-ai/dsh-obis-bridge` ([`packages/obis/bridge/src/index.ts`](../packages/obis/bridge/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))

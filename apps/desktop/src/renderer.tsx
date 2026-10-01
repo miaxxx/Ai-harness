@@ -1,5 +1,4 @@
 import { mountDesktopEnterpriseIdentity } from './desktop-obis-identity-ui.ts'
-import { mountDesktopEnterpriseShell } from './desktop-enterprise-shell.ts'
 import { mountDesktopProduct } from './product-runtime.ts'
 import './renderer.css'
 
@@ -9,9 +8,9 @@ function renderBootFailure(root: HTMLElement, error: unknown): void {
   const panel = document.createElement('main')
   panel.className = 'desktop-boot-error'
   const eyebrow = document.createElement('p')
-  eyebrow.textContent = 'Desktop product boot failed'
+  eyebrow.textContent = '客户端启动失败'
   const heading = document.createElement('h1')
-  heading.textContent = 'Orbis AI could not start'
+  heading.textContent = '无法启动 Orbis AI'
   const detail = document.createElement('pre')
   detail.textContent = message
   panel.append(eyebrow, heading, detail)
@@ -22,11 +21,6 @@ const root = document.getElementById('root')
 if (root === null) throw new Error('desktop renderer: missing #root')
 
 void mountDesktopEnterpriseIdentity(root, async () => {
-  const status = await window.dshEnterprise.status()
-  if (status.configured && status.authenticated) {
-    await mountDesktopEnterpriseShell(root, mountDesktopProduct)
-    return
-  }
   await mountDesktopProduct(root)
 }).catch((error: unknown) => {
   console.error('[desktop-product] boot failed:', error)

@@ -1,6 +1,7 @@
 /** Desktop-only display projection for durable ACP prompt references. */
 
 import type { ContentBlock, SessionEvent } from '@deepseek-ai/dsh-client-connection/client'
+import { displayObisBusinessReferences } from '@deepseek-ai/dsh-obis-bridge'
 
 type SyntheticSessionEvent = SessionEvent extends infer Event
   ? Event extends SessionEvent ? Omit<Event, 'seq' | 'time'> : never
@@ -12,8 +13,8 @@ const RESOURCE_LINK = /\n?\[resource_link name=("(?:\\.|[^"\\])*") uri="(?:\\.|[
 export function appendDesktopMessageBlocks(target: ContentBlock[], blocks: readonly ContentBlock[]): void {
   for (const block of blocks) {
     const previous = target.at(-1)
-    if (block.type === 'text' && previous?.type === 'text') previous.text += block.text
-    else if (block.type === 'reasoning' && previous?.type === 'reasoning') previous.text += block.text
+    if (block.type === 'text' && previous?.type === 'text') target[target.length - 1] = { ...previous, text: previous.text + block.text }
+    else if (block.type === 'reasoning' && previous?.type === 'reasoning') target[target.length - 1] = { ...previous, text: previous.text + block.text }
     else target.push({ ...block })
   }
 }
@@ -42,7 +43,7 @@ export function accumulateDesktopAssistantBlocks(
  * @returns Text suitable for the Desktop conversation projection.
  */
 export function projectDesktopUserText(text: string): string {
-  return text.replace(RESOURCE_LINK, (_match, encodedName: string) => {
+  return displayObisBusinessReferences(text).replace(RESOURCE_LINK, (_match, encodedName: string) => {
     let name = '附件'
     try { name = JSON.parse(encodedName) as string } catch { /* ACP owns the generated JSON string. */ }
     return `\n@"${name.replaceAll('"', "'")}"\n`
@@ -74,7 +75,7 @@ export function projectDesktopAssistant(
         message: {
           id,
           role: 'assistant',
-          content: [...blocks],
+          content: blocks.map(block => ({ ...block })),
           source: { kind: 'model', provider: 'acp', model: 'runtime' },
         },
       },

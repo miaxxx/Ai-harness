@@ -62,6 +62,9 @@ import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import * as ToolObis from '@deepseek-ai/dsh-tool-obis'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
@@ -188,6 +191,22 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-obis',
+    dir: 'tool-obis',
+    source: 'packages/obis/tool-obis/src/index.ts',
+    requires: ['ctx.credentials', 'ctx.tools', 'ctx.systemPrompt', 'ctx.approval'],
+    writes: ['tool/call', 'tool/result', 'approval/asked and approval/decided for executable proposals'],
+    async mount(ctx) {
+      await ctx.plugin(LocalCredentialProvider, { dshHome: resolve(root, '.tmp/tool-catalog/.dsh'), watch: false })
+      await ctx.plugin(ApprovalService)
+      await ctx.plugin(ToolObis, {
+        baseUrl: 'http://127.0.0.1:4300', environmentId: 'catalog',
+        credentialRef: 'OBIS_CATALOG_ACCESS', runId: 'catalog', capabilityLease: 'catalog',
+      })
+    },
+    note: 'Read enterprise context and inboxes, or propose an action. Executable proposals require human confirmation and Kernel authorization; catalog generation performs no Kernel request.',
+  },
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
     dir: 'tool-ask-user',

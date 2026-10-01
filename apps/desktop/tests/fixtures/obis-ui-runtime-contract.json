@@ -5,7 +5,7 @@
   "components": [
     "Page","Section","Stack","Grid","Form","Table","Tabs","Drawer","Modal","Dashboard","Chart","Detail",
     "Search","Filter","DataTable","ObjectDetail","ObjectPicker","PeoplePicker","ApprovalQueue","Timeline",
-    "ActivityFeed","RiskIndicator","AISummary","AIComposer"
+    "ActivityFeed","RiskIndicator","MetricCard","TaskList","FileViewer","KnowledgeSearch","ActionButton","WorkflowStatus","NotificationPanel","AIAssistant","AISummary","AIComposer"
   ],
   "tokens": [
     "color.accent","color.success","color.warning","color.danger",

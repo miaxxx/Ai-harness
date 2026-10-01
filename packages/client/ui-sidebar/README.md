@@ -18,6 +18,8 @@ The foot is the `sidebar.settings` seat: the sidebar renders only the bottom-pin
 
 The `/client` exports are the plugin body (`apply`/`inject`) plus the contract types only; SidebarRoot, the row components, and the tree derivation remain package-internal behind the slot registration.
 
+The optional list slot `sidebar.navigation` places product entries above the conversation workspace browser. Its occupants receive the column display state and own their data; the shared shell retains New Session, history and Settings.
+
 ## Model Experience
 
 None, as the sidebar renders the browser session list; nothing here reaches a model request.

@@ -201,3 +201,9 @@
   .footer { align-items: stretch; flex-direction: column; }
   .save { width: 100%; }
 }
+
+.catalog { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.catalog select { flex-basis: 100%; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; }
+.catalog small { flex-basis: 100%; }
+.detect { padding: 8px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer; }
+.detect:disabled { opacity: .5; cursor: default; }

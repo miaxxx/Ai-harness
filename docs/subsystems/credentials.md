@@ -212,6 +212,35 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 
 Source: [`packages/credentials/credentials/src/index.ts`](../../packages/credentials/credentials/src/index.ts)
 
+<a id="ctxobislaunch--obislaunchservice"></a>
+
+### `ctx.obisLaunch` — `ObisLaunchService`
+
+Host-side one-time launch exchange. This service intentionally exposes only non-secret launch metadata; the delegated token is written into ctx.credentials and never returned to the browser.
+
+```ts cordis-catalog
+/**
+ * Latest successfully exchanged, non-secret launch metadata.
+ * @returns a clone of the current launch, or undefined before a successful exchange
+ */
+snapshot(): WorkspaceLaunchState | undefined
+
+/**
+ * Credential reference where the current delegated token is stored.
+ * @returns the configured credentials key, defaulting to `OBIS_DELEGATED_ACCESS_TOKEN`
+ */
+tokenReference(): CredentialRef
+
+/**
+ * Published application module id pinned after a successful Host `module-page` call.
+ * This id is Host-only: RPC results and `snapshot()` do not include it.
+ * @returns the current module id, or undefined before a successful `module-page`
+ */
+applicationModuleId(): string | undefined
+```
+
+Source: [`packages/obis/launch/src/index.ts`](../../packages/obis/launch/src/index.ts)
+
 <a id="authorization-events"></a>
 
 ### `authorization/*` events

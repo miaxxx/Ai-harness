@@ -191,6 +191,63 @@ export interface DesktopApplicationApprovalStatus {
   }
 }
 
+/** Public Workspace task row. Omits tenant identifiers and createdBy. */
+export interface DesktopApplicationTask {
+  id: string
+  title: string
+  description?: string
+  status: string
+  priority: string
+  version: number
+  assignee?: { type: string; id: string }
+  dueAt?: string
+}
+
+/** Public Approval inbox row. Omits tenant identifiers. */
+export interface DesktopApplicationInboxApproval {
+  id: string
+  requestId: string
+  action: string
+  gate: string
+  status: string
+  version: number
+  requesterId: string
+  updatedAt: string
+  currentStage: DesktopApplicationApprovalStatus['currentStage']
+}
+
+export interface DesktopApplicationTaskListRequest extends DesktopEnterpriseScopeRequest {}
+
+export interface DesktopApplicationTaskTransitionRequest extends DesktopEnterpriseScopeRequest {
+  taskId: string
+  expectedVersion: number
+  status: 'running' | 'waiting' | 'completed' | 'cancelled'
+}
+
+export interface DesktopApplicationApprovalInboxRequest extends DesktopEnterpriseScopeRequest {}
+
+export interface DesktopApplicationApprovalDecisionRequest extends DesktopEnterpriseScopeRequest {
+  approvalId: string
+  expectedVersion: number
+  decision: 'approve' | 'reject'
+}
+
+export interface DesktopApplicationKnowledgeSearchRequest extends DesktopEnterpriseScopeRequest {
+  query: string
+  limit?: number
+}
+
+/** Public knowledge search hit. Omits tenant identifiers. */
+export interface DesktopApplicationKnowledgeHit {
+  id: string
+  title: string
+  content: string
+  source?: string
+  citation?: string
+  version: number
+  updatedAt: string
+}
+
 export interface DesktopApplicationAiRequest extends DesktopApplicationPageRequest {
   mode: 'summary' | 'compose'
   prompt?: string
@@ -219,11 +276,55 @@ export interface DesktopApplicationBridge {
   query(input: DesktopApplicationQueryRequest): Promise<DesktopApplicationQueryResult>
   action(input: DesktopApplicationActionRequest): Promise<DesktopApplicationActionResult>
   approval(input: DesktopApplicationApprovalRequest): Promise<DesktopApplicationApprovalStatus>
+  /**
+   * Lists entitled Workspace tasks for the validated environment.
+   * @param input Project and environment already validated on the Desktop host.
+   * @returns Public task rows without tenant identifiers.
+   */
+  tasks(input: DesktopApplicationTaskListRequest): Promise<{ items: DesktopApplicationTask[] }>
+  /**
+   * Transitions one entitled Workspace task.
+   * @param input Task id, expectedVersion and target status.
+   * @returns The public task after the transition.
+   */
+  transitionTask(input: DesktopApplicationTaskTransitionRequest): Promise<DesktopApplicationTask>
+  /**
+   * Lists the authenticated employee's Approval inbox for the validated environment.
+   * @param input Project and environment already validated on the Desktop host.
+   * @returns Waiting-for-me rows without tenant identifiers.
+   */
+  approvalInbox(input: DesktopApplicationApprovalInboxRequest): Promise<{ waitingForMe: DesktopApplicationInboxApproval[] }>
+  /**
+   * Submits an approve or reject decision through Approval Runtime.
+   * @param input Approval id, expectedVersion and decision.
+   * @returns Public approval status without tenant identifiers.
+   */
+  decideApproval(input: DesktopApplicationApprovalDecisionRequest): Promise<DesktopApplicationApprovalStatus>
+  /**
+   * Searches entitled knowledge for the validated environment.
+   * Membership tenant and actor come from the Desktop bearer session.
+   * @param input Environment plus the page-title query; optional limit.
+   * @returns Public hits without tenant identifiers.
+   */
+  searchKnowledge(input: DesktopApplicationKnowledgeSearchRequest): Promise<{ items: DesktopApplicationKnowledgeHit[] }>
   ai(input: DesktopApplicationAiRequest): Promise<DesktopApplicationAiResult>
+}
+
+/** Fixed business routes exposed to the trusted native renderer. */
+export type DesktopBusinessEntry = 'applications' | 'spaces' | 'knowledge' | 'builder'
+
+/** Native host controls; no credentials or arbitrary URLs cross this interface. */
+export interface DesktopBusinessBridge {
+  openPage(input: DesktopApplicationPageRequest): Promise<void>
+  openEntry(entry: DesktopBusinessEntry): Promise<void>
+  onSessionEnded(listener: () => void): () => void
+  hide(): Promise<void>
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>
 }
 
 declare global {
   interface Window {
     dshApplications: DesktopApplicationBridge
+    dshBusiness: DesktopBusinessBridge
   }
 }

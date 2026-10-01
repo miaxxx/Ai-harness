@@ -11,10 +11,15 @@
     "src/desktop-application-preload.ts",
     "src/enterprise-main.ts",
     "src/main.ts",
+    "src/desktop-business-window.ts",
     "src/preload.ts",
     "src/shared.ts",
+    "src/models/main/catalog.ts",
+    "src/models/main/manager.ts",
     "src/desktop-obis-identity-main.ts",
     "src/desktop-obis-identity-protocol.ts",
+    "src/desktop-obis-runtime-protocol.ts",
+    "src/desktop-runtime-credential.ts",
     "src/desktop-obis-identity-preload.ts",
     "src/desktop-obis-identity-shared.ts",
     "src/desktop-enterprise-runtime-shared.ts",
@@ -31,6 +36,7 @@
     "src/desktop-update-preload.ts"
   ],
   "references": [
+    { "path": "../../packages/obis/bridge" },
     { "path": "../../packages/acp/acp-client" },
     { "path": "../../packages/mcp/mcp-user-config" }
   ]

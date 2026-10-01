@@ -1,6 +1,7 @@
 import type { ObisBridgeClient, RequestOptions } from './client.ts'
 import type { JsonRecord } from './types.ts'
 
+/** Authenticated environment and Host-held run authority for a model-facing read or proposal. */
 export interface ObisToolContext {
   environmentId: string
   runId?: string
@@ -9,6 +10,7 @@ export interface ObisToolContext {
   idempotencyKey?: string
 }
 
+/** Model-facing operation adapted by the native Harness tool plugin. */
 export interface ObisToolDefinition<TInput extends JsonRecord = JsonRecord> {
   name: string
   description: string
@@ -28,6 +30,8 @@ function governedOptions(context: ObisToolContext, extra: RequestOptions = {}): 
 /**
  * Protocol-neutral model-facing capabilities. The Harness tool plugin adapts these
  * definitions into the native tool schema without coupling this package to AgentLoop.
+ * @param client OHP bridge client used for every governed call.
+ * @returns Model-facing tool definitions bound to `client`.
  */
 export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] {
   return [
@@ -103,12 +107,44 @@ export function createObisTools(client: ObisBridgeClient): ObisToolDefinition[] 
       },
     },
     {
+      name: 'obis_list_tasks',
+      description: 'List governed OBIS tasks visible to the authenticated user.',
+      mutating: false,
+      execute: (input, context) => client.listTasks(context.environmentId, {
+        ...(typeof input.status === 'string' ? { status: input.status } : {}),
+        ...(typeof input.limit === 'number' ? { limit: input.limit } : {}),
+      }, governedOptions(context)),
+    },
+    {
       name: 'obis_get_task',
       description: 'Read the current governed OBIS task state associated with work.',
       mutating: false,
       execute: (input, context) => {
         if (typeof input.taskId !== 'string') throw new TypeError('obis_get_task requires taskId.')
         return client.getTask(input.taskId, context.environmentId, governedOptions(context))
+      },
+    },
+    {
+      name: 'obis_list_approvals',
+      description: 'List business-approval inbox items visible to the authenticated user. This does not decide an approval.',
+      mutating: false,
+      execute: (input, context) => client.listApprovals(context.environmentId, {
+        ...(typeof input.status === 'string' ? { status: input.status } : {}),
+      }, governedOptions(context)),
+    },
+    {
+      name: 'obis_list_skills',
+      description: 'List Kernel IR skill definitions visible for the current deployment. This does not start a skill-runtime sandbox.',
+      mutating: false,
+      execute: (_input, context) => client.listSkills(context.environmentId, governedOptions(context)),
+    },
+    {
+      name: 'obis_get_skill',
+      description: 'Load a deployment-pinned governed OBIS skill definition visible to the authenticated user. This does not start a skill-runtime sandbox.',
+      mutating: false,
+      execute: (input, context) => {
+        if (typeof input.skillId !== 'string') throw new TypeError('obis_get_skill requires skillId.')
+        return client.getSkill(input.skillId, context.environmentId, governedOptions(context))
       },
     },
   ]

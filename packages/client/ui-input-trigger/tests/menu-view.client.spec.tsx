@@ -246,6 +246,22 @@ describe('MenuView', () => {
     expect(onDismiss).not.toHaveBeenCalled()
   })
 
+  it('positions each child panel at its hovered row and clamps it inside the viewport', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset['submenu'] === 'Applications' ? 120
+        : this.dataset['submenu'] === 'Knowledge' ? 740 : 80
+      return { top, left: 20, width: 200, height: this.getAttribute('role') === 'group' ? 120 : 40,
+        right: 220, bottom: top + 40, x: 20, y: top, toJSON: () => ({}) }
+    })
+    mount(openState({ groups: [{ source: 'command', status: 'ready', items: [
+      { name: 'Supplier', submenu: 'Applications' }, { name: 'Documents', submenu: 'Knowledge' },
+    ] }], highlight: null }))
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Applications' }))
+    expect(screen.getByRole('group', { name: 'Applications' }).style.top).toBe('40px')
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Knowledge' }))
+    expect(screen.getByRole('group', { name: 'Knowledge' }).style.top).toBe(`${window.innerHeight - 208}px`)
+  })
+
   it('mousedown on a row picks (source, index) and prevents the focus steal', () => {
     const { onPick } = mount(openState())
     const options = screen.getAllByRole('option')

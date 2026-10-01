@@ -1,4 +1,5 @@
 /** Desktop prompt parts preserve inline attachment positions across the IPC boundary. */
+import { displayObisBusinessReferences } from '@deepseek-ai/dsh-obis-bridge'
 
 /** One ordered piece of a Desktop prompt. */
 export type DesktopPromptPart =
@@ -69,6 +70,6 @@ export function splitDesktopPrompt(text: string): DesktopPromptPart[] {
  */
 export function desktopPromptDisplay(parts: readonly DesktopPromptPart[]): string {
   return parts.map(part => part.type === 'text'
-    ? part.text
+    ? displayObisBusinessReferences(part.text)
     : `@"${part.name.replaceAll('"', "'")}"`).join('')
 }

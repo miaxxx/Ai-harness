@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { DesktopModelProtocol, DesktopModelSettings } from './shared.ts'
+import type { DesktopModelCatalog, DesktopModelProtocol } from './shared.ts'
+import { DesktopModelController } from './models/renderer/controller.ts'
+import { DesktopModelPicker } from './models/renderer/model-picker.tsx'
 import css from './desktop-model-settings.module.css'
 
 /** Required client services for the Desktop-owned Models settings section. */
@@ -31,8 +33,10 @@ function publicError(error: unknown): string {
 }
 
 /** Desktop primary-model editor backed by encrypted Main-process storage. */
-export function DesktopModelSettingsSection() {
-  const [loaded, setLoaded] = useState<DesktopModelSettings | null>(null)
+export function DesktopModelSettingsSection({ controller }: { controller: DesktopModelController }) {
+  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  const loaded = state.settings
+  const [detected, setDetected] = useState<DesktopModelCatalog | null>(null)
   const [baseURL, setBaseURL] = useState('')
   const [model, setModel] = useState('')
   const [protocol, setProtocol] = useState<DesktopModelProtocol>('openai-completions')
@@ -43,9 +47,10 @@ export function DesktopModelSettingsSection() {
 
   useEffect(() => {
     let live = true
-    void window.dshDesktop.modelSettings().then((settings) => {
+    void controller.load().then(() => {
+      const settings = controller.getSnapshot().settings
+      if (settings === null) return
       if (!live) return
-      setLoaded(settings)
       setBaseURL(settings.baseURL)
       setModel(settings.model)
       setProtocol(settings.protocol)
@@ -54,15 +59,27 @@ export function DesktopModelSettingsSection() {
       if (live) setMessage({ kind: 'error', text: publicError(error) })
     })
     return () => { live = false }
-  }, [])
+  }, [controller])
+
+  const detect = async (): Promise<void> => {
+    setMessage(null)
+    try {
+      const catalog = await controller.detect({ baseURL, apiKey, model })
+      setDetected(catalog)
+      if (!model.trim() && catalog.models[0]) setModel(catalog.models[0].id)
+      setMessage({ kind: catalog.source === 'endpoint' ? 'success' : 'error', text: catalog.source === 'endpoint' ? `检测到 ${catalog.models.length} 个模型；切换时会验证实际调用权限。` : catalog.warning ?? '模型列表检测失败' })
+    } catch (error: unknown) { setMessage({ kind: 'error', text: publicError(error) }) }
+  }
+  const catalog = detected ?? (baseURL.replace(/\/+$/, '') === loaded?.baseURL.replace(/\/+$/, '') && !apiKey ? state.catalog : null)
 
   const save = async (): Promise<void> => {
     setSaving(true)
     setMessage(null)
     try {
-      const settings = await window.dshDesktop.saveModelSettings({ baseURL, model, protocol, apiKey, computerUseEnabled })
-      setLoaded(settings)
+      const settings = await controller.save({ baseURL, model, protocol, apiKey, computerUseEnabled })
       setApiKey('')
+      setModel(settings.model)
+      setDetected(controller.getSnapshot().catalog)
       const modality = settings.capabilities.input.includes('image') ? '文字与图片' : '仅文字'
       setMessage({ kind: 'success', text: `已验收 ${settings.model}（${modality}），ACP Runtime 已重新连接。` })
     } catch (error: unknown) {
@@ -117,7 +134,7 @@ export function DesktopModelSettingsSection() {
             value={baseURL}
             placeholder="https://api.openai.com/v1"
             spellCheck={false}
-            onChange={(event) => { setBaseURL(event.target.value) }}
+            onChange={(event) => { setBaseURL(event.target.value); setDetected(null) }}
           />
         </label>
 
@@ -131,6 +148,18 @@ export function DesktopModelSettingsSection() {
           />
         </label>
 
+        <div className={css.catalog}>
+          <button type="button" className={css.detect} disabled={state.busy || !baseURL.trim() || (!loaded?.apiKeyConfigured && !apiKey.trim())}
+            onClick={() => { void detect() }}>{state.busy ? '正在检测或应用…' : '检测模型'}</button>
+          <span>{catalog?.source === 'endpoint' ? `检测到 ${catalog.models.length} 个模型` : catalog ? `保留 ${catalog.models.length} 个已配置模型` : '尚未检测模型列表'}</span>
+          {catalog && catalog.models.length > 0 && <select aria-label="检测到的模型" value={catalog.models.some(item => item.id === model) ? model : ''}
+            disabled={state.busy} onChange={(event) => { setModel(event.target.value) }}>
+            <option value="" disabled>从列表选择模型</option>
+            {catalog.models.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>}
+          {catalog?.warning && <small>{catalog.warning}；可手动填写模型 ID。</small>}
+        </div>
+
         <label className={css.field}>
           <span className={css.keyLabel}><KeyIcon /> API Key</span>
           <input
@@ -138,7 +167,7 @@ export function DesktopModelSettingsSection() {
             value={apiKey}
             autoComplete="off"
             placeholder={loaded?.apiKeyConfigured === true ? '已安全保存；留空表示不修改' : '输入 API Key'}
-            onChange={(event) => { setApiKey(event.target.value) }}
+            onChange={(event) => { setApiKey(event.target.value); setDetected(null) }}
           />
           <small>密钥由 macOS 安全存储加密，Renderer 和配置文件不会读取明文。</small>
         </label>
@@ -150,7 +179,7 @@ export function DesktopModelSettingsSection() {
           <button
             type="button"
             className={css.save}
-            disabled={saving || loaded === null || baseURL.trim() === '' || model.trim() === '' || (!loaded.apiKeyConfigured && apiKey.trim() === '')}
+            disabled={saving || state.busy || loaded === null || baseURL.trim() === '' || model.trim() === '' || (!loaded.apiKeyConfigured && apiKey.trim() === '')}
             onClick={() => { void save() }}
           >
             {saving ? '正在应用…' : '保存并设为主模型'}
@@ -163,10 +192,16 @@ export function DesktopModelSettingsSection() {
 
 /** Register the Desktop primary-model section into the shared Settings shell. */
 export function apply(ctx: ClientContext): void {
+  const controller = new DesktopModelController(window.dshDesktop)
+  ctx.slots.inject('conversation.input.model', () => ctx.slots.register({
+    name: 'conversation.input.model',
+  }, ({ locked, useSession }) => <DesktopModelPicker
+    controller={controller} locked={locked} running={useSession(session => session.running)}
+  />))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'models',
     order: 10,
     label: '模型 API',
-  }, DesktopModelSettingsSection))
+  }, () => <DesktopModelSettingsSection controller={controller} />))
 }

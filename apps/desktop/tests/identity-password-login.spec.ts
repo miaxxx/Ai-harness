@@ -64,10 +64,10 @@ describe('Desktop OBIS password login', () => {
 
   it('logs in, reads /v1/me, then registers a Harness installation with OHP 1.0', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const url = input instanceof Request ? input.url : input.toString()
       const method = init?.method ?? 'GET'
       if (url.endsWith('/v1/auth/password/login') && method === 'POST') {
-        expect(JSON.parse(String(init?.body))).toEqual({
+        expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toEqual({
           tenantId: 'obis-dev',
           email: 'owner@obis-dev.test',
           password: 'correct-horse-battery',
@@ -84,7 +84,7 @@ describe('Desktop OBIS password login', () => {
         const headers = new Headers(init?.headers)
         expect(headers.get('authorization')).toBe('Bearer obat_access')
         expect(headers.get('ohp-version')).toBe('1.0')
-        expect(JSON.parse(String(init?.body))).toMatchObject({
+        expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toMatchObject({
           deviceId: 'desktop_1',
           protocolVersions: ['1.0'],
           capabilities: ['agent', 'tools', 'skills', 'session'],

@@ -4,12 +4,15 @@ import type {
 } from './desktop-application-shared.ts'
 
 export const OBIS_UI_RUNTIME_CONTRACT_VERSION = '0.1.0'
+/** Host-stamped renderer identity shared with Next Workspace, Preview, and the Harness launch overlay. */
+export const OBIS_UI_RUNTIME_CONTRACT_ID = 'obis-ui-runtime@0.1'
 export const OBIS_ENTERPRISE_DESIGN_SYSTEM = { id: 'obis-enterprise', version: '1.0.0' } as const
 
 export const DESKTOP_APPLICATION_COMPONENTS = [
   'Page','Section','Stack','Grid','Form','Table','Tabs','Drawer','Modal','Dashboard','Chart','Detail',
   'Search','Filter','DataTable','ObjectDetail','ObjectPicker','PeoplePicker','ApprovalQueue','Timeline',
-  'ActivityFeed','RiskIndicator','AISummary','AIComposer',
+  'ActivityFeed','RiskIndicator','MetricCard','TaskList','FileViewer','KnowledgeSearch','ActionButton',
+  'WorkflowStatus','NotificationPanel','AIAssistant','AISummary','AIComposer',
 ] as const
 
 export const DESKTOP_APPLICATION_TOKENS = [

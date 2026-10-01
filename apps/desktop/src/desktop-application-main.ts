@@ -1,3 +1,4 @@
+import { openBusinessWindow, hideBusinessPage, setBusinessBounds } from './desktop-business-window.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -22,6 +23,9 @@ import type {
   DesktopApplicationQueryRequest,
   DesktopApplicationQueryResult,
   DesktopApplicationRuntimeBindings,
+  DesktopApplicationTask,
+  DesktopApplicationInboxApproval,
+  DesktopApplicationKnowledgeHit,
   DesktopApplicationUiNode,
 } from './desktop-application-shared.ts'
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
@@ -374,6 +378,54 @@ function parseApprovalStatus(value: unknown): DesktopApplicationApprovalStatus {
       approvals: currentStage.approvals,
       rejections: currentStage.rejections,
     },
+  }
+}
+
+function parseInboxApproval(value: unknown): DesktopApplicationInboxApproval {
+  const status = parseApprovalStatus(value)
+  const row = record(value)
+  if (!row) throw new Error('OBIS returned an invalid application approval inbox row')
+  return {
+    ...status,
+    requestId: requiredString(row.requestId, 'approval.requestId'),
+  }
+}
+
+function parseTask(value: unknown): DesktopApplicationTask {
+  const row = record(value)
+  if (!row) throw new Error('OBIS returned an invalid application task')
+  if (typeof row.version !== 'number' || !Number.isInteger(row.version) || row.version < 1) {
+    throw new Error('Application task version is invalid')
+  }
+  const assignee = record(row.assignee)
+  return {
+    id: requiredString(row.id, 'task.id'),
+    title: requiredString(row.title, 'task.title'),
+    status: requiredString(row.status, 'task.status'),
+    priority: requiredString(row.priority, 'task.priority'),
+    version: row.version,
+    ...(typeof row.description === 'string' && row.description.trim() ? { description: row.description.trim() } : {}),
+    ...(assignee && typeof assignee.type === 'string' && assignee.type.trim() && typeof assignee.id === 'string' && assignee.id.trim()
+      ? { assignee: { type: assignee.type.trim(), id: assignee.id.trim() } }
+      : {}),
+    ...(typeof row.dueAt === 'string' && row.dueAt.trim() ? { dueAt: row.dueAt.trim() } : {}),
+  }
+}
+
+function parseKnowledgeHit(value: unknown): DesktopApplicationKnowledgeHit {
+  const row = record(value)
+  if (!row) throw new Error('OBIS returned an invalid knowledge search hit')
+  if (typeof row.version !== 'number' || !Number.isInteger(row.version) || row.version < 1) {
+    throw new Error('Knowledge search hit version is invalid')
+  }
+  return {
+    id: requiredString(row.id, 'knowledge.id'),
+    title: requiredString(row.title, 'knowledge.title'),
+    content: requiredString(row.content, 'knowledge.content'),
+    version: row.version,
+    updatedAt: requiredString(row.updatedAt, 'knowledge.updatedAt'),
+    ...(typeof row.source === 'string' && row.source.trim() ? { source: row.source.trim() } : {}),
+    ...(typeof row.citation === 'string' && row.citation.trim() ? { citation: row.citation.trim() } : {}),
   }
 }
 
@@ -749,6 +801,104 @@ async function applicationApproval(value: unknown): Promise<DesktopApplicationAp
   return parseApprovalStatus(payload)
 }
 
+const TASK_TRANSITION_STATUSES = new Set(['running', 'waiting', 'completed', 'cancelled'])
+
+async function applicationTasks(value: unknown): Promise<{ items: DesktopApplicationTask[] }> {
+  const scope = requireValidatedScope(value)
+  const params = new URLSearchParams({ environmentId: scope.environmentId, limit: '50' })
+  const payload = await authenticatedRequest<unknown>(`/v1/workspace/tasks?${params.toString()}`)
+  const row = record(payload)
+  if (!row || !Array.isArray(row.items)) throw new Error('OBIS returned an invalid application task list')
+  return { items: row.items.map(parseTask) }
+}
+
+async function applicationTaskTransition(value: unknown): Promise<DesktopApplicationTask> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application task transition request must be an object')
+  const taskId = requiredString(row.taskId, 'taskId')
+  if (typeof row.expectedVersion !== 'number' || !Number.isInteger(row.expectedVersion) || row.expectedVersion < 1) {
+    throw new Error('expectedVersion must be a positive integer')
+  }
+  if (typeof row.status !== 'string' || !TASK_TRANSITION_STATUSES.has(row.status)) {
+    throw new Error('Task status must be running, waiting, completed or cancelled')
+  }
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/workspace/tasks/${encodeURIComponent(taskId)}/transition`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        environmentId: scope.environmentId,
+        expectedVersion: row.expectedVersion,
+        status: row.status,
+      }),
+    },
+  )
+  return parseTask(payload)
+}
+
+async function applicationApprovalInbox(value: unknown): Promise<{ waitingForMe: DesktopApplicationInboxApproval[] }> {
+  const scope = requireValidatedScope(value)
+  const params = new URLSearchParams({ environmentId: scope.environmentId })
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/approvals/inbox?${params.toString()}`,
+    {
+      headers: { 'OHP-Version': '1.0' },
+    },
+  )
+  const row = record(payload)
+  if (!row || !Array.isArray(row.waitingForMe)) throw new Error('OBIS returned an invalid application approval inbox')
+  return { waitingForMe: row.waitingForMe.map(parseInboxApproval) }
+}
+
+async function applicationApprovalDecision(value: unknown): Promise<DesktopApplicationApprovalStatus> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application approval decision request must be an object')
+  const approvalId = requiredString(row.approvalId, 'approvalId')
+  if (typeof row.expectedVersion !== 'number' || !Number.isInteger(row.expectedVersion) || row.expectedVersion < 1) {
+    throw new Error('expectedVersion must be a positive integer')
+  }
+  if (row.decision !== 'approve' && row.decision !== 'reject') throw new Error('Approval decision must be approve or reject')
+  const payload = await authenticatedRequest<unknown>(
+    `/v1/approvals/${encodeURIComponent(approvalId)}/decisions`,
+    {
+      method: 'POST',
+      headers: { 'OHP-Version': '1.0' },
+      body: JSON.stringify({
+        environmentId: scope.environmentId,
+        expectedVersion: row.expectedVersion,
+        decision: row.decision,
+      }),
+    },
+  )
+  return parseApprovalStatus(payload)
+}
+
+async function applicationKnowledgeSearch(value: unknown): Promise<{ items: DesktopApplicationKnowledgeHit[] }> {
+  const scope = requireValidatedScope(value)
+  const row = record(value)
+  if (!row) throw new Error('Application knowledge search request must be an object')
+  const query = requiredString(row.query, 'query')
+  if (row.limit !== undefined && (typeof row.limit !== 'number' || !Number.isInteger(row.limit) || row.limit < 1 || row.limit > 100)) {
+    throw new Error('limit must be an integer between 1 and 100')
+  }
+  const payload = await authenticatedRequest<unknown>(
+    '/v1/harness/knowledge/search',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        environmentId: scope.environmentId,
+        query,
+        ...(typeof row.limit === 'number' ? { limit: row.limit } : {}),
+      }),
+    },
+  )
+  const parsed = record(payload)
+  if (!parsed || !Array.isArray(parsed.items)) throw new Error('OBIS returned an invalid knowledge search result')
+  return { items: parsed.items.map(parseKnowledgeHit) }
+}
+
 async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult> {
   const scope = requireValidatedScope(value)
   const row = record(value)
@@ -792,6 +942,28 @@ async function applicationAi(value: unknown): Promise<DesktopApplicationAiResult
 }
 
 function installApplicationIpc(): void {
+  ipcMain.handle('dsh:business-hide', (event) => { requireTrusted(event); hideBusinessPage() })
+  ipcMain.handle('dsh:business-bounds', (event, value: unknown) => {
+    requireTrusted(event)
+    const row = record(value)
+    if (!row || ['x', 'y', 'width', 'height'].some(key => typeof row[key] !== 'number')) throw new Error('业务工作区尺寸无效。')
+    setBusinessBounds({ x: row.x as number, y: row.y as number, width: row.width as number, height: row.height as number })
+  })
+  ipcMain.handle('dsh:business-entry', async (event, entry: unknown) => {
+    requireTrusted(event)
+    if (entry !== 'applications' && entry !== 'spaces' && entry !== 'knowledge' && entry !== 'builder') throw new Error('业务入口无效。')
+    await openBusinessWindow(entry)
+  })
+  ipcMain.handle('dsh:business-page', async (event, value: unknown) => {
+    requireTrusted(event)
+    const row = record(value)
+    const scope = requireValidatedScope(value)
+    const moduleId = requiredString(row?.moduleId, 'moduleId')
+    const pageId = requiredString(row?.pageId, 'pageId')
+    await openBusinessWindow('applications', { ...scope, moduleId, pageId }, async () => {
+      await applicationPage({ ...scope, moduleId, pageId })
+    })
+  })
   ipcMain.handle('dsh:application-navigation', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationNavigation(value)
@@ -815,6 +987,26 @@ function installApplicationIpc(): void {
   ipcMain.handle('dsh:application-approval', async (event, value: unknown) => {
     requireTrusted(event)
     return applicationApproval(value)
+  })
+  ipcMain.handle('dsh:application-tasks', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationTasks(value)
+  })
+  ipcMain.handle('dsh:application-task-transition', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationTaskTransition(value)
+  })
+  ipcMain.handle('dsh:application-approval-inbox', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationApprovalInbox(value)
+  })
+  ipcMain.handle('dsh:application-approval-decision', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationApprovalDecision(value)
+  })
+  ipcMain.handle('dsh:application-knowledge', async (event, value: unknown) => {
+    requireTrusted(event)
+    return applicationKnowledgeSearch(value)
   })
   ipcMain.handle('dsh:application-ai', async (event, value: unknown) => {
     requireTrusted(event)

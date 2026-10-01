@@ -26,6 +26,26 @@ const bridge: DesktopApplicationBridge = {
     'dsh:application-approval',
     input,
   ) as ReturnType<DesktopApplicationBridge['approval']>,
+  tasks: input => ipcRenderer.invoke(
+    'dsh:application-tasks',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['tasks']>,
+  transitionTask: input => ipcRenderer.invoke(
+    'dsh:application-task-transition',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['transitionTask']>,
+  approvalInbox: input => ipcRenderer.invoke(
+    'dsh:application-approval-inbox',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['approvalInbox']>,
+  decideApproval: input => ipcRenderer.invoke(
+    'dsh:application-approval-decision',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['decideApproval']>,
+  searchKnowledge: input => ipcRenderer.invoke(
+    'dsh:application-knowledge',
+    input,
+  ) as ReturnType<DesktopApplicationBridge['searchKnowledge']>,
   ai: input => ipcRenderer.invoke(
     'dsh:application-ai',
     input,
@@ -33,3 +53,15 @@ const bridge: DesktopApplicationBridge = {
 }
 
 contextBridge.exposeInMainWorld('dshApplications', bridge)
+
+contextBridge.exposeInMainWorld('dshBusiness', {
+  onSessionEnded: (listener: () => void): (() => void) => {
+    const receive = (): void => { listener() }
+    ipcRenderer.on('dsh:business-session-ended', receive)
+    return () => { ipcRenderer.removeListener('dsh:business-session-ended', receive) }
+  },
+  openEntry: (entry: import('./desktop-application-shared.ts').DesktopBusinessEntry): Promise<void> => ipcRenderer.invoke('dsh:business-entry', entry) as Promise<void>,
+  hide: (): Promise<void> => ipcRenderer.invoke('dsh:business-hide') as Promise<void>,
+  setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<void> => ipcRenderer.invoke('dsh:business-bounds', bounds) as Promise<void>,
+  openPage: (input: import('./desktop-application-shared.ts').DesktopApplicationPageRequest): Promise<void> => ipcRenderer.invoke('dsh:business-page', input) as Promise<void>,
+})

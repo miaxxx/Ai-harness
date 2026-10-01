@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/obis/launch/README.md
-README.md: 97b100907daeec212439f7811cb0372332a41c3c
-README.zh.md: aa10086b4b9abd41574becebe85eca35bb15c905
+README.md: 3d55afb0db5bc9deb09e5e7d7614526630774b30
+README.zh.md: dc8e1a788f3975a84020a0b8c226582ce3b2a14f

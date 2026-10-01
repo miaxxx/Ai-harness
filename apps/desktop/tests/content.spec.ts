@@ -20,6 +20,17 @@ afterEach(async () => {
 })
 
 describe('Desktop content store', () => {
+  it('preserves unsent attachments when an empty session is renewed', async () => {
+    const root = await temporary()
+    const source = join(root, 'draft.md')
+    await writeFile(source, 'Keep this draft')
+    const store = new DesktopContentStore(join(root, 'skills'), () => join(root, 'bundled'))
+    const [attachment] = await store.stageAttachments('old-empty', root, [source])
+    store.transferDraftAttachments('old-empty', 'new-empty')
+    expect(await store.promptBlocks('new-empty', [attachment!.id])).toMatchObject([{ type: 'resource_link', name: 'draft.md' }])
+    await expect(store.promptBlocks('old-empty', [attachment!.id])).rejects.toThrow()
+  })
+
   it('imports a user Skill and keeps project and bundled Skills read-only', async () => {
     const root = await temporary()
     const user = join(root, 'user')

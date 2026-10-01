@@ -9,6 +9,7 @@ import type {
   OhpRunEvent,
 } from './types.ts'
 
+/** Kernel rejection or transport response failure with correlation and retry information. */
 export class ObisBridgeError extends Error {
   constructor(
     readonly status: number,
@@ -23,6 +24,7 @@ export class ObisBridgeError extends Error {
   }
 }
 
+/** Kernel endpoint and Host credential provider; credentials are resolved for each request. */
 export interface ObisBridgeClientOptions {
   baseUrl: string
   tokenProvider: () => Promise<string | undefined>
@@ -30,6 +32,7 @@ export interface ObisBridgeClientOptions {
   correlationIdProvider?: () => string
 }
 
+/** Request tracing, cancellation and Kernel-issued authority attached to an OHP call. */
 export interface RequestOptions {
   idempotencyKey?: string
   correlationId?: string
@@ -65,6 +68,7 @@ function eventData(frame: string): string | undefined {
   return values.length ? values.join('\n') : undefined
 }
 
+/** Authenticated OHP client. Kernel validates roles and leases; this client does not grant authority. */
 export class ObisBridgeClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof globalThis.fetch
@@ -129,10 +133,21 @@ export class ObisBridgeClient {
     return payload as T
   }
 
+  /**
+   * Reads supported OHP versions and Harness compatibility requirements.
+   * @param signal Optional request cancellation signal.
+   * @returns Kernel capability catalog.
+   */
   capabilities(signal?: AbortSignal): Promise<OhpCapabilities> {
     return this.request('GET', '/v1/harness/capabilities', undefined, signal ? { signal } : {})
   }
 
+  /**
+   * Registers a device under the authenticated user and obtains compatibility results.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Registered installation and compatibility decision.
+   */
   registerInstallation(
     input: HarnessRegistration,
     options: RequestOptions = {},
@@ -140,6 +155,13 @@ export class ObisBridgeClient {
     return this.request('POST', '/v1/harness/installations', input, options)
   }
 
+  /**
+   * Updates an owned installation and reevaluates its version compatibility.
+   * @param installationId Owned Harness installation identifier.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Updated installation and compatibility decision.
+   */
   heartbeat(
     installationId: string,
     input: Partial<Pick<
@@ -156,6 +178,13 @@ export class ObisBridgeClient {
     )
   }
 
+  /**
+   * Resolves policy-visible enterprise definitions in the requested environment.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Governed context response.
+   */
   resolveContext(
     environmentId: string,
     input: { focus?: JsonRecord; maxSymbols?: number } = {},
@@ -164,6 +193,14 @@ export class ObisBridgeClient {
     return this.request('POST', '/v1/harness/context/resolve', { environmentId, ...input }, options)
   }
 
+  /**
+   * Checks a Query against Kernel policy without returning executed Query rows.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param query Declared Query name or knowledge search text.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Kernel Query evaluation.
+   */
   evaluateQuery(
     environmentId: string,
     query: string,
@@ -178,6 +215,14 @@ export class ObisBridgeClient {
     )
   }
 
+  /**
+   * Reads Query rows after Kernel policy and run authority validation.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param query Declared Query name or knowledge search text.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Kernel-filtered Query response.
+   */
   executeQuery(
     environmentId: string,
     query: string,
@@ -192,6 +237,14 @@ export class ObisBridgeClient {
     )
   }
 
+  /**
+   * Searches enterprise knowledge visible to the authenticated principal.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param query Declared Query name or knowledge search text.
+   * @param limit Maximum knowledge matches requested.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible knowledge matches.
+   */
   async searchKnowledge(
     environmentId: string,
     query: string,
@@ -207,6 +260,12 @@ export class ObisBridgeClient {
     return result.items
   }
 
+  /**
+   * Creates or idempotently retrieves a Kernel run bound to its deployment.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Durable run binding and granted lease, when available.
+   */
   createAgentRun(
     input: {
       environmentId: string
@@ -221,6 +280,13 @@ export class ObisBridgeClient {
     return this.request('POST', '/v1/agent-runs', input, options)
   }
 
+  /**
+   * Attaches a Harness Session to an existing run after ownership validation.
+   * @param runId Owned Kernel AgentRun identifier.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Attached run binding.
+   */
   attachAgentRun(
     runId: string,
     input: { environmentId: string; harnessSessionId: string; installationId?: string },
@@ -229,11 +295,25 @@ export class ObisBridgeClient {
     return this.request('POST', `/v1/agent-runs/${encodeURIComponent(runId)}/attach`, input, options)
   }
 
+  /**
+   * Reads an owned run in its authenticated environment.
+   * @param runId Owned Kernel AgentRun identifier.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Current durable run binding.
+   */
   getAgentRun(runId: string, environmentId: string, options: RequestOptions = {}): Promise<AgentRunBinding> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/agent-runs/${encodeURIComponent(runId)}?${params}`, undefined, options)
   }
 
+  /**
+   * Evaluates policy and approval requirements without executing an Action.
+   * @param action Declared Kernel Action name.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Kernel Action evaluation.
+   */
   evaluateAction(
     action: string,
     input: {
@@ -253,6 +333,13 @@ export class ObisBridgeClient {
     )
   }
 
+  /**
+   * Stores a run-scoped Action proposal using the expected run version.
+   * @param action Declared Kernel Action name.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Durable proposal response.
+   */
   proposeAction(
     action: string,
     input: {
@@ -268,6 +355,13 @@ export class ObisBridgeClient {
     return this.request('POST', `/v1/harness/actions/${encodeURIComponent(action)}/propose`, input, options)
   }
 
+  /**
+   * Requests execution of a confirmed proposal; Kernel rechecks policy and approval. This method is absent from the model tool registry.
+   * @param proposalId Confirmed run-scoped proposal identifier.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Kernel execution or approval-required response.
+   */
   executeProposal(
     proposalId: string,
     input: { environmentId: string; runId: string; expectedVersion: number },
@@ -276,11 +370,25 @@ export class ObisBridgeClient {
     return this.request('POST', `/v1/harness/proposals/${encodeURIComponent(proposalId)}/execute`, input, options)
   }
 
+  /**
+   * Reads one task visible to the authenticated principal.
+   * @param taskId Visible task identifier.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible task state.
+   */
   getTask(taskId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/tasks/${encodeURIComponent(taskId)}?${params}`, undefined, options)
   }
 
+  /**
+   * Lists tasks after Kernel visibility filtering.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible tasks matching the requested filters.
+   */
   async listTasks(
     environmentId: string,
     input: { status?: string; limit?: number } = {},
@@ -298,6 +406,13 @@ export class ObisBridgeClient {
     return result.items
   }
 
+  /**
+   * Lists the principal's visible approval inbox without deciding approvals.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible approval requests.
+   */
   async listApprovals(
     environmentId: string,
     input: { status?: string } = {},
@@ -314,6 +429,13 @@ export class ObisBridgeClient {
     return result.items
   }
 
+  /**
+   * Records a human approval decision using an expected approval version. This method is absent from the model tool registry.
+   * @param approvalId Approval request visible to the human principal.
+   * @param input Operation fields validated by Kernel.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Updated approval request.
+   */
   decideApproval(
     approvalId: string,
     input: {
@@ -332,6 +454,12 @@ export class ObisBridgeClient {
     )
   }
 
+  /**
+   * Lists visible skill definitions without starting skill execution.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible skill catalog.
+   */
   async listSkills(environmentId: string, options: RequestOptions = {}): Promise<JsonRecord[]> {
     const params = new URLSearchParams({ environmentId })
     const result = await this.request<{ items: JsonRecord[] }>(
@@ -343,11 +471,25 @@ export class ObisBridgeClient {
     return result.items
   }
 
+  /**
+   * Reads a visible skill definition without invoking its runtime.
+   * @param skillId Visible skill identifier.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns Visible skill definition.
+   */
   getSkill(skillId: string, environmentId: string, options: RequestOptions = {}): Promise<JsonRecord> {
     const params = new URLSearchParams({ environmentId })
     return this.request('GET', `/v1/harness/skills/${encodeURIComponent(skillId)}?${params}`, undefined, options)
   }
 
+  /**
+   * Streams validated run events over SSE until the stream closes or is aborted.
+   * @param runId Owned Kernel AgentRun identifier.
+   * @param environmentId Environment belonging to the authenticated tenant.
+   * @param options Tracing, cancellation and Kernel-issued request authority.
+   * @returns An async iterator of Kernel run events.
+   */
   async *streamAgentRunEvents(
     runId: string,
     environmentId: string,

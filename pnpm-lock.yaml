@@ -377,6 +377,9 @@ importers:
       '@deepseek-ai/dsh-mcp-user-config':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-user-config
+      '@deepseek-ai/dsh-obis-bridge':
+        specifier: workspace:^
+        version: link:../../packages/obis/bridge
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0
@@ -789,6 +792,9 @@ importers:
       '@deepseek-ai/dsh-tool-lsp':
         specifier: workspace:*
         version: link:../packages/lsp/tool-lsp
+      '@deepseek-ai/dsh-tool-obis':
+        specifier: workspace:*
+        version: link:../packages/obis/tool-obis
       '@deepseek-ai/dsh-tool-pwsh':
         specifier: workspace:*
         version: link:../packages/shell/tool-pwsh
@@ -9103,6 +9109,9 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../packages/credentials/credentials
+      '@deepseek-ai/dsh-credentials-local':
+        specifier: workspace:^
+        version: link:../../packages/credentials/credentials-local
       '@deepseek-ai/dsh-delivery-quality-policy':
         specifier: workspace:^
         version: link:../../packages/guard/delivery-quality-policy
@@ -9319,6 +9328,9 @@ importers:
       '@deepseek-ai/dsh-tool-jobs':
         specifier: workspace:^
         version: link:../../packages/jobs/tool-jobs
+      '@deepseek-ai/dsh-tool-obis':
+        specifier: workspace:^
+        version: link:../../packages/obis/tool-obis
       '@deepseek-ai/dsh-tool-ralph':
         specifier: workspace:^
         version: link:../../packages/workflow/tool-ralph

@@ -30,7 +30,7 @@ function renderShell(root: HTMLElement, title: string, description: string): { c
   const shell = element('main', 'obis-enterprise-gate')
   const card = element('section', 'obis-enterprise-card')
   const eyebrow = element('div', 'obis-enterprise-eyebrow')
-  eyebrow.textContent = 'OBIS ENTERPRISE'
+  eyebrow.textContent = 'OBIS 企业工作台'
   const heading = element('h1')
   heading.textContent = title
   const copy = element('p')
@@ -43,16 +43,16 @@ function renderShell(root: HTMLElement, title: string, description: string): { c
 }
 
 function configurationGate(root: HTMLElement): void {
-  const { card, message } = renderShell(root, 'Connect this desktop to OBIS', 'Enterprise mode requires a governed OBIS authority. Credentials are persisted only after authentication and protected by the operating-system secure storage used by Orbis AI.')
+  const { card, message } = renderShell(root, '连接企业工作台', '连接 OBIS 企业服务。登录凭证由系统安全存储保护。')
   const form = element('div', 'obis-enterprise-fields')
-  const urlLabel = element('label'); urlLabel.textContent = 'OBIS URL'
+  const urlLabel = element('label'); urlLabel.textContent = '企业服务地址'
   const url = element('input'); url.type = 'url'; url.placeholder = 'https://obis.example.com'
-  const tenantLabel = element('label'); tenantLabel.textContent = 'Tenant'
+  const tenantLabel = element('label'); tenantLabel.textContent = '租户'
   const tenant = element('input'); tenant.placeholder = 'acme'
   urlLabel.append(url); tenantLabel.append(tenant); form.append(urlLabel, tenantLabel)
-  const save = button('Connect to OBIS', () => {
+  const save = button('连接', () => {
     save.disabled = true
-    setMessage(message, 'Validating enterprise authority…')
+    setMessage(message, '正在验证企业服务……')
     void window.dshEnterprise.configure({ baseURL: url.value, tenantId: tenant.value })
       .then(() => identityGate(root))
       .catch((error: unknown) => { setMessage(message, publicError(error), 'error'); save.disabled = false })
@@ -61,20 +61,20 @@ function configurationGate(root: HTMLElement): void {
 }
 
 function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
-  const { card, message } = renderShell(root, 'Sign in to your enterprise workspace', `This desktop is governed by ${status.baseURL ?? 'OBIS'} for tenant ${status.tenantId ?? 'unknown'}. AI Harness can reason locally, but enterprise context and execution remain controlled by OBIS.`)
+  const { card, message } = renderShell(root, '登录企业工作台', `企业服务：${status.baseURL ?? 'OBIS'} · 租户：${status.tenantId ?? '未选择'}`)
   const form = element('div', 'obis-enterprise-fields')
-  const emailLabel = element('label'); emailLabel.textContent = 'Email'
+  const emailLabel = element('label'); emailLabel.textContent = '邮箱'
   const email = element('input'); email.type = 'email'; email.autocomplete = 'username'; email.placeholder = 'name@example.com'
-  const passwordLabel = element('label'); passwordLabel.textContent = 'Password'
+  const passwordLabel = element('label'); passwordLabel.textContent = '密码'
   const password = element('input'); password.type = 'password'; password.autocomplete = 'current-password'
   emailLabel.append(email); passwordLabel.append(password); form.append(emailLabel, passwordLabel)
-  const signIn = button('Sign in', () => {
+  const signIn = button('登录', () => {
     signIn.disabled = true
-    setMessage(message, 'Signing in…')
+    setMessage(message, '正在登录……')
     void window.dshEnterprise.signInWithPassword({ email: email.value, password: password.value })
       .then(async () => {
         password.value = ''
-        setMessage(message, 'Authenticated. Opening the governed AI Workspace…')
+        setMessage(message, '登录成功，正在打开工作台……')
         await identityGate(root)
       })
       .catch((error: unknown) => { password.value = ''; setMessage(message, publicError(error), 'error'); signIn.disabled = false })
@@ -84,12 +84,12 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
 
 function installIdentityBadge(status: DesktopObisIdentityStatus): void {
   document.getElementById('obis-enterprise-identity')?.remove()
-  if (document.querySelector('[data-enterprise-shell="true"]')) return
+  if (document.querySelector('[data-enterprise-shell="true"], [aria-label="OBIS 工作区"]')) return
   const badge = element('div', 'obis-enterprise-identity')
   badge.id = 'obis-enterprise-identity'
   const identity = element('span')
-  identity.textContent = `${status.user?.displayName ?? status.user?.id ?? 'OBIS user'} · ${status.tenantId ?? ''}`
-  const logout = button('Sign out', () => { logout.disabled = true; void window.dshEnterprise.logout().finally(() => { window.location.reload() }) })
+  identity.textContent = `${status.user?.displayName ?? status.user?.id ?? '企业用户'} · ${status.tenantId ?? ''}`
+  const logout = button('退出登录', () => { logout.disabled = true; void window.dshEnterprise.logout().finally(() => { window.location.reload() }) })
   badge.append(identity, logout)
   document.body.append(badge)
 }
@@ -101,9 +101,9 @@ async function identityGate(root: HTMLElement): Promise<void> {
   let status: DesktopObisIdentityStatus
   try { status = await window.dshEnterprise.status() }
   catch (error: unknown) {
-    const { card, message } = renderShell(root, 'OBIS session unavailable', 'The saved enterprise identity could not be validated.')
+    const { card, message } = renderShell(root, '登录状态暂不可用', '无法验证已保存的企业登录状态。')
     setMessage(message, publicError(error), 'error')
-    card.append(button('Retry', () => { void identityGate(root) }))
+    card.append(button('重试', () => { void identityGate(root) }))
     return
   }
   if (!status.configured) {
@@ -121,11 +121,11 @@ async function identityGate(root: HTMLElement): Promise<void> {
       productMounted = false
       const { card, message } = renderShell(
         root,
-        'Signed in',
-        `This desktop is authenticated to ${status.baseURL ?? 'OBIS'} as ${status.user?.primaryEmail ?? status.user?.displayName ?? 'the signed-in user'}.`,
+        '已登录',
+        `已通过 ${status.baseURL ?? 'OBIS'} 登录：${status.user?.primaryEmail ?? status.user?.displayName ?? '企业用户'}。`,
       )
       setMessage(message, publicError(error), 'error')
-      card.append(button('Retry', () => { void identityGate(root) }))
+      card.append(button('重试', () => { void identityGate(root) }))
     }
   }
   installIdentityBadge(status)

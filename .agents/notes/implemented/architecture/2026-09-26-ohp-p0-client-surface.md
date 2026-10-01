@@ -1,8 +1,8 @@
 # Agent Note: OHP P0 Client Surface Completeness
 
-English | [中文](2026-09-26-ohp-p0-client-surface.zh.md)
-
 Status: implemented
+
+English | [中文](2026-09-26-ohp-p0-client-surface.zh.md)
 
 ## Problem
 
@@ -10,7 +10,7 @@ OHP 1.0 README and Kernel already expose action evaluation, task listing, and bu
 
 ## Decision
 
-`ObisBridgeClient` covers the remaining OHP 1.0 P0 HTTP operations: `evaluateAction`, `listTasks`, `listApprovals`, and `decideApproval`. Model-facing `createObisTools` still omits execute, evaluate, and approval-decision tools. Evaluation remains a policy preview; approval decisions remain a human or product-runtime authority path.
+`ObisBridgeClient` covers the remaining OHP 1.0 P0 HTTP operations: `evaluateAction`, `listTasks`, `listApprovals`, and `decideApproval`. Model-facing `createObisTools` still omits execute, evaluate, and approval-decision tools. Entitled task, approval, and skill lists are model-visible reads over the same collection GET paths; evaluation remains a policy preview, and approval decisions remain a human or product-runtime authority path.
 
 ## Alternatives considered
 
@@ -20,4 +20,4 @@ OHP 1.0 README and Kernel already expose action evaluation, task listing, and bu
 
 ## Consequences
 
-Package tests pin the extra client paths without enlarging the model tool set. Kernel OpenAPI now lists the same task-list and approval operations the README already named. Hosted-runner Stage A verification remains outside this change.
+Package tests pin the extra client paths. `createObisTools` exposes entitled task, approval, and skill lists as reads; execute, evaluate, and approval-decision remain off the model registry. Those list tools are in [OBIS Model Inbox Catalog Tools](../feature/2026-09-30-obis-model-inbox-catalog.md). Kernel OpenAPI now lists the same task-list and approval operations the README already named. Hosted-runner Stage A verification remains outside this change.

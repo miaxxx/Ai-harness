@@ -1,0 +1,6 @@
+.navigation { padding: 8px 12px 12px; border-bottom: 1px solid #e6e7e9; }
+.heading { padding: 4px 10px 8px; color: #80848c; font-size: 12px; }
+.item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; margin: 2px 0; border: 0; border-radius: 9px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.item:hover, .item[aria-current="page"] { background: #e9ebee; }
+.item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.error { color: #a62929; font-size: 12px; overflow-wrap: anywhere; }

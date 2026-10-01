@@ -1,5 +1,7 @@
+/** Wire version sent on governed Harness requests. */
 export const OHP_VERSION = '1.0' as const
 
+/** Kernel protocol, capability and client version requirements. */
 export interface OhpCapabilities {
   protocolVersions: string[]
   kernelVersion: string
@@ -10,6 +12,7 @@ export interface OhpCapabilities {
   blockedHarnessVersions: string[]
 }
 
+/** Device identity and supported Harness protocols advertised during registration. */
 export interface HarnessRegistration {
   deviceId: string
   deviceName: string
@@ -22,15 +25,16 @@ export interface HarnessRegistration {
   channel: 'canary' | 'stable' | 'enterprise-lts'
 }
 
+/** Public Harness installation. Omits tenant identifiers. */
 export interface HarnessInstallation extends HarnessRegistration {
   id: string
-  tenantId: string
   userId: string
   lastSeenAt: string
   createdAt: string
   status: 'online' | 'offline' | 'disabled' | 'revoked' | 'update-required'
 }
 
+/** Kernel decision for an installation's advertised versions and capabilities. */
 export interface CompatibilityResult {
   compatible: boolean
   updateRequired: boolean
@@ -39,11 +43,11 @@ export interface CompatibilityResult {
   missingCapabilities?: string[]
 }
 
+/** Public capability lease. Omits tenant identifiers. */
 export interface CapabilityLease {
   id: string
   runId: string
   deploymentId: string
-  tenantId: string
   environmentId: string
   userId: string
   deviceId: string
@@ -52,9 +56,9 @@ export interface CapabilityLease {
   expiresAt: string
 }
 
+/** Public AgentRun binding. Omits tenant identifiers. */
 export interface AgentRunBinding {
   id: string
-  tenantId: string
   environmentId: string
   actorId: string
   taskId: string
@@ -69,6 +73,7 @@ export interface AgentRunBinding {
   [key: string]: unknown
 }
 
+/** Public Kernel error fields used for request tracing and retry decisions. */
 export interface OhpErrorBody {
   error: {
     code: string
@@ -79,6 +84,7 @@ export interface OhpErrorBody {
   }
 }
 
+/** Public SSE event identifying its AgentRun and correlation record. */
 export interface OhpRunEvent {
   id: string
   type: 'run.started' | 'planning' | 'query.started' | 'query.completed' | 'proposal.created' | 'approval.required' | 'approval.approved' | 'action.started' | 'action.completed' | 'run.completed' | 'run.failed'
@@ -88,4 +94,5 @@ export interface OhpRunEvent {
   data?: Record<string, unknown>
 }
 
+/** JSON object fields received from or submitted to Kernel APIs. */
 export type JsonRecord = Record<string, unknown>

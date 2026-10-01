@@ -148,6 +148,7 @@
         "./packages/examples/*/src/invariant.ts",
         "./packages/util/*/src/invariant.ts",
         "./packages/mcp/*/src/invariant.ts",
+        "./packages/obis/*/src/invariant.ts",
         "./packages/identity/*/src/invariant.ts",
         "./packages/test-support/*/src/invariant.ts"
       ],
@@ -238,6 +239,14 @@
       "@deepseek-ai/dsh-sdk-jsonrpc-server": ["./packages/sdk/server/src"],
       "@deepseek-ai/dsh-experimental-agent-team": ["./packages/experimental/agent-team/src"],
       "@deepseek-ai/dsh-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
+      // obis/ npm names keep an `obis-` prefix (`dsh-obis-bridge`) while folders
+      // are role-named (`bridge`, `launch`), so the generic wildcard cannot map
+      // them. `dsh-tool-obis` matches `tool-obis` once the obis group is listed.
+      "@deepseek-ai/dsh-obis-bridge": ["./packages/obis/bridge/src"],
+      "@deepseek-ai/dsh-obis-bridge/*": ["./packages/obis/bridge/src/*"],
+      "@deepseek-ai/dsh-obis-launch": ["./packages/obis/launch/src"],
+      "@deepseek-ai/dsh-obis-launch/client": ["./packages/obis/launch/src/client/index.ts"],
+      "@deepseek-ai/dsh-obis-launch/*": ["./packages/obis/launch/src/*"],
       "@deepseek-ai/dsh-*": [
         "./packages/core/*/src",
         "./packages/prompt/*/src",
@@ -284,6 +293,7 @@
         "./packages/examples/*/src",
         "./packages/util/*/src",
         "./packages/mcp/*/src",
+        "./packages/obis/*/src",
         "./packages/identity/*/src",
         "./packages/test-support/*/src",
         "./packages/host/*/src",

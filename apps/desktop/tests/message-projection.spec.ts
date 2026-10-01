@@ -1,11 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import {
   accumulateDesktopAssistantBlocks,
+  appendDesktopMessageBlocks,
   projectDesktopAssistant,
   projectDesktopUserText,
 } from '../src/desktop-message-projection.ts'
 
 describe('Desktop message projection', () => {
+  it('preserves the selected business label on replay without showing its routing metadata', () => {
+    const text = '\n[obis-reference {"kind":"module","projectId":"p","environmentId":"e","label":"供应商风险管理","moduleId":"m","moduleVersion":"1","pageId":"home"}]\n查询'
+    expect(projectDesktopUserText(text)).toBe('\n@"供应商风险管理"\n查询')
+  })
+  it('extends frozen published blocks without mutating prior snapshots', () => {
+    const blocks = [{ type: 'text' as const, text: 'before' }]
+    const events = projectDesktopAssistant(blocks, false, 1, 1, 'message-1' as never)
+    Object.freeze(blocks[0])
+    appendDesktopMessageBlocks(blocks, [{ type: 'text', text: ' after' }])
+    expect(blocks).toEqual([{ type: 'text', text: 'before after' }])
+    expect(events[0]).toMatchObject({ data: { message: { content: [{ type: 'text', text: 'before' }] } } })
+  })
+
   it('projects an ACP resource link as a file-chip token without its URI', () => {
     const projected = projectDesktopUserText(
       '请处理\n[resource_link name="writing-block.md" uri="file:///Users/miao/.dsh/artifacts/input.md" mime_type="text/markdown" size=12]\n',

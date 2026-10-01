@@ -104,6 +104,7 @@ function isHarnessInstallationEnvelope(value: unknown): value is HarnessInstalla
  * @param fetchImpl Fetch implementation; defaults to global `fetch`
  * @returns HTTP status and parsed JSON value
  */
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- Caller selects the JSON response type.
 export async function obisJsonRequest<T>(
   baseURL: string,
   path: string,

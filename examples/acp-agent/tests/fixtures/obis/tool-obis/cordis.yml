@@ -1,0 +1,29 @@
+- id: model
+  name: './model.ts'
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+  config:
+    watch: false
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: never
+- id: agent
+  name: '@deepseek-ai/dsh-acp-demo'
+  config:
+    provider: mock-obis
+    model: event-reader
+    workspaceContext: false
+    includeHarnessIdentity: false
+    persona: 'Read one public enterprise run event.'
+    persistenceCompression: none
+- id: obis
+  name: '@deepseek-ai/dsh-tool-obis'
+  config:
+    baseUrl: !!js process.env.OBIS_RUNTIME_BASE_URL
+    environmentId: test
+    credentialRef: OBIS_DELEGATED_ACCESS_TOKEN
+    runId: run
+    capabilityLease: private-lease
+    autonomy: read-only
+    eventReadTimeoutMs: 5000

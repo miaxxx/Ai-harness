@@ -1,3 +1,4 @@
+import { configureBusinessIdentity, clearBusinessIdentity, refreshBusinessIdentity } from './desktop-business-window.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -16,7 +17,9 @@ import type {
   DesktopEnterpriseRuntimeScope,
   DesktopEnterpriseScopeRequest,
 } from './desktop-enterprise-runtime-shared.ts'
-import { setEnterpriseRuntimeScope } from './desktop-enterprise-scope-main.ts'
+import { enterpriseRuntimeScope, setEnterpriseRuntimeScope } from './desktop-enterprise-scope-main.ts'
+import { sameEnterpriseRuntimeScope } from './desktop-enterprise-runtime-shared.ts'
+import { issueDesktopRuntimeDelegation } from './desktop-obis-runtime-protocol.ts'
 import {
   ObisHttpError,
   OHP_VERSION,
@@ -194,6 +197,7 @@ function isTokenPair(value: unknown): value is TokenPair {
   return isObisTokenPair(value)
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- Caller selects the JSON response type.
 async function requestJson<T>(
   stored: StoredObisIdentity,
   path: string,
@@ -286,6 +290,9 @@ async function attachIdentity(stored: StoredObisIdentity, tokens: TokenPair): Pr
   return next
 }
 
+let linkedBusinessAccessToken: string | undefined
+let linkedBusinessSession: { sessionToken: string; expiresAt: string } | undefined
+
 async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIdentity> {
   const refreshToken = decrypted(stored.encryptedRefreshToken)
   if (!refreshToken) return stored
@@ -295,7 +302,15 @@ async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIden
       body: { refreshToken },
     })
     if (!isTokenPair(refreshed.value)) throw new Error('OBIS refresh returned an invalid token envelope')
-    return await attachIdentity(stored, refreshed.value)
+    const next = await attachIdentity(stored, refreshed.value)
+    await refreshBusinessIdentity(async () => {
+      const accessToken = refreshed.value.accessToken
+      const issued = (await requestJson<{ sessionToken: string; expiresAt: string }>(next, '/v1/desktop/business-session', { method: 'POST', accessToken })).value
+      linkedBusinessAccessToken = accessToken
+      linkedBusinessSession = issued
+      return issued
+    })
+    return next
   } catch (error) {
     if (error instanceof ObisHttpError && (error.status === 401 || error.status === 403)) {
       setEnterpriseRuntimeScope(undefined)
@@ -437,6 +452,24 @@ async function validateRuntimeScope(value: unknown): Promise<DesktopEnterpriseRu
   return scope
 }
 
+/**
+ * Prepare a private, source-session-bound credential for the supervised ACP Host.
+ * @param expected Scope previously accepted by the native identity owner.
+ * @returns Host environment additions; no human access or refresh token is included.
+ */
+export async function desktopObisRuntimeEnvironment(expected: DesktopEnterpriseRuntimeScope): Promise<Record<string, string>> {
+  const { stored, accessToken } = await authenticatedStored()
+  if (stored.tenantId !== expected.tenantId || stored.user?.id !== expected.userId
+    || stored.installationId !== expected.installationId) throw new Error('企业身份已变化，请重新打开工作区。')
+  const webURL = process.env.DSH_DESKTOP_BUSINESS_WEB_URL?.trim()
+  if (!webURL) throw new Error('请配置企业业务入口后启动业务对话。')
+  const delegated = await issueDesktopRuntimeDelegation({ baseURL: stored.baseURL, accessToken,
+    deviceId: stored.deviceId, harnessOrigin: new URL(webURL).origin, scope: expected, autonomy: 'human-approved' })
+  if (!sameEnterpriseRuntimeScope(enterpriseRuntimeScope(), expected)) throw new Error('企业作用域已变化，请重新启动对话。')
+  return { OBIS_RUNTIME_BASE_URL: stored.baseURL, OBIS_DELEGATED_ACCESS_TOKEN: delegated.accessToken,
+    OBIS_DELEGATED_EXPIRES_AT: delegated.expiresAt }
+}
+
 function installIdentityIpc(): void {
   ipcMain.handle('dsh:obis-identity-status', async (event) => {
     requireTrusted(event)
@@ -515,6 +548,7 @@ function installIdentityIpc(): void {
       accessToken,
     })
     if (!isTokenPair(response.value)) throw new Error('OBIS tenant switch returned an invalid token envelope')
+    await clearBusinessIdentity()
     const nextAuthority: StoredObisIdentity = { ...withoutSession(stored), tenantId: target.trim() }
     delete nextAuthority.installationId
     setEnterpriseRuntimeScope(undefined)
@@ -602,6 +636,7 @@ function installIdentityIpc(): void {
 
   ipcMain.handle('dsh:obis-identity-logout', async (event) => {
     requireTrusted(event)
+    await clearBusinessIdentity()
     const stored = await ensureStored()
     setEnterpriseRuntimeScope(undefined)
     if (!stored) return publicStatus(undefined)
@@ -630,5 +665,14 @@ function installIdentityIpc(): void {
 }
 
 void app.whenReady().then(() => {
+  configureBusinessIdentity(async (previous) => {
+    const { stored, accessToken } = await authenticatedStored()
+    if (previous && linkedBusinessAccessToken === accessToken && linkedBusinessSession
+      && Date.parse(linkedBusinessSession.expiresAt) > Date.now()) return linkedBusinessSession
+    const issued = (await requestJson<{ sessionToken: string; expiresAt: string }>(stored, '/v1/desktop/business-session', { method: 'POST', accessToken })).value
+    linkedBusinessAccessToken = accessToken
+    linkedBusinessSession = issued
+    return issued
+  })
   installIdentityIpc()
 })

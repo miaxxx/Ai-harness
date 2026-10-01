@@ -149,6 +149,9 @@ function propMatches(kind: PropKind, value: unknown): boolean {
 
 function validate(root: SharedRendererLayout, view: SharedRendererView): RendererIssue[] {
   const issues: RendererIssue[] = []
+  if(view.designSystem&&(view.designSystem.id!=='obis-enterprise'||view.designSystem.version!=='1.0.0')){
+    issues.push({ severity:'error',code:'DESIGN_SYSTEM_UNSUPPORTED',path:'designSystem',message:`Unsupported design system ${view.designSystem.id}@${view.designSystem.version}.` })
+  }
   if (view.pattern && !PATTERNS.has(view.pattern)) {
     issues.push({
       severity: 'error',
@@ -221,6 +224,12 @@ function heading(node: SharedRendererLayout, fallback: string): string {
   return text(node.props?.title) ?? text(node.props?.label) ?? fallback
 }
 
+let pageDeclaredActions: readonly string[] | undefined
+
+function pageDeclaresAction(action: string): boolean {
+  return pageDeclaredActions?.includes(action) === true
+}
+
 function appendChildren(host: HTMLElement, node: SharedRendererLayout): void {
   for (const child of node.children ?? []) host.append(renderNode(child))
 }
@@ -236,6 +245,13 @@ function dataHead(title: string, meta: string): HTMLElement {
 }
 
 function form(node: SharedRendererLayout): HTMLElement {
+  const action = text(node.props?.action)
+  if (action && !pageDeclaresAction(action)) {
+    const note = el('p', 'appFormHint')
+    note.setAttribute('data-renderer-state', 'blocked')
+    note.textContent = `Submit binding ${action} is not declared by this page.`
+    return note
+  }
   const fieldset = el('fieldset', 'appDeclarativeForm')
   const legend = document.createElement('legend')
   legend.textContent = heading(node, 'Form')
@@ -272,7 +288,6 @@ function form(node: SharedRendererLayout): HTMLElement {
     }
     fieldset.append(label)
   }
-  const action = text(node.props?.action)
   if (action) {
     const hint = el('p', 'appFormHint')
     hint.textContent = `Submit binding: ${action}. Execution is supplied by the host adapter.`
@@ -353,15 +368,25 @@ function taskList(): HTMLElement {
 }
 
 function fileViewer(): HTMLElement {
+  const wrap = document.createElement('div')
   const note = document.createElement('p')
   note.textContent = 'No files match the current governed query and local view filters.'
-  return note
+  const hint = document.createElement('p')
+  hint.className = 'appFormHint'
+  hint.textContent = 'File open is supplied by the host adapter.'
+  wrap.append(note, hint)
+  return wrap
 }
 
 function knowledgeSearch(): HTMLElement {
+  const wrap = document.createElement('div')
   const note = document.createElement('p')
   note.textContent = 'No knowledge citations match the current governed query and local view filters.'
-  return note
+  const hint = document.createElement('p')
+  hint.className = 'appFormHint'
+  hint.textContent = 'Knowledge search is supplied by the host adapter.'
+  wrap.append(note, hint)
+  return wrap
 }
 
 function actionButton(node: SharedRendererLayout): HTMLElement {
@@ -371,9 +396,17 @@ function actionButton(node: SharedRendererLayout): HTMLElement {
     note.textContent = 'ActionButton requires props.action.'
     return note
   }
+  if (!pageDeclaresAction(action)) {
+    const note = el('p', 'appFormHint')
+    note.setAttribute('data-renderer-state', 'blocked')
+    note.textContent = `Action ${action} is not declared by this page.`
+    return note
+  }
   const host = el('div', 'appActionButton')
+  host.dataset.pageAction = action
   const button = document.createElement('button')
   button.type = 'button'
+  button.disabled = true
   button.textContent = text(node.props?.label) ?? text(node.props?.title) ?? action
   const hint = el('p', 'appFormHint')
   hint.textContent = `Action binding: ${action}. Execution is supplied by the host adapter.`
@@ -553,8 +586,14 @@ function renderNode(node: SharedRendererLayout): HTMLElement {
   }
   if (node.component === 'Search') return search(node)
   if (node.component === 'Filter') return filter(node)
-  if (node.component === 'Table' || node.component === 'DataTable' || node.component === 'ApprovalQueue') {
+  if (node.component === 'Table' || node.component === 'DataTable') {
     return dataBlock(node, '0 rows', emptyRows())
+  }
+  if (node.component === 'ApprovalQueue') {
+    const hint = document.createElement('p')
+    hint.className = 'appFormHint'
+    hint.textContent = 'Approvals wait for the host inbox adapter.'
+    return dataBlock(node, 'inbox', hint)
   }
   if (node.component === 'Detail' || node.component === 'ObjectDetail') {
     return dataBlock(node, 'no selection', emptyDetail())
@@ -659,15 +698,21 @@ function banner(view: SharedRendererView, warnings: RendererIssue[]): HTMLElemen
 /**
  * Render a Kernel page layout with the OBIS shared UI Runtime component registry.
  * Data rows are always empty; this overlay does not execute Query or Action.
+ * ActionButton and Form submit bindings that are absent from `view.actions` fail closed.
  * @param layout Kernel page layout tree
  * @param view optional page pattern, query name, actions, and design-system identifiers for the banner
  * @returns a DOM subtree tagged `data-renderer-contract="obis-ui-runtime@0.1"`, or a blocked error section
  */
 export function renderSharedApplicationLayout(layout: SharedRendererLayout, view: SharedRendererView = {}): HTMLElement {
-  const issues = validate(layout, view)
-  const fatal = issues.filter(issue => issue.severity === 'error')
-  if (fatal.length) return blocked(fatal)
-  const host = banner(view, issues.filter(issue => issue.severity === 'warning'))
-  host.append(renderNode(layout))
-  return host
+  pageDeclaredActions = view.actions
+  try {
+    const issues = validate(layout, view)
+    const fatal = issues.filter(issue => issue.severity === 'error')
+    if (fatal.length) return blocked(fatal)
+    const host = banner(view, issues.filter(issue => issue.severity === 'warning'))
+    host.append(renderNode(layout))
+    return host
+  } finally {
+    pageDeclaredActions = undefined
+  }
 }

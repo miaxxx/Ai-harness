@@ -5,6 +5,7 @@ import type { IConversation, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-
 import type { DesktopAttachment, DesktopSkillSummary } from './shared.ts'
 import { producedForClosing } from '@deepseek-ai/dsh-client-ui-deliverables/client'
 import { desktopAttachmentMarker, desktopAttachmentReference } from './desktop-prompt.ts'
+import { desktopBusinessReferenceSource, warmBusinessReferenceCatalog } from './desktop-business-references.ts'
 import css from './desktop-content-ui.module.css'
 
 /** Session services the Desktop-owned content UI needs from the product adapter. */
@@ -237,6 +238,7 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
   return {
     inject: ['slots', 'inputTriggers'] as const,
     apply(ctx: ClientContext) {
+      const business = desktopBusinessReferenceSource()
       const catalogs = new Map<SessionId, readonly DesktopSkillSummary[]>()
       const catalogListeners = new Map<SessionId, Set<() => void>>()
       const load = async (sessionId: SessionId, refresh = false): Promise<readonly DesktopSkillSummary[]> => {
@@ -251,13 +253,15 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
       }
       const source: InputTriggerSource = {
         trigger: '/', name: 'command', showGroupTitle: false,
-        async candidates(session, { query }) {
-          const rows = await load(session.sessionId, true)
+        async candidates(session, request) {
+          const { query } = request
+          const [rows, references] = await Promise.all([load(session.sessionId), business.candidates(session, request)])
           const actions = query === '' || 'attachment'.startsWith(query)
             ? [{ name: '上传附件', description: '添加图片或普通文件', icon: 'paperclip', value: 'attachment' }]
             : []
           return [
             ...actions,
+            ...references,
             ...rows.filter(row => row.name.startsWith(query)).map(row => ({
               name: row.name,
               description: row.description,
@@ -267,7 +271,10 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
             })),
           ]
         },
-        warm(session) { void load(session.sessionId) },
+        warm(session) {
+          void load(session.sessionId, true).catch((error: unknown) => { console.error('[desktop-content] skill warm failed:', error) })
+          warmBusinessReferenceCatalog()
+        },
         lexicon(session) { return catalogs.get(session.sessionId)?.map(row => row.name) },
         subscribeLexicon(session, listener) {
           const set = catalogListeners.get(session.sessionId) ?? new Set<() => void>()
@@ -278,7 +285,9 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
             if (set.size === 0) catalogListeners.delete(session.sessionId)
           }
         },
-        onPick({ candidate, session, span }) {
+        onPick(pick) {
+          const { candidate, session, span } = pick
+          if (candidate.value?.startsWith('obis:')) return business.onPick(pick)
           if (candidate.value !== 'attachment') {
             return {
               insert: {
@@ -305,8 +314,8 @@ export function desktopContentPlugin(sessions: DesktopContentSessions) {
           return 'handled'
         },
         codec: {
-          clipboardText(ref) { return `/${ref}` },
-          serialize(ref) { return Promise.resolve(`<skill>${ref}</skill>`) },
+          clipboardText(ref) { return ref.startsWith('obis:') ? business.codec.clipboardText(ref) : `/${ref}` },
+          serialize(ref, signal) { return ref.startsWith('obis:') ? business.codec.serialize(ref, signal) : Promise.resolve(`<skill>${ref}</skill>`) },
         },
       }
       const attachmentSource: InputTriggerSource = {

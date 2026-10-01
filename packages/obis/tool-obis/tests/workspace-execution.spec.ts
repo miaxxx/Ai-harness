@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CredentialProvider, {
@@ -14,6 +14,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import ApprovalService, { type ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import * as toolObis from '../src/index.ts'
+import { serializeObisBusinessReference } from '@deepseek-ai/dsh-obis-bridge'
 
 class TestCredentialProvider extends CredentialProvider {
   async resolve(_ref: CredentialRef): Promise<ResolvedCredential | undefined> {
@@ -49,7 +50,6 @@ const lease = {
   id: 'lease-1',
   runId: 'run-1',
   deploymentId: 'dep-1',
-  tenantId: 'tenant-1',
   environmentId: 'prod',
   userId: 'user-1',
   deviceId: 'device-1',
@@ -60,7 +60,6 @@ const lease = {
 
 const run = {
   id: 'run-1',
-  tenantId: 'tenant-1',
   environmentId: 'prod',
   actorId: 'user-1',
   taskId: 'task-1',
@@ -103,7 +102,12 @@ function fakeAgent(id = 'session-1'): Agent {
   return { id, session } as unknown as Agent
 }
 
-function captureFetch(options: { approvalRun?: Record<string, unknown>; executeResult?: Record<string, unknown> } = {}) {
+function captureFetch(options: {
+  approvalRun?: Record<string, unknown>
+  executeResult?: Record<string, unknown>
+  renewedLease?: Record<string, unknown>
+  moduleBinding?: Record<string, unknown>
+} = {}) {
   const requests: CapturedRequest[] = []
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const raw = typeof input === 'string' || input instanceof URL ? String(input) : input.url
@@ -113,13 +117,25 @@ function captureFetch(options: { approvalRun?: Record<string, unknown>; executeR
     if (typeof init?.body === 'string' && init.body.length > 0) body = JSON.parse(init.body) as Record<string, unknown>
     requests.push({ method: init?.method ?? (input instanceof Request ? input.method : 'GET'), url, headers, ...(body ? { body } : {}) })
 
-    if (url.pathname === '/v1/agent-runs' && init?.method === 'POST') return response(run, 201)
+    if (url.pathname === '/v1/agent-runs' && init?.method === 'POST') return response({ ...run, ...(options.moduleBinding ? { moduleBinding: options.moduleBinding } : {}) }, 201)
     if (url.pathname === '/v1/agent-runs/run-1/attach' && init?.method === 'POST') {
-      return response({ ...run, harnessSessionId: 'session-1' })
+      return response({ ...run, harnessSessionId: 'session-1', capabilityLease: options.renewedLease && requests.filter(request => request.url.pathname.endsWith('/attach')).length > 1 ? options.renewedLease : lease })
     }
     if (url.pathname === '/v1/agent-runs/run-1' && (init?.method ?? 'GET') === 'GET') return response(run)
     if (url.pathname === '/v1/harness/context/resolve' && init?.method === 'POST') {
       return response({ deploymentId: 'dep-1', artifactId: 'artifact-1', symbols: [] })
+    }
+    if (url.pathname === '/v1/harness/skills/ReviewSupplier' && (init?.method ?? 'GET') === 'GET') {
+      return response({ id: 'ReviewSupplier', description: 'Review supplier risk.' })
+    }
+    if (url.pathname === '/v1/harness/skills' && (init?.method ?? 'GET') === 'GET') {
+      return response({ items: [{ id: 'ReviewSupplier' }], truncated: false })
+    }
+    if (url.pathname === '/v1/harness/tasks' && (init?.method ?? 'GET') === 'GET') {
+      return response({ items: [{ id: 'task-1', status: 'open' }] })
+    }
+    if (url.pathname === '/v1/harness/approvals' && (init?.method ?? 'GET') === 'GET') {
+      return response({ items: [{ id: 'approval-1', status: 'pending' }] })
     }
     if (url.pathname === '/v1/harness/actions/supplier.update/propose' && init?.method === 'POST') {
       return response({
@@ -175,11 +191,59 @@ async function execute(ctx: Context, agent: Agent, callId: string, name: string,
   })
 }
 
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-07T12:00:00Z')) })
+
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 describe('OBIS governed workspace behavior', () => {
+  it('binds a durable human-selected Module and attaches using the original Harness session', async () => {
+    const { requests } = captureFetch({ moduleBinding: { projectId: 'p', moduleId: 'supplier-risk', version: '0.1.0' } })
+    const ctx = await mounted({ config: { workspaceProjectId: 'p', referenceAutonomy: 'human-approved' } }), agent = fakeAgent()
+    agent.session.append('user/message', { id: 'ref-1' as never, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: serializeObisBusinessReference({ kind: 'module', projectId: 'p', environmentId: 'prod', label: '供应商', moduleId: 'supplier-risk', moduleVersion: '0.1.0', pageId: 'home' }) }] }, { surfaceOp: 'append' })
+    await execute(ctx, agent, 'module-read', 'obis_context', {})
+    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).toMatchObject({ projectId: 'p', applicationModuleId: 'supplier-risk', autonomy: 'human-approved' })
+    expect(requests.find(request => request.url.pathname.endsWith('/attach'))?.body).toMatchObject({ harnessSessionId: 'session-1' })
+  })
+
+  it('rejects cross-workspace and changed-version references before a governed operation', async () => {
+    const { requests } = captureFetch({ moduleBinding: { projectId: 'p', moduleId: 'supplier-risk', version: '0.2.0' } })
+    const ctx = await mounted({ config: { workspaceProjectId: 'p' } }), agent = fakeAgent()
+    const ref = { kind: 'module' as const, projectId: 'other', environmentId: 'prod', label: '供应商', moduleId: 'supplier-risk', moduleVersion: '0.1.0', pageId: 'home' }
+    const add = (projectId: string) => agent.session.append('user/message', { id: 'ref-1' as never, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: serializeObisBusinessReference({ ...ref, projectId }) }] }, { surfaceOp: 'append' })
+    add('other')
+    const refused = await execute(ctx, agent, 'wrong-project', 'obis_context', {})
+    expect(JSON.stringify(refused)).toContain('当前工作区')
+    expect(requests).toHaveLength(0)
+    add('p')
+    const changed = await execute(ctx, agent, 'wrong-version', 'obis_context', {})
+    expect(JSON.stringify(changed)).toContain('版本已变化')
+    expect(requests.some(request => request.url.pathname === '/v1/harness/context/resolve')).toBe(false)
+  })
+  it('reattaches an expired lease to the same run once before concurrent tools', async () => {
+    const renewedLease = { ...lease, id: 'lease-2', expiresAt: '2026-09-09T00:00:00Z' }
+    const { requests } = captureFetch({ renewedLease })
+    const ctx = await mounted(), agent = fakeAgent()
+    await execute(ctx, agent, 'initial', 'obis_context', {})
+    vi.setSystemTime(new Date(lease.expiresAt))
+    await Promise.all([execute(ctx, agent, 'renewed-a', 'obis_context', {}), execute(ctx, agent, 'renewed-b', 'obis_context', {})])
+    expect(requests.filter(request => request.url.pathname === '/v1/agent-runs')).toHaveLength(1)
+    expect(requests.filter(request => request.url.pathname.endsWith('/attach'))).toHaveLength(2)
+    expect(requests.filter(request => request.url.pathname === '/v1/harness/context/resolve').slice(1).map(request => request.headers.get('OHP-Capability-Lease'))).toEqual(['lease-2', 'lease-2'])
+  })
+
+  it('refuses an expired renewal before sending a governed operation', async () => {
+    const { requests } = captureFetch()
+    const ctx = await mounted(), agent = fakeAgent()
+    await execute(ctx, agent, 'initial', 'obis_context', {})
+    vi.setSystemTime(new Date(lease.expiresAt))
+    const result = await execute(ctx, agent, 'stale', 'obis_context', {})
+    expect(JSON.stringify(result)).toContain('did not renew')
+    expect(requests.filter(request => request.url.pathname === '/v1/harness/context/resolve')).toHaveLength(1)
+  })
+
   it('binds one Harness Session to one AgentRun and reuses the returned capability lease', async () => {
     const { requests } = captureFetch()
     const ctx = await mounted()
@@ -209,6 +273,49 @@ describe('OBIS governed workspace behavior', () => {
       harnessSessionId: 'session-1',
       installationId: 'install-1',
     })
+  })
+
+  it('lists entitled tasks, approvals, and skill ids through Kernel collection GET', async () => {
+    const { requests } = captureFetch()
+    const ctx = await mounted()
+    const agent = fakeAgent()
+    const tasks = await execute(ctx, agent, 'call-tasks', 'obis_list_tasks', { status: 'open', limit: 20 })
+    const approvals = await execute(ctx, agent, 'call-approvals', 'obis_list_approvals', { status: 'pending' })
+    const skills = await execute(ctx, agent, 'call-skills', 'obis_list_skills', {})
+    expect(tasks.isError).toBe(false)
+    expect(approvals.isError).toBe(false)
+    expect(skills.isError).toBe(false)
+    if (tasks.isError || approvals.isError || skills.isError) throw new Error('inbox list tools failed')
+    expect(tasks.value).toEqual([{ id: 'task-1', status: 'open' }])
+    expect(approvals.value).toEqual([{ id: 'approval-1', status: 'pending' }])
+    expect(skills.value).toEqual([{ id: 'ReviewSupplier' }])
+    const taskList = requests.find(request => request.url.pathname === '/v1/harness/tasks')
+    const approvalList = requests.find(request => request.url.pathname === '/v1/harness/approvals')
+    const skillList = requests.find(request => request.url.pathname === '/v1/harness/skills')
+    expect(taskList?.method).toBe('GET')
+    expect(taskList?.url.searchParams.get('status')).toBe('open')
+    expect(taskList?.url.searchParams.get('limit')).toBe('20')
+    expect(approvalList?.method).toBe('GET')
+    expect(approvalList?.url.searchParams.get('status')).toBe('pending')
+    expect(skillList?.method).toBe('GET')
+    for (const request of [taskList, approvalList, skillList]) {
+      expect(request?.headers.get('ohp-capability-lease')).toBe('lease-1')
+      expect(request?.headers.get('ohp-agent-run')).toBe('run-1')
+    }
+  })
+
+  it('loads a deployment-pinned skill definition through the governed skill endpoint', async () => {
+    const { requests } = captureFetch()
+    const ctx = await mounted()
+    const result = await execute(ctx, fakeAgent(), 'call-skill', 'obis_get_skill', { skillId: 'ReviewSupplier' })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error(result.error.message)
+    expect(result.value).toMatchObject({ id: 'ReviewSupplier', description: 'Review supplier risk.' })
+    const skillRead = requests.find(request => request.url.pathname === '/v1/harness/skills/ReviewSupplier')
+    expect(skillRead?.method).toBe('GET')
+    expect(skillRead?.url.searchParams.get('environmentId')).toBe('prod')
+    expect(skillRead?.headers.get('ohp-capability-lease')).toBe('lease-1')
+    expect(skillRead?.headers.get('ohp-agent-run')).toBe('run-1')
   })
 
   it('stamps launch-bound project and module ids onto created AgentRuns', async () => {

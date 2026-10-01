@@ -99,8 +99,8 @@ export interface DesktopNavigationItem {
   moduleId?: string
 }
 
+/** Public desktop preference. Omits tenant identifiers. */
 export interface DesktopUserPreference {
-  tenantId: string
   userId: string
   pinnedIds: string[]
   hiddenOptionalIds: string[]
@@ -128,9 +128,9 @@ export interface DesktopResolvedWorkspace {
   }
 }
 
+/** Public self-service Harness installation. Omits tenant identifiers. */
 export interface DesktopHarnessDevice {
   id: string
-  tenantId: string
   userId: string
   deviceId: string
   deviceName: string

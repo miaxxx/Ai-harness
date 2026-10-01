@@ -71,6 +71,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   cordisInspect: 'extensions.md',
   authorization: 'credentials.md',
   credentials: 'credentials.md',
+  obisLaunch: 'credentials.md',
   directoryPicker: 'workspace.md',
   dynamicCordisRunner: 'extensions.md',
   e2b: 'subprocess.md',
@@ -566,6 +567,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  WorkspaceLaunchState: 'Host handoff metadata is owned by packages/obis/launch/README.md; returned state contains no credentials.',
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
   BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
@@ -646,7 +648,7 @@ export const CORDIS_CATALOG_POLICY: CordisCatalogPolicy = {
   linkedTypePages: LINK_MAP,
   foundationTypeNames: FOUNDATION_TYPE_NAMES,
   typeLinkExemptions: TYPE_LINK_EXEMPTIONS,
-  runtimeServiceExclusions: new Set(['cordisInspect', 'dynamicCordisRunner']),
+  runtimeServiceExclusions: new Set(['cordisInspect', 'dynamicCordisRunner', 'obisLaunch']),
   runtimeServices: [{
     key: 'timer',
     type: 'TimerService',

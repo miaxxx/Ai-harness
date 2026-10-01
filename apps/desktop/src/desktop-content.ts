@@ -263,6 +263,14 @@ export class DesktopContentStore {
     return row
   }
 
+  /** Move unsent attachment references when a detached empty conversation is renewed. */
+  transferDraftAttachments(previousId: string, nextId: string): void {
+    const attachments = this.attachments.get(previousId)
+    if (attachments === undefined) return
+    this.attachments.set(nextId, attachments)
+    this.attachments.delete(previousId)
+  }
+
   async removeAttachment(sessionId: string, id: string): Promise<void> {
     const row = this.attachments.get(sessionId)?.get(id)
     if (row === undefined) return

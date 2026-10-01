@@ -10,6 +10,8 @@ MenuView 把菜单 store 渲染进 `conversation.input.overlay` slot（列表类
 
 `/client` 导出接口是插件主体（`apply`／`inject`）、`InputTriggerService`、`MenuViewInjected` 与约定类型。MenuView 本身是内部实现——slot 注册以闭包持有它。
 
+子菜单与悬停的入口行对齐，并限制在视口内；滚动和窗口尺寸变化会更新位置。
+
 ## 模型体验
 
 无。触发流水线只是浏览器呈现——pick 产出 `CommandClaim`／`ReferenceInsert` 数据，其模型可见后果（宿主命令执行；插入的引用文本随普通提示词发送）由负责消费这些数据的宿主包与输入状态机包负责。

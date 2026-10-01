@@ -22,6 +22,7 @@ export default defineConfig({
         replacement: src('../../packages/client/$1/src/index.ts'),
       },
       { find: '@deepseek-ai/cordis', replacement: src('../../vendor/cordis/src/index.ts') },
+      { find: '@deepseek-ai/dsh-obis-bridge', replacement: src('../../packages/obis/bridge/src/index.ts') },
     ],
     // The product UI packages all share one React identity. Workspace package
     // links must not cause Vite to materialize a second hooks runtime.

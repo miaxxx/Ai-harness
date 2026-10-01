@@ -7,7 +7,7 @@
  * are mousedown-handled and the highlight is exposed via
  * aria-activedescendant on the listbox).
  */
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import {
   IconPaperclipOutline16, IconSkillOutline16, useAnchoredMaxHeight,
@@ -45,6 +45,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
     () => menu.getSnapshot(),
   )
   const listRef = useRef<HTMLDivElement>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null)
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
@@ -55,6 +56,28 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
     ? undefined
     : state.groups.find(group => group.source === highlight.source)?.items[highlight.index]
   const visibleSubmenu = hoveredSubmenu ?? highlightedItem?.submenu ?? null
+  useLayoutEffect(() => {
+    const menuElement = listRef.current
+    const submenuElement = submenuRef.current
+    if (!menuElement || !submenuElement || visibleSubmenu === null) return
+    const position = (): void => {
+      const trigger = Array.from(menuElement.querySelectorAll<HTMLButtonElement>('[data-submenu]'))
+        .find(row => row.dataset.submenu === visibleSubmenu)
+      if (!trigger) return
+      const root = menuElement.getBoundingClientRect()
+      const row = trigger.getBoundingClientRect()
+      const height = submenuElement.getBoundingClientRect().height
+      const top = Math.max(8, Math.min(row.top, window.innerHeight - height - 8))
+      submenuElement.style.top = `${top - root.top}px`
+    }
+    position()
+    menuElement.addEventListener('scroll', position, true)
+    window.addEventListener('resize', position)
+    return () => {
+      menuElement.removeEventListener('scroll', position, true)
+      window.removeEventListener('resize', position)
+    }
+  }, [visibleSubmenu, state])
   // Focus stays in the textarea (combobox pattern), so the browser never
   // scrolls the active option into view on keyboard moves — do it here.
   useEffect(() => {
@@ -108,6 +131,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
                         key={`submenu-${group.source}-${item.submenu}`}
                         type="button"
                         className={clsx(css.item, css.submenuTrigger, visibleSubmenu === item.submenu && css.active)}
+                        data-submenu={item.submenu}
                         aria-haspopup="listbox"
                         aria-expanded={visibleSubmenu === item.submenu}
                         onMouseEnter={() => { setHoveredSubmenu(item.submenu ?? null) }}
@@ -157,6 +181,7 @@ export function MenuView({ menu, onPick, onDismiss, t }: MenuViewProps) {
         return (
           <div
             key={`${group.source}-${visibleSubmenu}`}
+            ref={submenuRef}
             className={css.submenu}
             role="group"
             aria-label={visibleSubmenu}

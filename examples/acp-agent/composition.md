@@ -43,6 +43,10 @@ flowchart LR
   cfg --> plugin_acp_tool_computer
   plugin_acp_mcp_user_config["mcp-user-config<br/>@deepseek-ai/dsh-mcp-user-config"]
   cfg --> plugin_acp_mcp_user_config
+  plugin_acp_desktop_obis_credentials["desktop-obis-credentials<br/>@deepseek-ai/dsh-credentials-local"]
+  cfg --> plugin_acp_desktop_obis_credentials
+  plugin_acp_desktop_obis_tools["desktop-obis-tools<br/>@deepseek-ai/dsh-tool-obis"]
+  cfg --> plugin_acp_desktop_obis_tools
   plugin_acp_token_meter["token-meter<br/>@deepseek-ai/dsh-token-meter"]
   cfg --> plugin_acp_token_meter
   plugin_acp_tool_result_pruner["tool-result-pruner<br/>@deepseek-ai/dsh-compaction-tool-result-pruner"]
@@ -125,6 +129,8 @@ flowchart LR
 | `computer-macos` | `@deepseek-ai/dsh-computer-macos` |
 | `tool-computer` | `@deepseek-ai/dsh-tool-computer` |
 | `mcp-user-config` | `@deepseek-ai/dsh-mcp-user-config` |
+| `desktop-obis-credentials` | `@deepseek-ai/dsh-credentials-local` |
+| `desktop-obis-tools` | `@deepseek-ai/dsh-tool-obis` |
 | `token-meter` | `@deepseek-ai/dsh-token-meter` |
 | `tool-result-pruner` | `@deepseek-ai/dsh-compaction-tool-result-pruner` |
 | `compaction-basic` | `@deepseek-ai/dsh-compaction-basic` |

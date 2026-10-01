@@ -50,7 +50,7 @@ const placeholder = (name: string) => defineTool({
 })
 
 describe('tool-obis native composition', () => {
-  it('registers the six governed OBIS tools and unwinds them with the plugin fiber', async () => {
+  it('registers the governed OBIS tools and unwinds them with the plugin fiber', async () => {
     const ctx = new Context()
     const promptFiber = ctx.plugin(SystemPrompt)
     await promptFiber
@@ -76,7 +76,12 @@ describe('tool-obis native composition', () => {
       'obis_get_object',
       'obis_search_knowledge',
       'obis_propose_action',
+      'obis_list_tasks',
       'obis_get_task',
+      'obis_list_approvals',
+      'obis_list_skills',
+      'obis_get_skill',
+      'obis_next_run_event',
     ]) {
       expect(() => ctx.tools.register(placeholder(name))).toThrow(/already registered/)
     }

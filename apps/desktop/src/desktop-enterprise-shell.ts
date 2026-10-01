@@ -9,7 +9,6 @@ import type {
 import {
   isModuleNavigationItem,
   moduleNavigationItems,
-  renderDesktopApplicationPage,
 } from './desktop-application-ui.ts'
 import { renderEnterpriseControlCenter } from './desktop-enterprise-overview-ui.ts'
 import './desktop-enterprise-shell.css'
@@ -438,10 +437,8 @@ export async function mountDesktopEnterpriseShell(root: HTMLElement, mountProduc
         if (application.module.version !== item.moduleVersion) {
           throw new Error('The published module version changed after navigation was resolved. Refresh the workspace and try again.')
         }
-        await renderDesktopApplicationPage(page, application, {
-          scope,
-          bridge: window.dshApplications,
-        })
+        await window.dshBusiness.openPage({ ...scope, moduleId: item.moduleId, pageId: item.modulePageId })
+        renderEmptyOutlet(page, item.label, '业务页面已在企业工作台打开。')
       } catch (error) {
         renderEmptyOutlet(
           page,

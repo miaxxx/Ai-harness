@@ -7,12 +7,12 @@ class FakeCredentials {
   readonly values = new Map<string, string>()
 
   async resolve(ref: string): Promise<{ value: string; source: string } | undefined> {
-    const value = this.values.get(String(ref))
+    const value = this.values.get(ref)
     return value === undefined ? undefined : { value, source: 'test' }
   }
 
   async set(ref: string, value: string): Promise<void> {
-    this.values.set(String(ref), value)
+    this.values.set(ref, value)
   }
 
   clear(): void {
@@ -71,7 +71,7 @@ const navigation = {
 const publishedPage = {
   module: { id: 'mod_leave', version: '1.0.0', name: 'Leave' },
   page: { id: 'home', title: 'Home', layout: { component: 'Page' } },
-  designSystem: { id: 'ds', version: '1' },
+  designSystem: { id: 'obis-enterprise', version: '1.0.0' },
   permissions: {
     visible: true,
     executable: true,
@@ -165,7 +165,7 @@ describe('obis-launch host', () => {
 
   it('exchanges a ticket, stores the delegated token, and omits the secret from the RPC result', async () => {
     const fetchImpl = vi.fn(async (_url: string | URL, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toEqual({ ticket: 'obwl_1', harnessOrigin: origin, deviceId: 'dev-1' })
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toEqual({ ticket: 'obwl_1', harnessOrigin: origin, deviceId: 'dev-1' })
       return jsonResponse(200, exchangeBody({ goal: 'Review leave', consumedAt: '2026-01-01T00:01:00.000Z' }))
     })
     const started = await boot({ baseUrl: 'http://127.0.0.1:8080', deviceId: 'dev-1' }, fetchImpl as unknown as typeof fetch)
@@ -207,21 +207,21 @@ describe('obis-launch host', () => {
 
   it('maps kernel exchange failures, invalid envelopes, origin mismatch and non-Error fetch rejection', async () => {
     const signal = new AbortController().signal
-    const started = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => jsonResponse(401, { error: { message: 'ticket spent' } })) as unknown as typeof fetch)
+    const started = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => jsonResponse(401, { error: { message: 'ticket spent' } })))
     expect(await started.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
       error: { message: 'ticket spent' },
     })
     await started.dispose()
 
-    const fallback = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => textResponse(503, 'nope')) as unknown as typeof fetch)
+    const fallback = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => textResponse(503, 'nope')))
     expect(await fallback.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
       error: { message: 'OBIS launch exchange failed with 503.' },
     })
     await fallback.dispose()
 
-    const invalid = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => jsonResponse(200, { access: {} })) as unknown as typeof fetch)
+    const invalid = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => jsonResponse(200, { access: {} })))
     expect(await invalid.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
       error: { message: 'OBIS workspace launch exchange returned an invalid payload.' },
@@ -230,7 +230,7 @@ describe('obis-launch host', () => {
 
     const mismatch = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ harnessOrigin: 'http://127.0.0.1:9' }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ harnessOrigin: 'http://127.0.0.1:9' }))),
     )
     expect(await mismatch.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -238,7 +238,8 @@ describe('obis-launch host', () => {
     })
     await mismatch.dispose()
 
-    const rejected = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => Promise.reject('kernel down')) as unknown as typeof fetch)
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Tests non-Error wire failure normalization.
+    const rejected = await boot({ baseUrl: 'http://127.0.0.1:8080' }, vi.fn(async () => Promise.reject('kernel down')))
     expect(await rejected.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
       error: { message: 'kernel down' },
@@ -250,7 +251,7 @@ describe('obis-launch host', () => {
     const signal = new AbortController().signal
     const preview = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ preview: [] }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ preview: [] }))),
     )
     expect(await preview.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -260,7 +261,7 @@ describe('obis-launch host', () => {
 
     const previewFields = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ preview: { projectId: 1, previewId: 'p', pageId: 'h', persona: 'employee' } }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ preview: { projectId: 1, previewId: 'p', pageId: 'h', persona: 'employee' } }))),
     )
     expect(await previewFields.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -270,7 +271,7 @@ describe('obis-launch host', () => {
 
     const emptyId = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ id: '' }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ id: '' }))),
     )
     expect(await emptyId.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -283,7 +284,7 @@ describe('obis-launch host', () => {
       vi.fn(async () => jsonResponse(200, {
         access: { sessionId: 1, accessToken: 't', expiresAt: 'e' },
         launch: launchRow(),
-      })) as unknown as typeof fetch,
+      })),
     )
     expect(await accessTypes.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -293,7 +294,7 @@ describe('obis-launch host', () => {
 
     const autonomy = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ autonomy: 'nope' }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ autonomy: 'nope' }))),
     )
     expect(await autonomy.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({
       ok: false,
@@ -330,7 +331,7 @@ describe('obis-launch host', () => {
     const signal = new AbortController().signal
     const ordinary = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody())) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody())),
     )
     expect(await ordinary.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
     expect(await ordinary.rpc!('preview-page', undefined, signal)).toMatchObject({
@@ -344,7 +345,7 @@ describe('obis-launch host', () => {
       vi.fn(async () => jsonResponse(200, exchangeBody({
         autonomy: 'human-approved',
         preview: { projectId: 'proj_1', previewId: 'prev_1', pageId: 'home', persona: 'manager' },
-      }))) as unknown as typeof fetch,
+      }))),
     )
     expect(await writable.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
     expect(await writable.rpc!('preview-page', undefined, signal)).toMatchObject({
@@ -418,6 +419,77 @@ describe('obis-launch host', () => {
     await started.dispose()
   })
 
+  it('re-reads Kernel navigation so unpublished modules leave the catalog on the next call', async () => {
+    const signal = new AbortController().signal
+    let navigationReads = 0
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      const href = String(url)
+      if (href.endsWith('/v1/workspace-launches/exchange')) return jsonResponse(200, exchangeBody())
+      if (href.includes('/v1/workspace/navigation?')) {
+        navigationReads += 1
+        return jsonResponse(200, navigationReads === 1 ? navigation : { items: [] })
+      }
+      throw new Error(`unexpected fetch ${href}`)
+    })
+    const started = await boot({ baseUrl: 'http://127.0.0.1:8080' }, fetchImpl as unknown as typeof fetch)
+    expect(await started.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
+    expect(await started.rpc!('catalog', undefined, signal)).toEqual({
+      ok: true,
+      value: { projectId: 'proj_1', environmentId: 'prod', items: navigation.items },
+    })
+    expect(await started.rpc!('catalog', undefined, signal)).toEqual({
+      ok: true,
+      value: { projectId: 'proj_1', environmentId: 'prod', items: [] },
+    })
+    expect(await started.rpc!('module-page', { moduleId: 'mod_leave', pageId: 'home' }, signal)).toMatchObject({
+      ok: false,
+      error: { message: 'Requested module page is not in the launch-bound entitled catalog.' },
+    })
+    expect(navigationReads).toBe(3)
+    await started.dispose()
+  })
+
+  it('sends the launch delegated token so Kernel can return a per-employee catalog', async () => {
+    const signal = new AbortController().signal
+    const financeNavigation = {
+      items: [
+        {
+          id: 'nav-expense',
+          label: 'Expense home',
+          page: 'home',
+          group: 'Finance',
+          moduleId: 'mod_expense',
+          moduleVersion: '1.0.0',
+        },
+      ],
+    }
+    async function catalogForToken(token: string, items: typeof navigation.items) {
+      const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = String(url)
+        if (href.endsWith('/v1/workspace-launches/exchange')) {
+          return jsonResponse(200, {
+            ...exchangeBody(),
+            access: { sessionId: `sess_${token}`, accessToken: token, expiresAt: '2099-01-01T00:00:00.000Z' },
+          })
+        }
+        if (href.includes('/v1/workspace/navigation?')) {
+          expect(init?.headers).toEqual(expect.objectContaining({ authorization: `Bearer ${token}` }))
+          return jsonResponse(200, { items })
+        }
+        throw new Error(`unexpected fetch ${href}`)
+      })
+      const started = await boot({ baseUrl: 'http://127.0.0.1:8080' }, fetchImpl as unknown as typeof fetch)
+      expect(await started.rpc!('exchange', { ticket: token, harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
+      expect(await started.rpc!('catalog', undefined, signal)).toEqual({
+        ok: true,
+        value: { projectId: 'proj_1', environmentId: 'prod', items },
+      })
+      await started.dispose()
+    }
+    await catalogForToken('obdt_procurement', navigation.items)
+    await catalogForToken('obdt_finance', financeNavigation.items)
+  })
+
   it('refuses published catalog for preview launches, missing projectId, and invalid navigation', async () => {
     const signal = new AbortController().signal
     const preview = await boot(
@@ -425,7 +497,7 @@ describe('obis-launch host', () => {
       vi.fn(async () => jsonResponse(200, exchangeBody({
         autonomy: 'read-only',
         preview: { projectId: 'proj_1', previewId: 'prev_1', pageId: 'home', persona: 'employee' },
-      }))) as unknown as typeof fetch,
+      }))),
     )
     expect(await preview.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
     expect(await preview.rpc!('catalog', undefined, signal)).toMatchObject({
@@ -436,7 +508,7 @@ describe('obis-launch host', () => {
 
     const missingProject = await boot(
       { baseUrl: 'http://127.0.0.1:8080' },
-      vi.fn(async () => jsonResponse(200, exchangeBody({ projectId: '' }))) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, exchangeBody({ projectId: '' }))),
     )
     expect(await missingProject.rpc!('exchange', { ticket: 'x', harnessOrigin: origin }, signal)).toMatchObject({ ok: true })
     expect(await missingProject.rpc!('catalog', undefined, signal)).toMatchObject({

@@ -135,6 +135,19 @@ export interface DesktopModelSettingsUpdate {
   computerUseEnabled: boolean
 }
 
+/** One advertised model; inference access is verified when it is selected. */
+export interface DesktopModelSummary { id: string; name: string }
+
+/** Detected endpoint directory or the explicit configured-model fallback. */
+export interface DesktopModelCatalog {
+  models: DesktopModelSummary[]
+  source: 'endpoint' | 'configured'
+  warning?: string
+}
+
+/** Draft endpoint fields; an omitted key can reuse the saved key only for the same URL. */
+export interface DesktopModelDiscoveryInput { baseURL: string; apiKey: string; model: string }
+
 /** Redacted You.com web-search configuration safe to expose to the Renderer. */
 export interface DesktopWebSearchSettings {
   apiKeyConfigured: boolean
@@ -182,9 +195,11 @@ export interface DesktopBridge {
   /** List durable Sessions for one Workspace (the initial Workspace when omitted). */
   listSessions(cwd?: string): Promise<DesktopSessionSummary[]>
   /** Create one fresh durable Session rooted at the requested Workspace. */
-  createSession(cwd?: string): Promise<string>
+  createSession(cwd?: string, replaceEmptySessionId?: string): Promise<string>
   /** Restore one durable Session and replay its presentation updates. */
   loadSession(sessionId: string, cwd?: string): Promise<void>
+  /** Renew credentials before admission; return a replacement id only for an owned unsent empty Session. */
+  prepareSession(sessionId: string): Promise<string>
   /** Prompt one live Session through ACP with ordered text and attachment parts. */
   prompt(sessionId: string, prompt: readonly DesktopPromptPart[]): Promise<DesktopPromptResult>
   /** Cancel the current turn for one live Session. */
@@ -229,6 +244,10 @@ export interface DesktopBridge {
   modelSettings(): Promise<DesktopModelSettings>
   /** Save the primary model, securely retain its key, and restart the ACP Runtime. */
   saveModelSettings(update: DesktopModelSettingsUpdate): Promise<DesktopModelSettings>
+  /** Detect saved or draft endpoint model ids without exposing the retained credential. */
+  discoverModels(input?: DesktopModelDiscoveryInput): Promise<DesktopModelCatalog>
+  /** Verify and persist one directory model, then reconnect the ACP Runtime. */
+  selectModel(model: string): Promise<DesktopModelSettings>
   /** Read whether a You.com key is configured without exposing its value. */
   webSearchSettings(): Promise<DesktopWebSearchSettings>
   /** Save the You.com key in encrypted storage and restart the ACP Runtime. */
@@ -250,7 +269,14 @@ export type DesktopRendererFrame =
   | {
     type: 'runtime-status'
     status: 'starting' | 'ready' | 'stopped' | 'failed'
+    /** Host performs authorized replay before admitting a pending prompt. */
+    sessionsRestoredByHost?: boolean
     message?: string
+  }
+  | {
+    type: 'session-replay'
+    sessionId: string
+    phase: 'starting' | 'ready' | 'failed'
   }
   | {
     type: 'session-update'

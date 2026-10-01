@@ -52,6 +52,12 @@ function mockClient() {
         headers: { 'content-type': 'application/json', 'x-correlation-id': 'corr-server' },
       })
     }
+    if (/\/v1\/harness\/skills\/[^?]+/.test(request.url)) {
+      return new Response(JSON.stringify({ id: 'ReviewSupplier', description: 'Review supplier risk.' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     if (request.url.includes('/v1/harness/skills?')) {
       return new Response(JSON.stringify({ items: [{ id: 'ReviewSupplier' }], truncated: false }), {
         status: 200,
@@ -136,6 +142,60 @@ describe('OBIS OHP bridge', () => {
     expect(seen[0]?.body).toEqual({ environmentId: 'production', id: 'order-1', limit: 1 })
   })
 
+  it('routes entitled inbox and skill-catalog lists through Kernel collection GET', async () => {
+    const { client, seen } = mockClient()
+    const tools = createObisTools(client)
+    const listTasks = tools.find(candidate => candidate.name === 'obis_list_tasks')
+    const listApprovals = tools.find(candidate => candidate.name === 'obis_list_approvals')
+    const listSkills = tools.find(candidate => candidate.name === 'obis_list_skills')
+    if (!listTasks || !listApprovals || !listSkills) throw new Error('inbox list tools were not registered')
+
+    await expect(listTasks.execute({ status: 'open', limit: 20 }, {
+      environmentId: 'production',
+      runId: 'run-1',
+      capabilityLease: 'lease-1',
+    })).resolves.toEqual([{ id: 'task-1', status: 'open' }])
+    await expect(listApprovals.execute({ status: 'pending' }, {
+      environmentId: 'production',
+      runId: 'run-1',
+      capabilityLease: 'lease-1',
+    })).resolves.toEqual([{ id: 'approval-1', status: 'pending' }])
+    await expect(listSkills.execute({}, {
+      environmentId: 'production',
+      runId: 'run-1',
+      capabilityLease: 'lease-1',
+    })).resolves.toEqual([{ id: 'ReviewSupplier' }])
+
+    expect(seen.some(request =>
+      request.method === 'GET'
+      && request.url === 'https://obis.test/v1/harness/tasks?environmentId=production&status=open&limit=20',
+    )).toBe(true)
+    expect(seen.some(request =>
+      request.method === 'GET'
+      && request.url === 'https://obis.test/v1/harness/approvals?environmentId=production&status=pending',
+    )).toBe(true)
+    expect(seen.some(request =>
+      request.method === 'GET'
+      && request.url === 'https://obis.test/v1/harness/skills?environmentId=production',
+    )).toBe(true)
+  })
+
+  it('routes obis_get_skill through the governed skill definition endpoint', async () => {
+    const { client, seen } = mockClient()
+    const tool = createObisTools(client).find(candidate => candidate.name === 'obis_get_skill')
+    if (!tool) throw new Error('obis_get_skill was not registered')
+
+    await expect(tool.execute({ skillId: 'ReviewSupplier' }, {
+      environmentId: 'production',
+      runId: 'run-1',
+      capabilityLease: 'lease-1',
+    })).resolves.toEqual({ id: 'ReviewSupplier', description: 'Review supplier risk.' })
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.method).toBe('GET')
+    expect(seen[0]?.url).toBe('https://obis.test/v1/harness/skills/ReviewSupplier?environmentId=production')
+  })
+
   it('streams normalized OHP events without exposing Harness SessionEvent', async () => {
     const { client, seen } = mockClient()
     const events = []
@@ -156,7 +216,7 @@ describe('OBIS OHP bridge', () => {
     expect(request?.headers.get('ohp-agent-run')).toBe('run-1')
   })
 
-  it('covers OHP P0 evaluation, task list and approval decision without adding model tools', async () => {
+  it('covers OHP P0 evaluation, task list and approval decision without execute or decide tools', async () => {
     const { client, seen } = mockClient()
     await expect(client.evaluateAction('Supplier.changeRisk', {
       environmentId: 'production',
@@ -178,13 +238,33 @@ describe('OBIS OHP bridge', () => {
       decision: 'approve',
     })
 
-    expect(createObisTools(client).map(tool => tool.name)).not.toContain('obis_execute_action')
+    const names = createObisTools(client).map(tool => tool.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'obis_list_tasks',
+      'obis_list_approvals',
+      'obis_list_skills',
+      'obis_get_skill',
+    ]))
+    expect(names).not.toContain('obis_execute_action')
+    expect(names).not.toContain('obis_evaluate_action')
+    expect(names).not.toContain('obis_decide_approval')
     expect(seen.some(request => request.url.endsWith('/v1/harness/actions/Supplier.changeRisk/evaluate'))).toBe(true)
     expect(seen.some(request => request.url.includes('/v1/harness/tasks?') && request.method === 'GET')).toBe(true)
     expect(seen.some(request => request.url.includes('/v1/harness/approvals?') && request.method === 'GET')).toBe(true)
     expect(seen.some(request =>
       request.url.endsWith('/v1/harness/approvals/approval-1/decisions') && request.method === 'POST',
     )).toBe(true)
+  })
+
+  it('accepts public AgentRun bindings that omit tenant identifiers', async () => {
+    const { client } = mockClient()
+    const run = await client.createAgentRun({
+      environmentId: 'production',
+      agentId: 'workspace',
+      goal: 'Review supplier',
+    })
+    expect(run).toEqual({ id: 'run-1', environmentId: 'production', status: 'running' })
+    expect(run).not.toHaveProperty('tenantId')
   })
 
   it('stamps published module ids on AgentRun creation and bindObisRun', async () => {

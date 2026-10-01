@@ -103,15 +103,15 @@ describe('shared application renderer', () => {
     const host = renderSharedApplicationLayout(tree, {
       pattern: 'Object Detail',
       queryName: 'leave_rows',
-      actions: ['submit'],
-      designSystem: { id: 'ds', version: '1' },
+      actions: ['submit', 'submit_leave'],
+      designSystem: { id: 'obis-enterprise', version: '1.0.0' },
     })
     expect(host.getAttribute('data-renderer-contract')).toBe('obis-ui-runtime@0.1')
     expect(host.textContent).toContain('Shared Renderer')
     expect(host.textContent).toContain('Pattern: Object Detail')
     expect(host.textContent).toContain('Query: leave_rows')
-    expect(host.textContent).toContain('Actions: submit')
-    expect(host.textContent).toContain('DS: ds@1')
+    expect(host.textContent).toContain('Actions: submit, submit_leave')
+    expect(host.textContent).toContain('DS: obis-enterprise@1.0.0')
     expect(host.textContent).toContain('1 renderer contract warning(s)')
     expect(host.textContent).toContain('No rows match the current governed query and local view filters.')
     expect(host.textContent).toContain('Select a row to inspect its governed object detail.')
@@ -133,6 +133,15 @@ describe('shared application renderer', () => {
     expect(host.querySelector('[data-component="FileViewer"]')).toBeTruthy()
     expect(host.querySelector('[data-component="KnowledgeSearch"]')).toBeTruthy()
     expect(host.querySelector('[data-component="ActionButton"]')).toBeTruthy()
+    expect(host.querySelector<HTMLButtonElement>('[data-page-action="submit_leave"] button')?.disabled).toBe(true)
+    expect(host.querySelector('[data-page-inbox]')).toBeNull()
+    expect(host.querySelector('[data-page-files]')).toBeNull()
+    expect(host.querySelector('[data-page-knowledge]')).toBeNull()
+    expect(host.querySelector('[data-component="Form"] [data-page-action]')).toBeNull()
+    expect(host.textContent).toContain('Approvals wait for the host inbox adapter.')
+    expect(host.textContent).toContain('File open is supplied by the host adapter.')
+    expect(host.textContent).toContain('Knowledge search is supplied by the host adapter.')
+    host.querySelector<HTMLButtonElement>('[data-page-action="submit_leave"] button')?.click()
     expect(host.querySelector('[data-component="WorkflowStatus"]')).toBeTruthy()
     expect(host.querySelector('[data-component="NotificationPanel"]')).toBeTruthy()
     expect(host.querySelector('[data-component="AIAssistant"]')).toBeTruthy()
@@ -201,4 +210,28 @@ describe('shared application renderer', () => {
       props: { fields: [{ name: 'dept', options: [1] }] },
     }).textContent).toContain('does not match fields')
   })
+
+  it('fails closed for ActionButton and Form bindings that the page did not declare', () => {
+    const host = renderSharedApplicationLayout({
+      component: 'Page',
+      children: [
+        { component: 'ActionButton', props: { action: 'secret.mutate', label: 'Secret' } },
+        { component: 'Form', props: { action: 'secret.mutate' } },
+      ],
+    }, { actions: ['submit_leave'] })
+    expect(host.textContent).toContain('Action secret.mutate is not declared by this page.')
+    expect(host.textContent).toContain('Submit binding secret.mutate is not declared by this page.')
+    expect(host.textContent).not.toContain('Action binding: secret.mutate')
+    expect(host.textContent).not.toContain('Submit binding: secret.mutate')
+  })
+  it('rejects unsupported design systems and undeclared actions when no action list is provided',()=>{
+    const unknown=renderSharedApplicationLayout({ component:'Page' },{ designSystem:{ id:'unregistered',version:'9' } })
+    expect(unknown.textContent).toContain('Unsupported design system unregistered@9.')
+    for(const component of ['ActionButton','Form']){
+      const host=renderSharedApplicationLayout({ component,props:{ action:'secret.mutate' } })
+      expect(host.querySelector('[data-renderer-state="blocked"]')).toBeTruthy()
+      expect(host.querySelector('[data-page-action]')).toBeNull()
+    }
+  })
+
 })

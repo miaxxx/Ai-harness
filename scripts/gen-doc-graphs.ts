@@ -98,6 +98,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'obisLaunch',
+    pkg: 'obis-launch',
+    title: 'OBIS Workspace handoff',
+    mode: 'core',
+    consumers: ['tool-obis'],
+    note: 'Exchanges a single-use ticket in the Host and publishes credential-free launch metadata; the native tool adapter binds runs to the selected published module.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

@@ -2,7 +2,7 @@ name: Enterprise Validation Gate
 
 on:
   push:
-    branches: ['feature/enterprise-v3.1-sprint-a', 'feature/application-platform-v5-foundation', 'feature/next-control-plane-v6']
+    branches: ['feature/enterprise-v3.1-sprint-a', 'feature/application-platform-v5-foundation', 'feature/next-control-plane-v6', 'feature/obis-unified-control-plane', 'codex/**']
   pull_request:
   workflow_dispatch:
 
@@ -60,6 +60,10 @@ jobs:
         run: |
           pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
           pnpm exec vitest run apps/desktop/tests/application-golden-contract.spec.ts
+      - name: Native credentials and shared business host regressions
+        run: pnpm exec vitest run apps/desktop/tests/obis-runtime-delegation.spec.ts apps/desktop/tests/runtime-credential.spec.ts apps/desktop/tests/message-projection.spec.ts apps/desktop/tests/business-window.spec.ts apps/desktop/tests/model-runtime.spec.ts apps/desktop/tests/model-manager.spec.ts
+      - name: Keyless assembled OBIS event transcript
+        run: pnpm exec vitest run examples/acp-agent/tests/obis-event-transcript.spec.ts
       - name: Desktop build smoke
         run: pnpm run build:desktop
       - name: Upload desktop build smoke artifact
@@ -137,11 +141,11 @@ jobs:
           cp packages/obis/launch/lib/types/index.js packages/obis/launch/lib/index.js
           cp packages/obis/launch/lib/types/invariant.js packages/obis/launch/lib/invariant.js
           cp packages/obis/launch/lib/types/client/index.js packages/obis/launch/lib/client.js
-      - name: Checkout current OBIS v6 branch
+      - name: Checkout the pinned OBIS integration candidate
         uses: actions/checkout@v6
         with:
           repository: miaxxx/obis-dev
-          ref: feature/next-control-plane-v6
+          ref: 5b0e945e98dd1ec321a033a0c45a669bbd51c031
           path: _compat/obis
           token: ${{ env.OBIS_REPO_TOKEN }}
           persist-credentials: false
@@ -156,6 +160,16 @@ jobs:
           console.log('shared-renderer-cross-repo-contract: PASS')
           NODE
       - name: Install OBIS Kernel fixture dependencies
-        run: npm --prefix _compat/obis/10-kernel install --no-audit --no-fund
+        run: npm --prefix _compat/obis/10-kernel ci --no-audit --no-fund
+      - name: Verify shared renderer behavior
+        run: npm --prefix _compat/obis/25-ui-runtime run verify
+      - name: Verify real Kernel persistence and login handoff
+        env:
+          OBIS_TEST_DATABASE_URL: ${{ env.OBIS_DATABASE_URL }}
+        run: npm --prefix _compat/obis/10-kernel run test:postgres
+      - name: Rehearse supported database upgrades
+        env:
+          OBIS_RELEASE_DATABASE_URL: ${{ env.OBIS_DATABASE_URL }}
+        run: node _compat/obis/scripts/release/migration-gate.mjs
       - name: Cross-repo fixture E2E
         run: pnpm exec tsx tests/obis-cross-repo.e2e.ts

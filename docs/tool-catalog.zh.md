@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-obis` | `obis_context`, `obis_get_object`, `obis_get_skill`, `obis_get_task`, `obis_list_approvals`, `obis_list_skills`, `obis_list_tasks`, `obis_propose_action`, `obis_query`, `obis_search_knowledge` | `ctx.credentials`, `ctx.tools`, `ctx.systemPrompt`, `ctx.approval` | `tool/call`, `tool/result`, `approval/asked and approval/decided for executable proposals` | - | 读取企业上下文和收件箱，或提出操作提案。执行需要人工确认及 Kernel 判权；目录生成不调用 Kernel。 |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a UI/provider answers the question` | - | ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类答案。 |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`、`ctx.codeRuntime (execution time)`、`ctx.systemPrompt` | `tool/call`、`one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`、`tool/result` | - | 在 `mode: code`／`mode: both` 下，它由工具注册表所有，作为可过滤能力层之外的保留传输机制（参见 Code Mode Agent Note）。在 `code` 下，它是注册表对协议格式（wire format）的唯一贡献；其他可见能力在使用已加载运行时语言生成的 SDK 章节中声明。程序通过 binding 调用这些能力，调用按照原生并发约定调度：启动顺序和策略遵循提交顺序，并发安全的函数体最多重叠执行 `maxParallelSubCalls` 个。调用会重新进入完整且受守卫保护的工具流水线，并将每个嵌套执行关联到此外层结果。 |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`、`ctx.systemPrompt`、`ctx.userQuestions (execution time, opportunistic)` | `tool/call`、`plan/mode inactive on an approved review`、`tool/result` | - | 规划未激活时，exit_plan_mode 仍保留在面向模型的 schema 中，这样状态转换不会在规划策略变更之外额外造成工具目录变动。其执行路径会拒绝规划模式之外的调用；在规划模式下，它通过用户交互 seam 提交计划（批准／根据反馈继续规划），批准后会在步骤边界记录规划模式已停用。 |
@@ -46,6 +47,262 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+<a id="deepseek-aidsh-tool-ask-user"></a>
+
+## `@deepseek-ai/dsh-tool-obis`
+
+### `obis_context`
+
+Resolve bounded, deployment-pinned enterprise context for the authenticated OBIS user.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "focus": {
+      "description": "Optional bounded context focus."
+    },
+    "maxSymbols": {
+      "type": "integer",
+      "description": "Maximum symbols per requested category."
+    }
+  }
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_get_object`
+
+Read one enterprise object through a named governed query. This never bypasses OBIS query policy or projection.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Named governed query used to read this object type."
+    },
+    "id": {
+      "type": "string",
+      "description": "Enterprise object id."
+    }
+  },
+  "required": [
+    "query",
+    "id"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_get_skill`
+
+Load a deployment-pinned governed OBIS skill definition visible to the authenticated user. This does not start a skill-runtime sandbox.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "skillId": {
+      "type": "string",
+      "description": "Governed OBIS skill id from the active deployment."
+    }
+  },
+  "required": [
+    "skillId"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_get_task`
+
+Read the current governed OBIS task state associated with work.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "description": "Governed OBIS task id."
+    }
+  },
+  "required": [
+    "taskId"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_list_approvals`
+
+List business-approval inbox items visible to the authenticated user. This does not decide an approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Optional governed approval status filter."
+    }
+  }
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_list_skills`
+
+List Kernel IR skill definitions visible for the current deployment. This does not start a skill-runtime sandbox.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_list_tasks`
+
+List governed OBIS tasks visible to the authenticated user.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Optional governed task status filter."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum result count."
+    }
+  }
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_next_run_event`
+
+使用带身份认证的 SSE 读取当前 OBIS AgentRun 的下一个公开事件。afterId 用于续读，等待超时返回空事件。该读取不会完成任务或执行 Action。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "afterId": {
+      "type": "string",
+      "description": "Resume after a previously returned event id."
+    }
+  }
+}
+```
+
+源码： [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_propose_action`
+
+Create a governed enterprise action proposal. This does not directly execute the production mutation.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "Named governed OBIS action."
+    },
+    "targetId": {
+      "type": "string",
+      "description": "Optional target object id."
+    },
+    "expectedObjectVersion": {
+      "type": "integer",
+      "description": "Optional optimistic object version."
+    },
+    "input": {
+      "description": "Action input object."
+    }
+  },
+  "required": [
+    "action",
+    "input"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_query`
+
+Execute a named governed OBIS query. Policy, row filtering and projection are enforced by OBIS.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Named governed OBIS query."
+    },
+    "id": {
+      "type": "string",
+      "description": "Optional exact object id."
+    },
+    "where": {
+      "description": "Optional governed query predicate values."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum result count."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+### `obis_search_knowledge`
+
+Search enterprise knowledge visible to the authenticated user. OBIS enforces document ACLs.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Enterprise knowledge search text."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum result count."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/obis/tool-obis/src/index.ts`](../packages/obis/tool-obis/src/index.ts)
+
+Read enterprise context and inboxes, or propose an action. Executable proposals require human confirmation and Kernel authorization; catalog generation performs no Kernel request.
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 

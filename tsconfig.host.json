@@ -8,6 +8,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/desktop/src/desktop-runtime-credential.ts",
     "apps/web/tests/scaffold.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/declared-reasoning.e2e.ts",
@@ -316,6 +317,7 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
+    { "path": "./packages/obis/launch/tsconfig.host.json" },
     { "path": "./packages/obis/bridge" },
     { "path": "./packages/obis/tool-obis" },
     { "path": "./apps/cli" },

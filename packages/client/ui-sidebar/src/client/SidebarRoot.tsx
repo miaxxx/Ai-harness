@@ -132,6 +132,7 @@ export function SidebarRoot({
           <button
             type="button"
             className={clsx(css.brand, css.wide)}
+            data-shell-chat-navigation
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >
@@ -179,6 +180,7 @@ export function SidebarRoot({
         <button
           type="button"
           className={css.newSession}
+          data-shell-chat-navigation
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >
@@ -189,7 +191,8 @@ export function SidebarRoot({
 
       {/* The browsing region fills the column between the controls and the
           foot in both states; its rail icon column rides the same slot. */}
-      <div className={css.regionArea}>
+      {renderSlot('sidebar.navigation', { wide })}
+      <div className={css.regionArea} data-shell-chat-navigation>
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },

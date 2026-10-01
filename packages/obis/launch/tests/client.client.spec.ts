@@ -23,8 +23,8 @@ function layout(overrides: Record<string, unknown> = {}): Record<string, unknown
 const previewPage = {
   preview: { id: 'prev_1', moduleId: 'mod_leave', moduleVersion: '1.0.0', sourceRevision: 3, persona: 'employee' },
   module: { id: 'mod_leave', version: '1.0.0', name: 'Leave' },
-  page: { id: 'home', title: 'Home', pattern: 'Object Detail', actions: ['submit'], layout: layout() },
-  designSystem: { id: 'ds', version: '1' },
+  page: { id: 'home', title: 'Home', pattern: 'Object Detail', actions: ['submit_leave'], layout: layout() },
+  designSystem: { id: 'obis-enterprise', version: '1.0.0' },
   access: {
     visible: true,
     executable: false,
@@ -50,8 +50,8 @@ const catalog = {
 
 const publishedPage = {
   module: { id: 'mod_leave', version: '1.0.0', name: 'Leave' },
-  page: { id: 'home', title: 'Home', layout: layout() },
-  designSystem: { id: 'ds', version: '1' },
+  page: { id: 'home', title: 'Home', actions: ['submit_leave'], layout: layout() },
+  designSystem: { id: 'obis-enterprise', version: '1.0.0' },
   permissions: {
     visible: true,
     executable: true,
@@ -99,7 +99,7 @@ describe('obis-launch client', () => {
 
   it('requires the client connection service', () => {
     location.hash = '#obis-launch=obwl_1'
-    expect(() => apply({ get: () => undefined } as unknown as Context)).toThrow(/client connection service/)
+    expect(() =>{  apply({ get: () => undefined } as unknown as Context) }).toThrow(/client connection service/)
   })
 
   it('strips the launch fragment, exchanges the ticket, and overlays the entitled catalog', async () => {
@@ -455,6 +455,7 @@ describe('obis-launch client', () => {
   it('stringifies non-Error launch failures', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     location.hash = '#obis-launch=obwl_boom'
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Tests non-Error wire failure normalization.
     apply(context(async () => Promise.reject('boom')))
     await vi.waitFor(() => {
       expect(error.mock.calls.some(call => String(call[1]).includes('boom'))).toBe(true)
@@ -472,6 +473,7 @@ describe('obis-launch client', () => {
           },
         })
       }
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Tests non-Error wire failure normalization.
       return Promise.reject('preview-boom')
     }))
     await vi.waitFor(() => {
@@ -486,6 +488,7 @@ describe('obis-launch client', () => {
           launch: { id: 'l', tenantId: 't', userId: 'u', environmentId: 'prod', projectId: 'proj_1', harnessOrigin: origin, autonomy: 'human-approved', createdAt: '2026-01-01T00:00:00.000Z', expiresAt: '2026-01-01T00:02:00.000Z' },
         })
       }
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Tests non-Error wire failure normalization.
       return Promise.reject('catalog-boom')
     }))
     await vi.waitFor(() => {
@@ -501,6 +504,7 @@ describe('obis-launch client', () => {
         })
       }
       if (endpoint === 'catalog') return rpcOk(catalog)
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Tests non-Error wire failure normalization.
       return Promise.reject('page-boom')
     }))
     await vi.waitFor(() => {

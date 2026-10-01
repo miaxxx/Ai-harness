@@ -20,6 +20,8 @@
     "src/desktop-enterprise-overview-ui.ts",
     "src/desktop-enterprise-overview.css.d.ts",
     "src/desktop-brand.tsx",
+    "src/desktop-business-navigation.tsx",
+    "src/desktop-business-references.ts",
     "src/desktop-model-settings.tsx",
     "src/desktop-web-search-settings.tsx",
     "src/desktop-mcp-settings.tsx",
@@ -29,10 +31,13 @@
     "src/desktop-message-projection.ts",
     "src/desktop-prompt.ts",
     "src/shared.ts",
+    "src/models/renderer/controller.ts",
+    "src/models/renderer/model-picker.tsx",
     "src/renderer.css.d.ts",
     "src/css-modules.d.ts"
   ],
   "references": [
+    { "path": "../../packages/obis/bridge" },
     { "path": "../../vendor/cordis" },
     { "path": "../../packages/host/apiproxy" },
     { "path": "../../packages/client/connection/tsconfig.client.json" },

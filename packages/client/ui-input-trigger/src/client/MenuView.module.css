@@ -126,7 +126,7 @@
 
 .submenu {
   position: absolute;
-  bottom: 0;
+  top: 0;
   /* One-pixel overlap keeps the pointer inside the menu tree while moving
      from the launcher row into the independently elevated child panel. */
   left: calc(100% - 1px);

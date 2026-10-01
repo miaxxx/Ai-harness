@@ -49,6 +49,7 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     <button
       aria-label="New session"
       class="newSession"
+      data-shell-chat-navigation="true"
       type="button"
     >
       <svg
@@ -61,7 +62,12 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       />
     </button>
     <div
+      data-slot="sidebar.navigation"
+      style="display: contents;"
+    />
+    <div
       class="regionArea"
+      data-shell-chat-navigation="true"
     >
       <div
         data-slot="sidebar.workspaces"
@@ -107,6 +113,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       <button
         aria-label="New session"
         class="brand wide"
+        data-shell-chat-navigation="true"
         type="button"
       >
         <span
@@ -170,6 +177,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
     <button
       aria-label="New session"
       class="newSession"
+      data-shell-chat-navigation="true"
       type="button"
     >
       <svg
@@ -187,7 +195,12 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       </span>
     </button>
     <div
+      data-slot="sidebar.navigation"
+      style="display: contents;"
+    />
+    <div
       class="regionArea"
+      data-shell-chat-navigation="true"
     >
       <div
         data-slot="sidebar.workspaces"
@@ -233,6 +246,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       <button
         aria-label="新建会话"
         class="brand wide"
+        data-shell-chat-navigation="true"
         type="button"
       >
         <span
@@ -296,6 +310,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     <button
       aria-label="新建会话"
       class="newSession"
+      data-shell-chat-navigation="true"
       type="button"
     >
       <svg
@@ -313,7 +328,12 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </span>
     </button>
     <div
+      data-slot="sidebar.navigation"
+      style="display: contents;"
+    />
+    <div
       class="regionArea"
+      data-shell-chat-navigation="true"
     >
       <div
         data-slot="sidebar.workspaces"

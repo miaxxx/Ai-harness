@@ -5,9 +5,11 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineTool, type JsonValue, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-user-approval'
+import { createRunEventTool } from './run-events.ts'
 import {
   ObisBridgeClient,
   createObisTools,
+  readObisBusinessReferences,
   type AgentRunBinding,
   type JsonRecord,
   type ObisToolContext,
@@ -22,18 +24,32 @@ export type WorkspaceAutonomy = 'read-only' | 'recommend' | 'draft' | 'human-app
 
 /** Native OBIS tool adapter configuration. Token values stay in `ctx.credentials`. */
 export interface Config {
+  /** OBIS Kernel HTTP base URL. */
   baseUrl: string
+  /** Environment checked by Kernel for every governed call. */
   environmentId: string
+  /** Host credential reference resolved for each operation. */
   credentialRef: string
+  /** Registered Harness installation used for device-bound leases. */
   installationId?: string
+  /** Agent identity recorded on created runs; defaults to workspace. */
   agentId?: string
+  /** Requested run autonomy; defaults to human-approved. */
   autonomy?: WorkspaceAutonomy
+  /** Existing governed run; must be paired with capabilityLease. */
   runId?: string
+  /** Lease for an existing run; must be paired with runId. */
   capabilityLease?: string
   /** Project id stamped onto created AgentRuns. Must be paired with applicationModuleId. */
   projectId?: string
   /** Published application module id stamped onto created AgentRuns. Must be paired with projectId. */
   applicationModuleId?: string
+  /** Validated workspace project restricting user-selected business references. */
+  workspaceProjectId?: string
+  /** Autonomy for explicitly referenced Modules; defaults to read-only. */
+  referenceAutonomy?: 'read-only' | 'human-approved'
+  /** Maximum wait for a public SSE event; defaults to 5000 milliseconds. */
+  eventReadTimeoutMs?: number
 }
 
 export const Config = z.object({
@@ -47,6 +63,9 @@ export const Config = z.object({
   capabilityLease: z.string(),
   projectId: z.string(),
   applicationModuleId: z.string(),
+  workspaceProjectId: z.string(),
+  referenceAutonomy: z.union(['read-only', 'human-approved'] as const).default('read-only'),
+  eventReadTimeoutMs: z.number().default(5000),
 })
 
 const output = {
@@ -79,8 +98,22 @@ const schemas = {
     expectedObjectVersion: { type: 'integer' as const, description: 'Optional optimistic object version.' },
     input: { type: 'json' as const, required: true, description: 'Action input object.' },
   },
+  obis_list_tasks: {
+    status: { type: 'string' as const, description: 'Optional governed task status filter.' },
+    limit: { type: 'integer' as const, description: 'Maximum result count.' },
+  },
   obis_get_task: {
     taskId: { type: 'string' as const, required: true, description: 'Governed OBIS task id.' },
+  },
+  obis_list_approvals: {
+    status: { type: 'string' as const, description: 'Optional governed approval status filter.' },
+  },
+  obis_list_skills: {},
+  obis_get_skill: {
+    skillId: { type: 'string' as const, required: true, description: 'Governed OBIS skill id from the active deployment.' },
+  },
+  obis_next_run_event: {
+    afterId: { type: 'string' as const, description: 'Resume after a previously returned event id.' },
   },
 } as const
 
@@ -162,12 +195,14 @@ function launchModuleBinding(ctx: Context): { projectId: string; applicationModu
   return { projectId, applicationModuleId }
 }
 
-function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy'>> & Omit<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy'> {
+function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy' | 'eventReadTimeoutMs'>> & Omit<Config, 'baseUrl' | 'environmentId' | 'credentialRef' | 'agentId' | 'autonomy' | 'eventReadTimeoutMs'> {
   const baseUrl = config.baseUrl.trim()
   const environmentId = config.environmentId.trim()
   const credentialReference = config.credentialRef.trim()
   const agentId = config.agentId?.trim() || 'workspace'
   const autonomy = config.autonomy ?? 'human-approved'
+  const eventReadTimeoutMs = config.eventReadTimeoutMs ?? 5000
+  if (!Number.isSafeInteger(eventReadTimeoutMs) || eventReadTimeoutMs <= 0) throw new TypeError('OBIS eventReadTimeoutMs must be a positive integer.')
   if (!baseUrl) throw new TypeError('tool-obis baseUrl is required.')
   if (!environmentId) throw new TypeError('tool-obis environmentId is required.')
   if (!credentialReference) throw new TypeError('tool-obis credentialRef is required.')
@@ -179,9 +214,12 @@ function normalizeConfig(config: Config): Required<Pick<Config, 'baseUrl' | 'env
     credentialRef: credentialReference,
     agentId,
     autonomy,
+    eventReadTimeoutMs,
     ...(config.installationId?.trim() ? { installationId: config.installationId.trim() } : {}),
     ...(config.runId?.trim() ? { runId: config.runId.trim() } : {}),
     ...(config.capabilityLease?.trim() ? { capabilityLease: config.capabilityLease.trim() } : {}),
+    ...(config.workspaceProjectId?.trim() ? { workspaceProjectId: config.workspaceProjectId.trim() } : {}),
+    referenceAutonomy: config.referenceAutonomy ?? 'read-only',
     ...(moduleBinding ? { projectId: moduleBinding.projectId, applicationModuleId: moduleBinding.applicationModuleId } : {}),
   }
 }
@@ -193,29 +231,73 @@ export function apply(ctx: Context, input: Config): void {
     baseUrl: config.baseUrl,
     tokenProvider: async () => (await ctx.credentials.resolve(reference))?.value,
   })
-  const definitions = createObisTools(client)
+  const definitions = [...createObisTools(client), createRunEventTool(client, config.eventReadTimeoutMs)]
   const bindings = new Map<string, Promise<AgentRunBinding>>()
 
-  const ensureBinding = (agent: Agent): Promise<AgentRunBinding> => {
-    const key = String(agent.id)
+  const ensureBinding = async (agent: Agent): Promise<AgentRunBinding> => {
+    let selected: ReturnType<typeof readObisBusinessReferences>[number] | undefined
+    for (const event of [...agent.session.events].reverse()) {
+      if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
+      const refs = readObisBusinessReferences(event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
+      if (refs.length === 0) continue
+      const identities = new Set(refs.map(ref => JSON.stringify([ref.projectId, ref.environmentId, ref.moduleId, ref.moduleVersion])))
+      if (identities.size > 1) throw new Error('每轮对话请引用同一个业务模块；跨模块操作需分别确认。')
+      selected = refs[0]
+      break
+    }
+    if (selected && selected.environmentId !== config.environmentId) throw new Error('引用业务的环境与当前运行环境不一致。')
+    if (selected && config.workspaceProjectId && selected.projectId !== config.workspaceProjectId) throw new Error('引用业务不属于当前工作区。')
+    if (selected?.kind === 'module' && selected.moduleId === undefined) throw new TypeError('Module reference requires moduleId.')
+    const selection = selected?.kind === 'module'
+      ? { projectId: selected.projectId, applicationModuleId: selected.moduleId as string }
+      : undefined
+    const sessionKey = String(agent.id)
+    const autonomy = selection ? config.referenceAutonomy ?? 'read-only' : config.autonomy
+    const key = selection
+      ? JSON.stringify([sessionKey, selection.projectId, selection.applicationModuleId, selected?.moduleVersion, autonomy]) : sessionKey
     const current = bindings.get(key)
-    if (current) return current
+    if (current) {
+      const binding = await current
+      if (config.capabilityLease || !binding.capabilityLease) return binding
+      const expiresAt = Date.parse(binding.capabilityLease.expiresAt)
+      if (!Number.isFinite(expiresAt)) throw new TypeError('OBIS capability lease has an invalid expiry.')
+      if (expiresAt > Date.now()) return binding
+      if (bindings.get(key) !== current) return ensureBinding(agent)
+      const renewed = (async () => {
+        const attached = await client.attachAgentRun(binding.id, {
+          environmentId: config.environmentId, harnessSessionId: sessionKey,
+          ...(config.installationId ? { installationId: config.installationId } : {}),
+        })
+        const expiry = Date.parse(attached.capabilityLease?.expiresAt ?? '')
+        if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new TypeError('OBIS did not renew the capability lease.')
+        return attached
+      })()
+      bindings.set(key, renewed)
+      void renewed.catch(() => { if (bindings.get(key) === renewed) bindings.delete(key) })
+      return renewed
+    }
     const pending = (async () => {
-      const moduleBinding = (config.projectId && config.applicationModuleId)
+      const moduleBinding = selection ?? ((config.projectId && config.applicationModuleId)
         ? { projectId: config.projectId, applicationModuleId: config.applicationModuleId }
-        : launchModuleBinding(ctx)
+        : launchModuleBinding(ctx))
+      if (selection && config.projectId && selection.projectId !== config.projectId) throw new Error('引用业务不属于当前项目。')
       const run = config.runId
         ? await client.getAgentRun(config.runId, config.environmentId)
         : await client.createAgentRun({
           environmentId: config.environmentId,
           agentId: config.agentId,
           goal: humanGoal(agent),
-          autonomy: config.autonomy,
+          autonomy,
           ...(moduleBinding ? { projectId: moduleBinding.projectId, applicationModuleId: moduleBinding.applicationModuleId } : {}),
         }, { idempotencyKey: `workspace:${key}` })
+      if (selection) {
+        const module = record(run.moduleBinding)
+        if (module?.moduleId !== selection.applicationModuleId || module.projectId !== selection.projectId
+          || module.version !== selected?.moduleVersion) throw new Error('引用业务版本已变化，请重新选择已发布业务。')
+      }
       return await client.attachAgentRun(run.id, {
         environmentId: config.environmentId,
-        harnessSessionId: key,
+        harnessSessionId: sessionKey,
         ...(config.installationId ? { installationId: config.installationId } : {}),
       })
     })()
@@ -304,9 +386,12 @@ export function apply(ctx: Context, input: Config): void {
     text: [
       'OBIS is the enterprise authority. Use obis_* tools for enterprise facts and governed operations.',
       'The Harness Session is bound to one durable OBIS AgentRun before enterprise tools execute; OBIS owns its task, deployment pin, policy and capability lease.',
+      'A durable human obis-reference selects a published Module and pins its version. Follow-up requests retain that selection until the human selects another business area. References do not grant permission; stale versions and cross-workspace selections are refused.',
       'obis_propose_action creates a governed proposal. When the run permits execution, Harness asks the human for one-shot confirmation and only the adapter may submit that proposal back to OBIS for final policy, business-approval and ActionRuntime execution.',
       'Never describe a proposal as executed unless the tool result contains an OBIS execution result with status executed.',
       'Use named governed queries for enterprise object reads; do not infer missing enterprise facts from local files or model memory.',
+      'obis_list_tasks, obis_list_approvals, and obis_list_skills list Kernel-visible inbox and catalog ids for this deployment. They do not decide approvals or start a skill-runtime.',
+      'obis_get_skill loads a Kernel IR skill definition for the current deployment. Follow that definition; do not invent skill steps or start a local skill-runtime.',
     ].join('\n'),
   })
 }

@@ -45,3 +45,27 @@ The build downloads the pinned official Node 24.18.1 archive for the host archit
 - Settings can add, edit, and remove stdio or Streamable HTTP MCP servers. The owner-only Desktop document is shared with the Runtime; direct UI edits restart it, while the approved `mcp_config` tool lets a user ask the Agent to configure the same list. Connected tools remain available to later Sessions under `mcp__<server>__<tool>` names.
 
 The generated `.app` contains Node, the ACP Runtime, its configuration, JavaScript dependencies, and macOS native helpers. It is deliberately unsigned: macOS may require an explicit user override, and the application is not suitable for public distribution. Code signing, notarization, DMG generation, universal binaries, automatic updates, crash recovery, a first-run flow, and the full product interface remain later work.
+
+## OBIS business pages
+
+Set `DSH_DESKTOP_BUSINESS_WEB_URL` to the HTTPS OBIS Next.js origin. The shared Mona/Harness sidebar places OBIS applications, spaces and knowledge above conversation workspaces and history. Business pages occupy a sandboxed WebContentsView in the existing window's right workspace. Selecting a conversation restores the mounted chat, composer and local session state.
+
+Desktop Main obtains an opaque Web session from `/v1/desktop/business-session` using its human OBIS identity and installs a Secure, HttpOnly cookie. No native bearer, preload or Node API reaches the remote page. Opening an entry checks native credential readiness while Next validates its source-bound session; published Module navigation refreshes independently. Native logout clears the linked cookie; source-session revocation invalidates subsequent Next requests. A Web redirect to sign-in hides the business view and reports a business login prompt without reloading chat. Scope and page authorization remain server-owned.
+
+`DSH_DESKTOP_USER_DATA` selects an absolute isolated acceptance directory. The older DOM renderer remains for preview consumers; published business pages use the Next React runtime. Public spaces currently list entitled applications rather than collaborative documents.
+
+Native identity issues and consumes a human-approved Workspace launch ticket for the validated scope before ACP startup. Only delegated access reaches the supervised Host credential provider; human access and refresh tokens stay in Desktop Main. The ACP composition mounts the governed OBIS tool adapter, including bounded SSE reads. Ordinary workspace runs are not Module-bound; controlled Module actions and automatic Run completion require separate acceptance.
+
+Desktop Main checks delegated expiry before sending each prompt. An expired idle runtime obtains a new ticket and reloads its authorized durable sessions before accepting the prompt. Concurrent callers share renewal; an active reply prevents runtime replacement. A server refusal during a sent prompt remains a failure and does not trigger an automatic operation retry.
+
+Host replay frames replace the displayed transcript before restoring history. Authorized message notifications are delivered in order before replay completion; unsent display overrides are reserved for the subsequent live prompt. Published message blocks are detached from the mutable display accumulator. Historical replies remain finalized while only the current turn streams.
+
+The composer plus menu reuses the Skills submenu and reference pipeline for fixed business areas and authorized published Module pages. Reference labels remain in sent and replayed text; only non-secret selection metadata reaches the durable prompt. The OBIS adapter creates a separate version-pinned Run for an explicitly selected Module. Ordinary conversations remain read-only; selected Module proposals require one-shot human confirmation and current Kernel authorization. A stale version or cross-workspace reference fails before a business operation.
+
+Business navigation applies only the latest selection; cancelled older loads cannot close its replacement. Business directory refresh runs independently of page loading. The composer uses the validated sidebar directory immediately and shares background refreshes. Child menus align with their hovered row and remain inside the viewport. Display metadata grants no authority: Next requests and Kernel tools check current access.
+
+Unsent empty sessions have no durable log. Prompt admission recreates the owned empty session after renewal and sends the serialized input once; logged sessions restore normally.
+
+## Model selection
+
+In Settings → Model API, enter the endpoint and key, then choose **Detect models** to retrieve its OpenAI-compatible `GET /models` directory. A directory containing one or several models is selectable before saving. After saving, the composer shows the current model to the left of Send; its menu can refresh the directory and select another model. Switching verifies the model and reconnects the managed Runtime before subsequent or restored conversations use it. Wait for active replies to finish before switching. An unavailable directory preserves the manually configured model and shows a warning; listing alone does not prove inference access.

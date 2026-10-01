@@ -1,6 +1,7 @@
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
 import {
   DESKTOP_APPLICATION_COMPONENTS,
+  OBIS_UI_RUNTIME_CONTRACT_ID,
   validateDesktopApplicationContract,
   type DesktopApplicationContractIssue,
 } from './desktop-application-contract.ts'
@@ -10,11 +11,14 @@ import type {
   DesktopApplicationActionField,
   DesktopApplicationActionResult,
   DesktopApplicationBridge,
+  DesktopApplicationInboxApproval,
+  DesktopApplicationKnowledgeHit,
   DesktopApplicationNavigationRecord,
   DesktopApplicationPageEnvelope,
   DesktopApplicationPreviewPageEnvelope,
   DesktopApplicationQueryItem,
   DesktopApplicationQueryResult,
+  DesktopApplicationTask,
   DesktopApplicationUiNode,
   DesktopModuleNavigationItem,
 } from './desktop-application-shared.ts'
@@ -281,7 +285,30 @@ function renderPicker(node: DesktopApplicationUiNode, result: DesktopApplication
   return wrap
 }
 
-function renderDeclarativeForm(node: DesktopApplicationUiNode): HTMLElement {
+function renderDeclarativeForm(node: DesktopApplicationUiNode, page: DesktopApplicationPageEnvelope): HTMLElement {
+  const action = scalarProp(node, 'action')
+  if (action) {
+    const declared = page.page.actions ?? []
+    if (!declared.includes(action)) {
+      return text(el('p', 'enterprise-app-empty-data'), `Submit binding ${action} is not declared by this page.`)
+    }
+    const binding = page.runtime?.actions.find(item => item.name === action)
+    if (binding) {
+      const wrap = el('div', 'enterprise-app-layout-action')
+      wrap.dataset.pageAction = action
+      const button = text(
+        el('button', 'enterprise-secondary-button'),
+        scalarProp(node, 'label', 'title') ?? `Open ${action}`,
+      ) as HTMLButtonElement
+      button.type = 'button'
+      button.disabled = !page.permissions.executable
+      wrap.append(
+        button,
+        text(el('p', 'enterprise-app-binding'), `Submit binding: ${action}. Execution uses the declared page action form.`),
+      )
+      return wrap
+    }
+  }
   const rawFields = node.props ? node.props.fields : undefined
   const fields = Array.isArray(rawFields) ? rawFields : []
   const grid = el('div', 'enterprise-app-action-schema-grid')
@@ -308,6 +335,9 @@ function renderDeclarativeForm(node: DesktopApplicationUiNode): HTMLElement {
     }
     grid.append(label)
   }
+  if (action) {
+    grid.append(text(el('p', 'enterprise-app-binding'), `Submit binding: ${action}. Execution is supplied by the host adapter.`))
+  }
   if (!grid.childElementCount) grid.append(text(el('p', 'enterprise-app-binding'), 'This declarative form has no registered fields.'))
   return grid
 }
@@ -329,11 +359,420 @@ function renderRiskDistribution(node: DesktopApplicationUiNode, result: DesktopA
   return grid
 }
 
+function queryItems(result: DesktopApplicationQueryResult | undefined): DesktopApplicationQueryItem[] {
+  return result?.items ?? []
+}
+
+function numericValues(items: readonly DesktopApplicationQueryItem[], field: string): number[] {
+  return items
+    .map((item) => {
+      const raw = item.values[field]
+      return typeof raw === 'number' ? raw : Number(raw)
+    })
+    .filter(item => Number.isFinite(item))
+}
+
+function renderMetricCard(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const aggregation = scalarProp(node, 'aggregation') ?? 'count'
+  const valueField = scalarProp(node, 'valueField')
+  const label = scalarProp(node, 'label', 'title') ?? 'Metric'
+  if (aggregation !== 'count' && aggregation !== 'sum' && aggregation !== 'avg') {
+    return text(el('p', 'enterprise-app-empty-data'), 'MetricCard aggregation must be count, sum or avg.')
+  }
+  const items = queryItems(result)
+  if (aggregation === 'count') {
+    const card = el('div', 'enterprise-app-metric-card')
+    card.append(text(el('strong'), String(items.length)), text(el('span'), label))
+    return card
+  }
+  if (!valueField) return text(el('p', 'enterprise-app-empty-data'), 'MetricCard requires props.valueField for sum and avg.')
+  const values = numericValues(items, valueField)
+  if (!values.length) return text(el('p', 'enterprise-app-empty-data'), `No numeric values are available for ${valueField}.`)
+  const total = values.reduce((sum, item) => sum + item, 0)
+  const displayed = aggregation === 'avg' ? total / values.length : total
+  const card = el('div', 'enterprise-app-metric-card')
+  card.append(text(el('strong'), String(displayed)), text(el('span'), label))
+  return card
+}
+
+function renderTaskList(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const items = queryItems(result)
+  if (!items.length) return text(el('p', 'enterprise-app-empty-data'), 'No tasks match the current governed query and local view filters.')
+  const titleField = scalarProp(node, 'titleField') ?? 'title'
+  const statusField = scalarProp(node, 'statusField') ?? 'status'
+  const assigneeField = scalarProp(node, 'assigneeField')
+  const dueField = scalarProp(node, 'dueField')
+  const list = el('ol', 'enterprise-app-item-list')
+  const ordered = [...items].sort((a, b) => {
+    if (dueField) return displayValue(a.values[dueField] ?? '').localeCompare(displayValue(b.values[dueField] ?? ''))
+    return displayValue(a.values[titleField] ?? a.id).localeCompare(displayValue(b.values[titleField] ?? b.id))
+  }).slice(0, 50)
+  for (const item of ordered) {
+    const row = el('li')
+    row.append(text(el('strong'), displayValue(item.values[titleField] ?? item.id)))
+    row.append(text(el('span'), displayValue(item.values[statusField])))
+    if (assigneeField) row.append(text(el('span'), displayValue(item.values[assigneeField])))
+    if (dueField) row.append(text(el('time'), displayValue(item.values[dueField])))
+    list.append(row)
+  }
+  return list
+}
+
+function layoutHasComponent(node: DesktopApplicationUiNode, component: string): boolean {
+  if (node.component === component) return true
+  return (node.children ?? []).some(child => layoutHasComponent(child, component))
+}
+
+function taskTransitions(status: string): Array<'running' | 'waiting' | 'completed' | 'cancelled'> {
+  if (status === 'completed' || status === 'cancelled') return []
+  if (status === 'running') return ['waiting', 'completed', 'cancelled']
+  return ['running', 'cancelled']
+}
+
+interface PageInboxState {
+  tasks: DesktopApplicationTask[]
+  approvals: DesktopApplicationInboxApproval[]
+  tasksError?: string
+  approvalsError?: string
+}
+
+interface PageCatalogState {
+  items: DesktopApplicationKnowledgeHit[]
+  error?: string
+}
+
+function collectLayoutNodes(node: DesktopApplicationUiNode, component: string): DesktopApplicationUiNode[] {
+  const found: DesktopApplicationUiNode[] = []
+  const walk = (current: DesktopApplicationUiNode) => {
+    if (current.component === component) found.push(current)
+    for (const child of current.children ?? []) walk(child)
+  }
+  walk(node)
+  return found
+}
+
+function renderTaskInbox(
+  inbox: PageInboxState,
+  envelope: DesktopApplicationPageEnvelope,
+  runtime: DesktopApplicationRenderRuntime,
+  reload: () => Promise<void>,
+): HTMLElement {
+  const mount = el('div')
+  mount.dataset.pageInbox = 'tasks'
+  if (inbox.tasksError) {
+    mount.append(text(el('p', 'enterprise-app-runtime-error'), inbox.tasksError))
+    return mount
+  }
+  if (!inbox.tasks.length) {
+    mount.append(text(el('p', 'enterprise-app-binding'), 'No entitled tasks are waiting in this environment.'))
+    return mount
+  }
+  const list = el('ul', 'enterprise-app-item-list')
+  for (const task of inbox.tasks) {
+    const row = el('li')
+    row.append(text(el('strong'), task.title))
+    row.append(text(el('span'), `${task.status} · ${task.priority}`))
+    if (task.assignee) row.append(text(el('span'), `${task.assignee.type}:${task.assignee.id}`))
+    if (task.dueAt) row.append(text(el('time'), task.dueAt))
+    if (task.description) row.append(text(el('p'), task.description))
+    if (envelope.permissions.executable) {
+      const actions = el('div', 'enterprise-app-inbox-actions')
+      for (const status of taskTransitions(task.status)) {
+        const button = text(el('button', 'enterprise-secondary-button'), status) as HTMLButtonElement
+        button.type = 'button'
+        button.onclick = () => {
+          void (async () => {
+            button.disabled = true
+            try {
+              await runtime.bridge.transitionTask({
+                ...runtime.scope,
+                taskId: task.id,
+                expectedVersion: task.version,
+                status,
+              })
+              await reload()
+            } catch (error) {
+              row.append(text(el('p', 'enterprise-app-runtime-error'), error instanceof Error ? error.message : 'The task transition failed.'))
+              button.disabled = false
+            }
+          })()
+        }
+        actions.append(button)
+      }
+      row.append(actions)
+    } else {
+      row.append(text(el('p', 'enterprise-app-binding'), 'Task transitions require executable entitlement.'))
+    }
+    list.append(row)
+  }
+  mount.append(list)
+  return mount
+}
+
+function renderApprovalInbox(
+  inbox: PageInboxState,
+  envelope: DesktopApplicationPageEnvelope,
+  runtime: DesktopApplicationRenderRuntime,
+  reload: () => Promise<void>,
+): HTMLElement {
+  const mount = el('div')
+  mount.dataset.pageInbox = 'approvals'
+  if (inbox.approvalsError) {
+    mount.append(text(el('p', 'enterprise-app-runtime-error'), inbox.approvalsError))
+    return mount
+  }
+  if (!inbox.approvals.length) {
+    mount.append(text(el('p', 'enterprise-app-binding'), 'No entitled approvals are waiting in this environment.'))
+    return mount
+  }
+  const list = el('ul', 'enterprise-app-item-list')
+  for (const item of inbox.approvals) {
+    const row = el('li')
+    row.append(text(el('strong'), item.action))
+    row.append(text(el('span'), `${item.gate} · ${item.status}`))
+    row.append(text(
+      el('p'),
+      `${item.requestId} · stage ${item.currentStage.name ?? item.currentStage.id} · ${String(item.currentStage.approvals)}/${String(item.currentStage.quorum)}`,
+    ))
+    if (envelope.permissions.executable) {
+      const actions = el('div', 'enterprise-app-inbox-actions')
+      for (const decision of ['approve', 'reject'] as const) {
+        const button = text(el('button', 'enterprise-secondary-button'), decision) as HTMLButtonElement
+        button.type = 'button'
+        button.onclick = () => {
+          void (async () => {
+            button.disabled = true
+            try {
+              await runtime.bridge.decideApproval({
+                ...runtime.scope,
+                approvalId: item.id,
+                expectedVersion: item.version,
+                decision,
+              })
+              await reload()
+            } catch (error) {
+              row.append(text(el('p', 'enterprise-app-runtime-error'), error instanceof Error ? error.message : 'The approval decision failed.'))
+              button.disabled = false
+            }
+          })()
+        }
+        actions.append(button)
+      }
+      row.append(actions)
+    } else {
+      row.append(text(el('p', 'enterprise-app-binding'), 'Approval decisions require executable entitlement.'))
+    }
+    list.append(row)
+  }
+  mount.append(list)
+  return mount
+}
+
+function renderKnowledgeHits(items: DesktopApplicationKnowledgeHit[]): HTMLElement {
+  const list = el('ol', 'enterprise-app-item-list')
+  for (const item of items.slice(0, 30)) {
+    const row = el('li')
+    row.append(text(el('strong'), item.title), text(el('p'), item.content))
+    if (item.citation) row.append(text(el('cite'), item.citation))
+    list.append(row)
+  }
+  return list
+}
+
+function hydrateEntitledCatalog(
+  canvas: HTMLElement,
+  envelope: DesktopApplicationPageEnvelope,
+  queryResult: DesktopApplicationQueryResult | undefined,
+  queryError: string | undefined,
+  catalog: PageCatalogState | undefined,
+): void {
+  const fileNodes = collectLayoutNodes(envelope.page.layout, 'FileViewer')
+  for (const [index, block] of [...canvas.querySelectorAll('[data-component="FileViewer"]')].entries()) {
+    const mount = block.querySelector('[data-page-files]')
+    if (!(mount instanceof HTMLElement)) continue
+    mount.replaceChildren()
+    if (queryError) {
+      mount.append(text(el('p', 'enterprise-app-runtime-error'), queryError))
+      continue
+    }
+    mount.append(renderFileViewer(fileNodes[index] ?? { component: 'FileViewer' }, queryResult))
+  }
+  if (!catalog) return
+  for (const block of canvas.querySelectorAll('[data-component="KnowledgeSearch"]')) {
+    const mount = block.querySelector('[data-page-knowledge]')
+    if (!(mount instanceof HTMLElement)) continue
+    mount.replaceChildren()
+    if (catalog.error) {
+      mount.append(text(el('p', 'enterprise-app-runtime-error'), catalog.error))
+      continue
+    }
+    if (!catalog.items.length) {
+      mount.append(text(el('p', 'enterprise-app-binding'), 'No entitled knowledge citations match this page.'))
+      continue
+    }
+    mount.append(renderKnowledgeHits(catalog.items))
+  }
+}
+
+function hydrateEntitledInbox(
+  canvas: HTMLElement,
+  inbox: PageInboxState | undefined,
+  envelope: DesktopApplicationPageEnvelope,
+  runtime: DesktopApplicationRenderRuntime,
+  reload: () => Promise<void>,
+): void {
+  if (!inbox) return
+  for (const block of canvas.querySelectorAll('[data-component="TaskList"]')) {
+    block.querySelector('[data-page-inbox="tasks"]')?.remove()
+    block.append(renderTaskInbox(inbox, envelope, runtime, reload))
+  }
+  for (const block of canvas.querySelectorAll('[data-component="ApprovalQueue"]')) {
+    block.querySelector('[data-page-inbox="approvals"]')?.remove()
+    const hint = [...block.querySelectorAll('p')].find(node => node.textContent === 'Approvals wait for the entitled inbox adapter.')
+    hint?.remove()
+    block.append(renderApprovalInbox(inbox, envelope, runtime, reload))
+  }
+}
+
+function renderFileViewer(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const items = queryItems(result)
+  if (!items.length) return text(el('p', 'enterprise-app-empty-data'), 'No files match the current governed query and local view filters.')
+  const nameField = scalarProp(node, 'nameField') ?? 'name'
+  const mimeField = scalarProp(node, 'mimeField') ?? 'mimeType'
+  const sizeField = scalarProp(node, 'sizeField') ?? 'size'
+  const list = el('ul', 'enterprise-app-item-list')
+  for (const item of items.slice(0, 50)) {
+    const row = el('li')
+    row.append(
+      text(el('strong'), displayValue(item.values[nameField] ?? item.id)),
+      text(el('span'), displayValue(item.values[mimeField])),
+      text(el('span'), displayValue(item.values[sizeField])),
+    )
+    list.append(row)
+  }
+  return list
+}
+
+function renderKnowledgeSearch(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const items = queryItems(result)
+  if (!items.length) return text(el('p', 'enterprise-app-empty-data'), 'No knowledge citations match the current governed query and local view filters.')
+  const titleField = scalarProp(node, 'titleField') ?? 'title'
+  const snippetField = scalarProp(node, 'snippetField') ?? 'snippet'
+  const citationField = scalarProp(node, 'citationField') ?? 'citation'
+  const list = el('ol', 'enterprise-app-item-list')
+  for (const item of items.slice(0, 30)) {
+    const row = el('li')
+    row.append(
+      text(el('strong'), displayValue(item.values[titleField] ?? item.id)),
+      text(el('p'), displayValue(item.values[snippetField])),
+      text(el('cite'), displayValue(item.values[citationField])),
+    )
+    list.append(row)
+  }
+  return list
+}
+
+function bindLayoutActionButtons(root: HTMLElement): void {
+  for (const mount of root.querySelectorAll<HTMLElement>('[data-page-action]')) {
+    const action = mount.dataset.pageAction
+    if (!action) continue
+    const button = mount.querySelector('button')
+    if (!(button instanceof HTMLButtonElement) || button.disabled) continue
+    button.onclick = () => {
+      const escaped = action.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+      const form = root.querySelector<HTMLDetailsElement>(`[data-action-form="${escaped}"]`)
+      if (!form) return
+      form.open = true
+      form.scrollIntoView({ block: 'nearest' })
+      form.querySelector<HTMLElement>('input, textarea, select, button')?.focus()
+    }
+  }
+}
+
+function renderActionButton(node: DesktopApplicationUiNode, page: DesktopApplicationPageEnvelope): HTMLElement {
+  const action = scalarProp(node, 'action')
+  const label = scalarProp(node, 'label', 'title') ?? action ?? 'Action'
+  if (!action) return text(el('p', 'enterprise-app-empty-data'), 'ActionButton requires props.action.')
+  const declared = page.page.actions ?? []
+  if (!declared.includes(action)) {
+    return text(el('p', 'enterprise-app-empty-data'), `Action ${action} is not declared by this page.`)
+  }
+  const wrap = el('div', 'enterprise-app-layout-action')
+  wrap.dataset.pageAction = action
+  const binding = page.runtime?.actions.find(item => item.name === action)
+  if (!binding) {
+    wrap.append(
+      text(el('p', 'enterprise-app-binding'), `Action binding: ${action}. The active deployment did not provide a governed input schema for this page action.`),
+    )
+    return wrap
+  }
+  const button = text(el('button', 'enterprise-secondary-button'), label) as HTMLButtonElement
+  button.type = 'button'
+  button.disabled = !page.permissions.executable
+  wrap.append(
+    button,
+    text(el('p', 'enterprise-app-binding'), `Action binding: ${action}. Execution uses the declared page action form.`),
+  )
+  return wrap
+}
+
+function renderWorkflowStatus(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const statusField = scalarProp(node, 'statusField') ?? 'status'
+  const counts = new Map<string, number>()
+  for (const item of queryItems(result)) {
+    const value = displayValue(item.values[statusField])
+    if (value) counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  if (!counts.size) return text(el('p', 'enterprise-app-empty-data'), 'No workflow states match the current governed query and local view filters.')
+  const grid = el('div', 'enterprise-app-workflow-status')
+  for (const [label, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+    const metric = el('div', 'enterprise-app-risk-metric')
+    metric.append(text(el('strong'), String(count)), text(el('span'), label))
+    grid.append(metric)
+  }
+  return grid
+}
+
+function renderNotificationPanel(node: DesktopApplicationUiNode, result: DesktopApplicationQueryResult | undefined): HTMLElement {
+  const items = queryItems(result)
+  if (!items.length) return text(el('p', 'enterprise-app-empty-data'), 'No notifications match the current governed query and local view filters.')
+  const titleField = scalarProp(node, 'titleField') ?? 'title'
+  const bodyField = scalarProp(node, 'bodyField') ?? 'body'
+  const severityField = scalarProp(node, 'severityField') ?? 'severity'
+  const list = el('ul', 'enterprise-app-item-list')
+  for (const item of items.slice(0, 30)) {
+    const row = el('li')
+    row.append(
+      text(el('strong'), displayValue(item.values[titleField] ?? item.id)),
+      text(el('span'), displayValue(item.values[severityField])),
+      text(el('p'), displayValue(item.values[bodyField])),
+    )
+    list.append(row)
+  }
+  return list
+}
+
+function waitingForQuery(
+  page: DesktopApplicationPageEnvelope,
+  queryError: string | undefined,
+  waiting: string,
+): HTMLElement {
+  return text(
+    el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'),
+    queryError ?? (page.page.source?.query ? waiting : 'No governed query binding declared for this view.'),
+  )
+}
+
+function stampRendererContract(canvas: HTMLElement): void {
+  canvas.setAttribute('data-renderer-contract', OBIS_UI_RUNTIME_CONTRACT_ID)
+}
+
 function renderLeaf(
   node: DesktopApplicationUiNode,
   page: DesktopApplicationPageEnvelope,
   queryResult: DesktopApplicationQueryResult | undefined,
   queryError: string | undefined,
+  hostBound: boolean,
 ): HTMLElement {
   const block = el('section', componentClass(node.component))
   block.dataset.component = node.component
@@ -347,9 +786,11 @@ function renderLeaf(
   if (value) block.append(text(el('strong', 'enterprise-app-component-value'), value))
   if (description) block.append(text(el('p', 'enterprise-app-component-copy'), description))
 
-  if (node.component === 'DataTable' || node.component === 'Table' || node.component === 'ApprovalQueue') {
+  if (node.component === 'DataTable' || node.component === 'Table') {
     if (queryResult) block.append(renderDataTable(queryResult))
     else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? (page.page.source?.query ? `Governed query · ${page.page.source.query}` : 'No governed query binding declared for this table.')))
+  } else if (node.component === 'ApprovalQueue') {
+    block.append(text(el('p', 'enterprise-app-binding'), 'Approvals wait for the entitled inbox adapter.'))
   } else if (node.component === 'ObjectDetail' || node.component === 'Detail') {
     if (queryResult) block.append(renderObjectDetail(queryResult.items[0]))
     else block.append(text(el('p', queryError ? 'enterprise-app-runtime-error' : 'enterprise-app-binding'), queryError ?? 'Object detail waits for a governed page query.'))
@@ -367,7 +808,41 @@ function renderLeaf(
     block.append(renderFilter(node, queryResult))
   } else if (node.component === 'ObjectPicker' || node.component === 'PeoplePicker') {
     block.append(renderPicker(node, queryResult))
-  } else if (node.component === 'AISummary' || node.component === 'AIComposer') {
+  } else if (node.component === 'MetricCard') {
+    if (queryResult) block.append(renderMetricCard(node, queryResult))
+    else block.append(waitingForQuery(page, queryError, 'Metric waits for a governed page query.'))
+  } else if (node.component === 'TaskList') {
+    if (queryResult) block.append(renderTaskList(node, queryResult))
+    else block.append(waitingForQuery(page, queryError, 'Tasks wait for a governed page query.'))
+  } else if (node.component === 'FileViewer') {
+    if (hostBound) {
+      const mount = el('div')
+      mount.dataset.pageFiles = ''
+      block.append(mount)
+    } else {
+      if (queryResult) block.append(renderFileViewer(node, queryResult))
+      else block.append(waitingForQuery(page, queryError, 'Files wait for a governed page query.'))
+      block.append(text(el('p', 'enterprise-app-binding'), 'File open is supplied by the host adapter.'))
+    }
+  } else if (node.component === 'KnowledgeSearch') {
+    if (hostBound) {
+      const mount = el('div')
+      mount.dataset.pageKnowledge = ''
+      block.append(mount)
+    } else {
+      if (queryResult) block.append(renderKnowledgeSearch(node, queryResult))
+      else block.append(waitingForQuery(page, queryError, 'Knowledge citations wait for a governed page query.'))
+      block.append(text(el('p', 'enterprise-app-binding'), 'Knowledge search is supplied by the host adapter.'))
+    }
+  } else if (node.component === 'ActionButton') {
+    block.append(renderActionButton(node, page))
+  } else if (node.component === 'WorkflowStatus') {
+    if (queryResult) block.append(renderWorkflowStatus(node, queryResult))
+    else block.append(waitingForQuery(page, queryError, 'Workflow states wait for a governed page query.'))
+  } else if (node.component === 'NotificationPanel') {
+    if (queryResult) block.append(renderNotificationPanel(node, queryResult))
+    else block.append(waitingForQuery(page, queryError, 'Notifications wait for a governed page query.'))
+  } else if (node.component === 'AISummary' || node.component === 'AIComposer' || node.component === 'AIAssistant') {
     block.append(text(el('p', 'enterprise-app-binding'), 'AI authority stays in the validated OBIS × Harness runtime. This component cannot mint tools or credentials from page schema.'))
   }
   return block
@@ -378,12 +853,13 @@ function renderNode(
   page: DesktopApplicationPageEnvelope,
   queryResult: DesktopApplicationQueryResult | undefined,
   queryError: string | undefined,
+  hostBound: boolean,
 ): HTMLElement {
   if (!SUPPORTED_COMPONENTS.has(node.component)) return renderUnsupported(node)
 
   if (!STRUCTURAL_COMPONENTS.has(node.component) || node.component === 'Table') {
-    const leaf = renderLeaf(node, page, queryResult, queryError)
-    for (const child of node.children ?? []) leaf.append(renderNode(child, page, queryResult, queryError))
+    const leaf = renderLeaf(node, page, queryResult, queryError, hostBound)
+    for (const child of node.children ?? []) leaf.append(renderNode(child, page, queryResult, queryError, hostBound))
     return leaf
   }
 
@@ -396,7 +872,7 @@ function renderNode(
     const activate = (index: number): void => {
       panel.replaceChildren()
       const child = children[index]
-      if (child) panel.append(renderNode(child, page, queryResult, queryError))
+      if (child) panel.append(renderNode(child, page, queryResult, queryError, hostBound))
       for (const [buttonIndex, button] of [...tabList.querySelectorAll<HTMLButtonElement>('button')].entries()) {
         button.setAttribute('aria-selected', String(buttonIndex === index))
       }
@@ -423,7 +899,7 @@ function renderNode(
     toggle.setAttribute('aria-expanded', 'false')
     const panel = el('div', 'enterprise-app-disclosure-panel')
     panel.hidden = true
-    for (const child of node.children ?? []) panel.append(renderNode(child, page, queryResult, queryError))
+    for (const child of node.children ?? []) panel.append(renderNode(child, page, queryResult, queryError, hostBound))
     toggle.onclick = () => {
       panel.hidden = !panel.hidden
       toggle.setAttribute('aria-expanded', String(!panel.hidden))
@@ -446,8 +922,8 @@ function renderNode(
   const description = scalarProp(node, 'description')
   if (title) host.append(text(el('h2', 'enterprise-app-section-title'), title))
   if (description) host.append(text(el('p', 'enterprise-app-component-copy'), description))
-  if (node.component === 'Form') host.append(renderDeclarativeForm(node))
-  for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError))
+  if (node.component === 'Form') host.append(renderDeclarativeForm(node, page))
+  for (const child of node.children ?? []) host.append(renderNode(child, page, queryResult, queryError, hostBound))
   return host
 }
 
@@ -535,6 +1011,7 @@ function parseActionField(
 
 function renderActionForm(binding: DesktopApplicationActionBinding): RenderedActionForm {
   const container = el('details', 'enterprise-app-action-input')
+  container.dataset.actionForm = binding.name
   const summary = el('summary')
   summary.append(
     text(el('strong'), binding.name),
@@ -738,7 +1215,7 @@ function hydrateApplicationAi(
     block.append(controls)
   }
 
-  for (const block of canvas.querySelectorAll<HTMLElement>('[data-component="AIComposer"]')) {
+  for (const block of canvas.querySelectorAll<HTMLElement>('[data-component="AIComposer"], [data-component="AIAssistant"]')) {
     const controls = el('div', 'enterprise-app-ai-controls')
     const prompt = el('textarea', 'enterprise-app-ai-prompt')
     const button = text(el('button', 'enterprise-secondary-button'), 'Draft with AI') as HTMLButtonElement
@@ -859,13 +1336,14 @@ export function renderDesktopApplicationPreviewPage(
   }
 
   const canvas = el('div', 'enterprise-application-canvas')
+  stampRendererContract(canvas)
   const previewPage: DesktopApplicationPageEnvelope = {
     module: envelope.module,
     page: envelope.page,
     designSystem: envelope.designSystem,
     permissions: envelope.permissions,
   }
-  canvas.append(renderNode(envelope.page.layout, previewPage, undefined, undefined))
+  canvas.append(renderNode(envelope.page.layout, previewPage, undefined, undefined, false))
   page.append(canvas)
   host.append(page)
 }
@@ -905,10 +1383,67 @@ export async function renderDesktopApplicationPage(
   let queryError: string | undefined
   let sourceStatus: HTMLElement | undefined
   let queryControls: RenderedQueryControls | undefined
+  let inboxState: PageInboxState | undefined
+  let catalogState: PageCatalogState | undefined
   const canvas = el('div', 'enterprise-application-canvas')
-  const renderCanvas = (): void => {
-    canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError))
+  stampRendererContract(canvas)
+
+  async function loadInbox(): Promise<void> {
+    const wantsTasks = layoutHasComponent(envelope.page.layout, 'TaskList')
+    const wantsApprovals = layoutHasComponent(envelope.page.layout, 'ApprovalQueue')
+    if (!wantsTasks && !wantsApprovals) {
+      inboxState = undefined
+      return
+    }
+    const next: PageInboxState = { tasks: [], approvals: [] }
+    if (wantsTasks) {
+      try {
+        next.tasks = (await runtime.bridge.tasks(runtime.scope)).items
+      } catch (error) {
+        next.tasksError = error instanceof Error ? error.message : 'The entitled task inbox failed.'
+      }
+    }
+    if (wantsApprovals) {
+      try {
+        next.approvals = (await runtime.bridge.approvalInbox(runtime.scope)).waitingForMe
+      } catch (error) {
+        next.approvalsError = error instanceof Error ? error.message : 'The entitled approval inbox failed.'
+      }
+    }
+    inboxState = next
+  }
+
+  async function loadCatalog(): Promise<void> {
+    if (!layoutHasComponent(envelope.page.layout, 'KnowledgeSearch')) {
+      catalogState = undefined
+      return
+    }
+    try {
+      catalogState = {
+        items: (await runtime.bridge.searchKnowledge({
+          ...runtime.scope,
+          query: envelope.page.title,
+        })).items,
+      }
+    } catch (error) {
+      catalogState = {
+        items: [],
+        error: error instanceof Error ? error.message : 'The entitled knowledge search failed.',
+      }
+    }
+  }
+
+  async function reloadInbox(): Promise<void> {
+    await loadInbox()
+    renderCanvas()
+  }
+
+  function renderCanvas(): void {
+    canvas.replaceChildren(renderNode(envelope.page.layout, envelope, queryResult, queryError, true))
     hydrateApplicationAi(canvas, envelope, runtime, queryResult)
+    bindLayoutActionButtons(page)
+    hydrateEntitledInbox(canvas, inboxState, envelope, runtime, reloadInbox)
+    hydrateEntitledCatalog(canvas, envelope, queryResult, queryError, catalogState)
   }
 
   const runPageQuery = async (where?: Record<string, unknown>): Promise<void> => {
@@ -979,6 +1514,7 @@ export async function renderDesktopApplicationPage(
     host.append(page)
   }
 
+  await Promise.all([loadInbox(), loadCatalog()])
   renderCanvas()
   page.append(canvas)
 
@@ -1166,5 +1702,6 @@ export async function renderDesktopApplicationPage(
     page.append(actionBar)
   }
 
+  bindLayoutActionButtons(page)
   if (!host.contains(page)) host.append(page)
 }

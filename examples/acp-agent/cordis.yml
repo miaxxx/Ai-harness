@@ -40,6 +40,9 @@
           supportsStrictMode: false
           supportsStore: false
           supportsUsageInStreaming: false
+          # A custom gateway owns its reasoning default; catalog off values
+          # such as "none" are not universally accepted.
+          supportsReasoningEffort: false
         models: !!js >-
           [{
             id: process.env.DSH_DESKTOP_MODEL_ID,
@@ -138,6 +141,27 @@
 - id: mcp-user-config
   name: '@deepseek-ai/dsh-mcp-user-config'
   disabled: !!js process.env.DSH_DESKTOP_CODE_WORK_ENABLED !== 'true'
+
+# Replay-aware request pressure; the routed adapter supplies model capacity.
+# Native identity issues and consumes a source-bound ticket before ACP boot.
+# Only the delegated credential reaches the Host credential provider.
+- id: desktop-obis-credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+  disabled: !!js process.env.OBIS_DELEGATED_ACCESS_TOKEN === undefined
+  config:
+    watch: false
+
+- id: desktop-obis-tools
+  name: '@deepseek-ai/dsh-tool-obis'
+  disabled: !!js process.env.OBIS_DELEGATED_ACCESS_TOKEN === undefined
+  config:
+    baseUrl: !!js process.env.OBIS_RUNTIME_BASE_URL
+    environmentId: !!js process.env.OBIS_ENVIRONMENT_ID
+    workspaceProjectId: !!js process.env.OBIS_PROJECT_ID
+    installationId: !!js process.env.OBIS_INSTALLATION_ID
+    credentialRef: OBIS_DELEGATED_ACCESS_TOKEN
+    autonomy: read-only
+    referenceAutonomy: human-approved
 
 # Replay-aware request pressure; the routed adapter supplies model capacity.
 - id: token-meter

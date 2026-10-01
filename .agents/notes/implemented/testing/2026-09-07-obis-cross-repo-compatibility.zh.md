@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[English](2026-09-07-obis-cross-repo-compatibility.md) | 中文
+
 ## Problem
 
 OBIS 与 AI Harness 是通过 OHP 连接、分别进行版本管理的两个系统。包内测试只能证明双方各自成立，无法证明真实 Harness Session 能够向真实 OBIS Kernel 完成认证、获得 run-scoped authority、跨越持久化边界恢复，并在不破坏职责边界的情况下执行受治理的企业写操作。
@@ -10,15 +12,15 @@ OBIS 仓库是私有仓库，因此 AI Harness workflow 获得的普通 `GITHUB_
 
 ## Decision
 
-真实 P0 compatibility matrix 由私有 `miaxxx/obis-dev` 仓库持有。该仓库自己的 repository-scoped `GITHUB_TOKEN` 可以读取选定的 OBIS ref，而公开的 `miaxxx/Ai-harness` candidate 可以直接 checkout，不需要为了 matrix 给 Harness 配置长期跨仓凭证。AI Harness 继续持有可执行 E2E scenario source 和 native-adapter 行为测试，因为这些场景实际驱动 Harness `ToolRuntime` 与 `tool-obis`；OBIS 负责维护组合两个仓库的 workflow。
+权威 compatibility workflow 由私有 `miaxxx/obis-dev` 仓库持有。该仓库的 repository-scoped `GITHUB_TOKEN` 读取 OBIS，并以固定提交 checkout AI Harness。可选的 Harness 验证通道需要 `OBIS_REPO_TOKEN`，并固定 OBIS 提交。改变选定版本对必须重新执行真实兼容性测试；浮动分支无法标识已验证的发布版本对。
 
 强制 P0 candidate 单元会针对同一个 PostgreSQL 数据库两次启动真实 OBIS Kernel。测试使用本地签名 OIDC provider 提供确定性的登录过程，不依赖外部身份服务网络。企业状态通过 OBIS Pack compiler 和 deployment API 建立；进入认证阶段后，只使用 OHP 1.0 与 run-scoped Capability Lease。
 
 测试通过 Harness `ToolRuntime` 驱动原生 `tool-obis` plugin，而不是另造 Agent Loop。覆盖 context、governed query、skill discovery、proposal creation、Harness 原生 one-shot human approval、adapter 内部 proposal execution、task state、restart/resume、response-loss replay、policy denial 与 protocol-version rejection。同时检查模型可见 registry 中不存在 `obis_execute_action`。
 
-第二个 matrix 单元把 `OBIS main × Harness candidate` 明确记录为 expected incompatible，因为 OHP 1.0 当前仍只存在于 P0 分支。一旦 main 获得 OHP contract，该单元会主动失败，迫使维护者把它升级为 full suite，而不是长期保留已经过时的 expected-failure。正式 release ref 尚不存在时，不伪造 release/current 与 release/previous 的绿色结果。
+选定版本对必须具有一致的共享 UI 清单，并通过共享渲染器检查、PostgreSQL 持久化、已认证 Web 到 Harness 的启动交接及受支持的数据库升级演练。用户退出登录必须使 Web、MCP 和 Harness 派生凭证失效，启动票据必须拒绝重复兑换及不可用的项目作用域。release/current 和 release/previous 组合必须拥有真实 release ref 才能提供验收证据。
 
-OBIS-owned workflow 会在相关 OBIS 代码变化、手动 dispatch 和每日 schedule 时运行。只有 workflow 的 step 实际执行时，绿色结果才是有效的 cross-repository evidence；如果已知的 OBIS runner provisioning 故障让 job 在 step 之前终止，结果仍然属于外部 CI blocker，而不是产品失败。
+OBIS-owned workflow 会在相关 OBIS 代码变化（包含 candidate 分支）、手动 dispatch 和每日 schedule 时运行。只有 workflow 的 step 实际执行时，绿色结果才是有效的 cross-repository evidence；如果已知的 OBIS runner provisioning 故障让 job 在 step 之前终止，结果仍然属于外部 CI blocker，而不是产品失败。
 
 ## Alternatives considered
 
