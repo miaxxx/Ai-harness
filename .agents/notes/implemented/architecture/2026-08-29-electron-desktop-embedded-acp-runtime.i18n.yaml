@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-29-electron-desktop-embedded-acp-runtime.md
-2026-08-29-electron-desktop-embedded-acp-runtime.md: 35699887080e43b7c1e6618ebd56ff7a98533f3a
-2026-08-29-electron-desktop-embedded-acp-runtime.zh.md: a2308f948c7db55a8cf04d32fd5e6778e6c61ba3
+2026-08-29-electron-desktop-embedded-acp-runtime.md: 47c0bb691309fc283ec93f3c36089d8888fd61bf
+2026-08-29-electron-desktop-embedded-acp-runtime.zh.md: 70fce2c42d4096524f8b80e3d484dd5655f7cacd

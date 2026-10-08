@@ -52,7 +52,7 @@ pnpm run verify:desktop-dist
 
 Desktop 后台使用 OBIS 人员身份调用 `/v1/desktop/business-session`，把派生的不透明 Web 会话写入 Secure、HttpOnly Cookie。远程页面不能获得原生 Bearer、预加载脚本或 Node API。打开入口时检查原生凭证是否就绪，Next 验证源会话绑定；已发布模块目录独立刷新。原生退出会清除关联 Cookie；源会话撤销后，后续 Next 请求失效。Web 跳转登录页时，隐藏业务视图并提示业务登录，不重载对话。作用域和页面权限由服务端判定。
 
-`DSH_DESKTOP_USER_DATA` 指定独立的验收数据目录。旧 DOM 渲染器保留给预览调用；已发布业务页面使用 Next React 渲染器。公共空间目前展示有权访问的应用，尚不提供文档协作。
+Orbis 使用 Electron 应用数据根目录下独立的 `Orbis AI` 目录，与 Mona 并行运行时不会共用单实例锁或凭证。`DSH_DESKTOP_USER_DATA` 指定绝对路径的独立验收目录；未设置该变量时保留显式的 `--user-data-dir`。旧 DOM 渲染器保留给预览调用；已发布业务页面使用 Next React 渲染器。公共空间目前展示有权访问的应用，尚不提供文档协作。
 
 原生后台在已验证作用域内签发并消费需人工确认的 Workspace 启动票据，再启动 ACP。仅委托凭证进入受监督 Host 的凭证提供器，人员访问令牌和刷新令牌保留在 Desktop 后台。ACP 挂载 OBIS 工具及有时限的 SSE 读取。普通工作区 Run 尚未绑定 Module，模块受控操作和 Run 自动完成仍需单独验收。
 

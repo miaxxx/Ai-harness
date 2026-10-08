@@ -528,6 +528,7 @@ async function createWindow(): Promise<BrowserWindow> {
 
 async function main(): Promise<void> {
   const isolatedData = process.env.DSH_DESKTOP_USER_DATA?.trim()
+    || (app.commandLine.hasSwitch('user-data-dir') ? undefined : join(app.getPath('appData'), 'Orbis AI'))
   if (isolatedData) {
     if (!isAbsolute(isolatedData)) throw new Error('DSH_DESKTOP_USER_DATA must be an absolute directory.')
     await mkdir(isolatedData, { recursive: true, mode: 0o700 })

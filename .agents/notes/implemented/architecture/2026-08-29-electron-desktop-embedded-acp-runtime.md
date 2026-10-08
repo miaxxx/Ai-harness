@@ -16,6 +16,8 @@ The staging script downloads the pinned official Node 24.18.1 archive for the ho
 
 The Electron main bundle includes the ACP client, protocol SDK, and schema validator. Only Electron remains external, so application startup does not depend on pnpm's workspace layout. `scripts/verify-desktop-dist.ts` copies the completed application outside the repository, removes external Node and package-manager paths from its environment, starts the real packaged main process, and requires the embedded Runtime to initialize and answer a Session query.
 
+The Host selects an independent `Orbis AI` user-data directory before acquiring its single-instance lock. An explicit `DSH_DESKTOP_USER_DATA` overrides the directory; otherwise an explicit `--user-data-dir` is preserved. Forks such as Mona can run concurrently without sharing credentials or the lock. Shared fork profiles are not migrated automatically because the source may belong to a running application.
+
 ## Alternatives considered
 
 **Run the Runtime with Electron's embedded Node.** `ELECTRON_RUN_AS_NODE` removes the separate Node download, but couples Runtime ABI and process behavior to Electron. The ordinary Node sidecar preserves the standalone Runtime execution model.
