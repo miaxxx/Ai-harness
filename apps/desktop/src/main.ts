@@ -321,7 +321,11 @@ class AcpRuntimeSupervisor {
   private readonly sessionWorkspaces = new Map<string, string>()
   attachWindow(window: BrowserWindow): void { this.window = window }
   running(): boolean { return this.connection !== undefined || this.connecting !== undefined }
-  private publish(frame: DesktopRendererFrame): void { this.window?.webContents.send('dsh:frame', frame) }
+  private publish(frame: DesktopRendererFrame): void {
+    const window = this.window
+    if (window === undefined || window.isDestroyed() || window.webContents.isDestroyed()) return
+    window.webContents.send('dsh:frame', frame)
+  }
   private publishStatus(status: Extract<DesktopRendererFrame, { type: 'runtime-status' }>['status'], message?: string): void { this.publish({ type: 'runtime-status', status, ...(this.restoringSessions ? { sessionsRestoredByHost: true } : {}), ...(message === undefined ? {} : { message }) }) }
   private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> { const window = this.window; if (window === undefined || request.options.length === 0) return { outcome: { outcome: 'cancelled' } }; const buttons = request.options.map(option => permissionLabel(option.kind)); const result = await dialog.showMessageBox(window, { type: 'warning', message: `Orbis AI 请求执行工具操作 ${request.toolCall.toolCallId}`, detail: '请确认是否执行此操作。文件与系统访问仍受客户端权限限制。', buttons, cancelId: Math.max(0, request.options.findIndex(option => option.kind.startsWith('reject_'))), noLink: true }); const option = request.options[result.response]; return option === undefined ? { outcome: { outcome: 'cancelled' } } : { outcome: { outcome: 'selected', optionId: option.optionId } } }
   async start(): Promise<void> {
