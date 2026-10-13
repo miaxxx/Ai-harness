@@ -145,7 +145,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: miaxxx/obis-dev
-          ref: 550c0034a8d371f3119b72d0001fea7066a2b168
+          ref: d34c429187f845ebd42a96b0e1710cf737a13581
           path: _compat/obis
           token: ${{ env.OBIS_REPO_TOKEN }}
           persist-credentials: false
