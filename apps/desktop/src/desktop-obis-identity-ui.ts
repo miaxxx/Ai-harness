@@ -42,18 +42,21 @@ function renderShell(root: HTMLElement, title: string, description: string): { c
   return { card, message }
 }
 
-function configurationGate(root: HTMLElement): void {
+function configurationGate(root: HTMLElement, status?: DesktopObisIdentityStatus): void {
   const { card, message } = renderShell(root, '连接企业工作台', '连接 OBIS 企业服务。登录凭证由系统安全存储保护。')
   const form = element('div', 'obis-enterprise-fields')
   const urlLabel = element('label'); urlLabel.textContent = '企业服务地址'
-  const url = element('input'); url.type = 'url'; url.placeholder = 'https://obis.example.com'
+  const url = element('input'); url.type = 'url'; url.placeholder = 'https://obis.example.com'; url.value = status?.baseURL ?? ''
+  const webLabel = element('label'); webLabel.textContent = '企业工作台地址'
+  const web = element('input'); web.type = 'url'; web.placeholder = 'https://app.example.com'; web.value = status?.businessWebURL ?? ''
+  webLabel.append(web)
   const tenantLabel = element('label'); tenantLabel.textContent = '租户'
-  const tenant = element('input'); tenant.placeholder = 'acme'
-  urlLabel.append(url); tenantLabel.append(tenant); form.append(urlLabel, tenantLabel)
+  const tenant = element('input'); tenant.placeholder = 'acme'; tenant.value = status?.tenantId ?? ''
+  urlLabel.append(url); tenantLabel.append(tenant); form.append(urlLabel, webLabel, tenantLabel)
   const save = button('连接', () => {
     save.disabled = true
     setMessage(message, '正在验证企业服务……')
-    void window.dshEnterprise.configure({ baseURL: url.value, tenantId: tenant.value })
+    void window.dshEnterprise.configure({ baseURL: url.value, tenantId: tenant.value, businessWebURL: web.value })
       .then(() => identityGate(root))
       .catch((error: unknown) => { setMessage(message, publicError(error), 'error'); save.disabled = false })
   })
@@ -79,7 +82,7 @@ function loginView(root: HTMLElement, status: DesktopObisIdentityStatus): void {
       })
       .catch((error: unknown) => { password.value = ''; setMessage(message, publicError(error), 'error'); signIn.disabled = false })
   })
-  card.append(form, signIn)
+  card.append(form, signIn, button('更换企业', () => { configurationGate(root, status) }))
 }
 
 function installIdentityBadge(status: DesktopObisIdentityStatus): void {

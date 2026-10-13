@@ -4,3 +4,7 @@
 .item:hover, .item[aria-current="page"] { background: #e9ebee; }
 .item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .error { color: #a62929; font-size: 12px; overflow-wrap: anywhere; }
+
+.scope { display: grid; gap: 5px; padding: 0 10px 8px; font-size: 11px; color: #80848c; }
+.scope label { display: flex; align-items: center; gap: 8px; }
+.scope select { flex: 1; min-width: 0; max-width: 100%; border: 1px solid #e6e7e9; border-radius: 6px; padding: 4px; background: transparent; color: inherit; font: inherit; }

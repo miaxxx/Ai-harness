@@ -1,3 +1,4 @@
+import { validateBusinessWebURL } from './desktop-business-url.ts'
 import { configureBusinessIdentity, clearBusinessIdentity, refreshBusinessIdentity } from './desktop-business-window.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -39,6 +40,7 @@ const STORE_VERSION = 1
 interface StoredObisIdentity {
   version: 1
   baseURL: string
+  businessWebURL?: string
   tenantId: string
   deviceId: string
   installationId?: string
@@ -99,6 +101,7 @@ function parseStored(value: unknown): StoredObisIdentity | undefined {
   return {
     version: STORE_VERSION,
     baseURL: validateBaseURL(row.baseURL),
+    ...(row.businessWebURL !== undefined ? { businessWebURL: validateBusinessWebURL(row.businessWebURL) } : {}),
     tenantId: row.tenantId.trim(),
     deviceId: row.deviceId,
     ...(typeof row.installationId === 'string' ? { installationId: row.installationId } : {}),
@@ -136,7 +139,10 @@ async function writeStored(stored: StoredObisIdentity): Promise<void> {
 
 async function ensureStored(): Promise<StoredObisIdentity | undefined> {
   const existing = await readStored()
-  if (existing) return existing
+  if (existing) {
+    if (existing.businessWebURL) process.env.DSH_DESKTOP_BUSINESS_WEB_URL = existing.businessWebURL
+    return existing
+  }
 
   const baseURL = process.env.OBIS_BASE_URL?.trim()
   const tenantId = process.env.OBIS_TENANT_ID?.trim()
@@ -153,7 +159,9 @@ async function ensureStored(): Promise<StoredObisIdentity | undefined> {
 }
 
 function publicStatus(stored: StoredObisIdentity | undefined): DesktopObisIdentityStatus {
+  const businessWebURL = stored?.businessWebURL ?? process.env.DSH_DESKTOP_BUSINESS_WEB_URL
   return {
+    ...(businessWebURL ? { businessWebURL } : {}),
     configured: stored !== undefined,
     required: requiredMode(),
     authenticated: stored?.encryptedRefreshToken !== undefined
@@ -190,6 +198,7 @@ function withoutSession(stored: StoredObisIdentity): StoredObisIdentity {
     tenantId: stored.tenantId,
     deviceId: stored.deviceId,
     ...(stored.installationId ? { installationId: stored.installationId } : {}),
+    ...(stored.businessWebURL ? { businessWebURL: stored.businessWebURL } : {}),
   }
 }
 
@@ -293,7 +302,16 @@ async function attachIdentity(stored: StoredObisIdentity, tokens: TokenPair): Pr
 let linkedBusinessAccessToken: string | undefined
 let linkedBusinessSession: { sessionToken: string; expiresAt: string } | undefined
 
+let renewal: Promise<StoredObisIdentity> | undefined
+
 async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIdentity> {
+  if (renewal) return renewal
+  const operation = renewStored(stored)
+  renewal = operation
+  try { return await operation } finally { if (renewal === operation) renewal = undefined }
+}
+
+async function renewStored(stored: StoredObisIdentity): Promise<StoredObisIdentity> {
   const refreshToken = decrypted(stored.encryptedRefreshToken)
   if (!refreshToken) return stored
   try {
@@ -321,6 +339,7 @@ async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIden
 }
 
 async function authenticatedStored(): Promise<{ stored: StoredObisIdentity; accessToken: string }> {
+  if (renewal) await renewal
   let stored = await ensureStored()
   if (!stored) throw new Error('Configure OBIS before using enterprise controls')
   let accessToken = decrypted(stored.encryptedAccessToken)
@@ -333,7 +352,17 @@ async function authenticatedStored(): Promise<{ stored: StoredObisIdentity; acce
   return { stored, accessToken }
 }
 
+/**
+ * Read native credentials through the identity owner, awaiting linked Web-session renewal.
+ * @returns API authority and bearer for main-process consumers; never expose this result through IPC.
+ */
+export async function desktopObisAccess(): Promise<{ baseURL: string; tenantId: string; accessToken: string }> {
+  const { stored, accessToken } = await authenticatedStored()
+  return { baseURL: stored.baseURL, tenantId: stored.tenantId, accessToken }
+}
+
 async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
+  if (renewal) await renewal
   const stored = await ensureStored()
   if (!stored) return publicStatus(undefined)
   if (!stored.encryptedRefreshToken) return publicStatus(stored)
@@ -352,8 +381,8 @@ async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
       }, accessToken)
       await writeStored(next)
       return publicStatus(next)
-    } catch {
-      // Rotate below.
+    } catch (error) {
+      if (!(error instanceof ObisHttpError && error.status === 401)) throw error
     }
   }
 
@@ -485,9 +514,13 @@ function installIdentityIpc(): void {
     if (typeof row.baseURL !== 'string' || typeof row.tenantId !== 'string' || row.tenantId.trim() === '') {
       throw new Error('OBIS URL and tenant are required')
     }
+    if (renewal) await renewal
     const existing = await readStored()
     const baseURL = validateBaseURL(row.baseURL)
     const tenantId = row.tenantId.trim()
+    const businessWebURL = row.businessWebURL !== undefined
+      ? validateBusinessWebURL(row.businessWebURL)
+      : existing?.businessWebURL ?? process.env.DSH_DESKTOP_BUSINESS_WEB_URL
     const sameAuthority = existing !== undefined
       && existing.baseURL === baseURL
       && existing.tenantId === tenantId
@@ -499,7 +532,15 @@ function installIdentityIpc(): void {
         tenantId,
         deviceId: existing?.deviceId ?? `desktop_${randomUUID()}`,
       }
-    if (!sameAuthority) setEnterpriseRuntimeScope(undefined)
+    const businessOriginChanged = businessWebURL !== (existing?.businessWebURL ?? process.env.DSH_DESKTOP_BUSINESS_WEB_URL)
+    if (!sameAuthority || businessOriginChanged) {
+      await clearBusinessIdentity()
+      setEnterpriseRuntimeScope(undefined)
+    }
+    if (businessWebURL) {
+      next.businessWebURL = businessWebURL
+      process.env.DSH_DESKTOP_BUSINESS_WEB_URL = businessWebURL
+    }
     await writeStored(next)
     return publicStatus(next)
   })
@@ -637,6 +678,7 @@ function installIdentityIpc(): void {
   ipcMain.handle('dsh:obis-identity-logout', async (event) => {
     requireTrusted(event)
     await clearBusinessIdentity()
+    if (renewal) await renewal.catch(() => { /* Local logout still clears credentials after failed renewal. */ })
     const stored = await ensureStored()
     setEnterpriseRuntimeScope(undefined)
     if (!stored) return publicStatus(undefined)

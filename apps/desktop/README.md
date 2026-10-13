@@ -48,7 +48,11 @@ The generated `.app` contains Node, the ACP Runtime, its configuration, JavaScri
 
 ## OBIS business pages
 
-Set `DSH_DESKTOP_BUSINESS_WEB_URL` to the HTTPS OBIS Next.js origin. The shared Mona/Harness sidebar places OBIS applications, spaces and knowledge above conversation workspaces and history. Business pages occupy a sandboxed WebContentsView in the existing window's right workspace. Selecting a conversation restores the mounted chat, composer and local session state.
+Configure the HTTPS OBIS Next.js origin in the enterprise connection form or set `DSH_DESKTOP_BUSINESS_WEB_URL`. The shared Mona/Harness sidebar places OBIS applications, spaces and knowledge above conversation workspaces and history. Business pages occupy a sandboxed WebContentsView in the existing window's right workspace. Selecting a conversation restores the mounted chat, composer and local session state.
+
+Signed-out employees can use **Change enterprise** on the login screen to edit the API address, enterprise Web address and tenant before signing in; existing connection values are prefilled and persisted through logout.
+
+The sidebar project and environment selectors validate the new scope with Kernel and persist it in employee preferences before remounting the conversation runtime. Fixed entries and published Module pages use that same scope; returning focus to Desktop refreshes authorized navigation.
 
 Desktop Main obtains an opaque Web session from `/v1/desktop/business-session` using its human OBIS identity and installs a Secure, HttpOnly cookie. No native bearer, preload or Node API reaches the remote page. Opening an entry checks native credential readiness while Next validates its source-bound session; published Module navigation refreshes independently. Native logout clears the linked cookie; source-session revocation invalidates subsequent Next requests. A Web redirect to sign-in hides the business view and reports a business login prompt without reloading chat. Scope and page authorization remain server-owned.
 

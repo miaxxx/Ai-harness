@@ -34,7 +34,8 @@
     "src/css-modules.d.ts",
     "src/models/renderer/model-settings.tsx",
     "src/models/renderer/model-selector.tsx",
-    "src/diagnostics/renderer/log-ui.tsx"
+    "src/diagnostics/renderer/log-ui.tsx",
+    "src/desktop-business-scope.tsx"
   ],
   "references": [
     {

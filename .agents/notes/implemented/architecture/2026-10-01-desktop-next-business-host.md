@@ -18,6 +18,8 @@ For native AI reads, Main consumes a human-approved Workspace ticket against the
 
 Business selection reuses the composer reference codec and hover submenu. Non-secret JSON selection is logged in the human message, so the tool adapter can reconstruct it after resume without reading renderer state. Each selected Module version owns its Run cache key; attachment retains the original Harness Session identity. Kernel checks publication and entitlement before creating the bound Run. The configured reference autonomy permits human-approved proposals while ordinary conversations remain read-only. A renderer selection never grants execution authority.
 
+The enterprise connection form persists the API address, tenant and HTTPS business root together. Main restores the business origin before runtime delegation, including standalone app launches and subsequent sign-ins. Changing authority or business origin clears the linked Web identity and runtime scope before saving the new connection. Logout removes credentials while retaining the connection. The root-only URL validator prevents credentials, paths and query parameters from becoming delegated origins.
+
 ## Alternatives considered
 
 **Bundle another production business renderer into Electron.** Rejected because page changes would require coordinating two business releases and maintaining duplicate server-action adapters.
@@ -40,7 +42,13 @@ Navigation revisions cover page authorization and loading, so a superseded reque
 
 Unsent empty sessions have no durable log. Prompt admission recreates the owned empty session after renewal and sends the serialized input once; logged sessions restore normally.
 
+Sidebar scope selection validates project/environment before persisting employee preferences and remounting the runtime. Fixed business routes carry the selected scope, rather than allowing the Web default to choose a different environment. Focus refreshes the authorized directory so a release or revocation becomes visible when the employee returns to Desktop.
+
+The native identity owner alone reads and rotates encrypted human credentials. Application and overview requests share its renewal promise, which resolves only after the linked Web cookie is synchronized. These consumers do not maintain separate refresh writers or retry server refusals by rotating credentials. Business navigation waits for native credential readiness before reusing its linked cookie.
+
 ## Testing
+
+`apps/desktop/tests/product-enterprise.client.spec.ts` boots the shared Desktop composition with recorded preload responses and snapshots enterprise scope, published navigation and the original conversation workspace without a model request. Native credentials and live Kernel execution remain separate acceptance evidence.
 
 `apps/desktop/tests/business-window.spec.ts` verifies invalid origins, isolated sessions, absence of preload, off-origin navigation refusal and scoped Module URLs. Desktop login and golden-page tests cover native authority reads. Actual startup, authenticated Next pages and Web/Preview/Desktop comparisons require separate runtime evidence.
 

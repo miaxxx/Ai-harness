@@ -48,7 +48,11 @@ pnpm run verify:desktop-dist
 
 ## OBIS 业务页面
 
-将 `DSH_DESKTOP_BUSINESS_WEB_URL` 设置为 OBIS Next.js 的 HTTPS 根地址。Mona/Harness 共用侧栏在对话工作区和历史记录上方显示业务应用、公共空间和资料库。业务页面在现有窗口右侧的沙箱 WebContentsView 中渲染；选择对话后恢复原有聊天、输入框和本地会话状态。
+在企业连接表单中配置 OBIS Next.js 的 HTTPS 根地址，或设置 `DSH_DESKTOP_BUSINESS_WEB_URL`。Mona/Harness 共用侧栏在对话工作区和历史记录上方显示业务应用、公共空间和资料库。业务页面在现有窗口右侧的沙箱 WebContentsView 中渲染；选择对话后恢复原有聊天、输入框和本地会话状态。
+
+员工退出登录后，可在登录页点击“更换企业”，编辑 API 地址、企业工作台地址和租户再登录；表单预填当前连接配置，退出登录后仍保留。
+
+侧栏的项目和环境选择器先由 Kernel 校验新范围，再保存到员工偏好中并重新挂载对话运行时。固定入口与已发布 Module 页面使用同一范围；切回 Desktop 时刷新授权导航。
 
 Desktop 后台使用 OBIS 人员身份调用 `/v1/desktop/business-session`，把派生的不透明 Web 会话写入 Secure、HttpOnly Cookie。远程页面不能获得原生 Bearer、预加载脚本或 Node API。打开入口时检查原生凭证是否就绪，Next 验证源会话绑定；已发布模块目录独立刷新。原生退出会清除关联 Cookie；源会话撤销后，后续 Next 请求失效。Web 跳转登录页时，隐藏业务视图并提示业务登录，不重载对话。作用域和页面权限由服务端判定。
 

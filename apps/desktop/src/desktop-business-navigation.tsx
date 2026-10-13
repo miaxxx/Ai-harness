@@ -6,11 +6,14 @@ import type { DesktopApplicationNavigationRecord, DesktopBusinessEntry } from '.
 import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
 import { seedBusinessReferenceCatalog } from './desktop-business-references.ts'
 import css from './desktop-business-navigation.module.css'
+import { BusinessScope } from './desktop-business-scope.tsx'
+import type { DesktopEnterpriseTenantContext, DesktopUserPreference } from './desktop-obis-identity-shared.ts'
 
 interface NavigationProps extends SidebarSettingsOwnerProps {
   scope: DesktopEnterpriseScopeRequest
   modules: DesktopApplicationNavigationRecord[]
-  tenantName: string
+  tenant: DesktopEnterpriseTenantContext
+  preferences: DesktopUserPreference
 }
 
 async function reportWorkspaceBounds(): Promise<void> {
@@ -21,11 +24,23 @@ async function reportWorkspaceBounds(): Promise<void> {
     width: Math.floor(rect.width), height: Math.floor(rect.height) })
 }
 
-function BusinessNavigation({ wide, scope, modules, tenantName }: NavigationProps) {
+function BusinessNavigation({ wide, scope, modules, tenant, preferences }: NavigationProps) {
   const [selected, setSelected] = useState<string>()
   const [error, setError] = useState<string>()
   const [items, setItems] = useState(modules)
   const navigationRevision = useRef(0)
+  useEffect(() => {
+    let disposed = false
+    const refresh = (): void => {
+      void window.dshApplications.navigation(scope).then((pages) => {
+        if (disposed) return
+        seedBusinessReferenceCatalog(scope, pages)
+        setItems(pages)
+      }).catch(() => { /* Current page and tool requests still require server authorization. */ })
+    }
+    window.addEventListener('focus', refresh)
+    return () => { disposed = true; window.removeEventListener('focus', refresh) }
+  }, [scope])
   useEffect(() => {
     void reportWorkspaceBounds().then(() => {
       if (navigationRevision.current === 0) return window.dshBusiness.prepare()
@@ -71,7 +86,8 @@ function BusinessNavigation({ wide, scope, modules, tenantName }: NavigationProp
     ['applications', '业务应用', '▦'], ['spaces', '公共空间', '◇'], ['knowledge', '资料库', '▤'],
   ]
   return <nav className={css.navigation} aria-label="OBIS 工作区">
-    {wide && <div className={css.heading}>{tenantName}</div>}
+    {wide && <><div className={css.heading}>{tenant.displayName}</div>
+      <BusinessScope tenant={tenant} scope={scope} preferences={preferences} onChanged={() => { window.location.reload() }} /></>}
     <button className={css.item} onClick={showChat} aria-current={selected === undefined ? 'page' : undefined} title="AI 对话">
       <span aria-hidden>◌</span>{wide && <span>AI 对话</span>}
     </button>
@@ -114,5 +130,5 @@ export async function apply(ctx: ClientContext): Promise<void> {
   ({ wide, label }: SidebarSettingsOwnerProps & { label: string }) => <button className={css.item} title={`${label} · 退出登录`}
     onClick={() => { void window.dshEnterprise.logout().finally(() => { window.location.reload() }) }}><span aria-hidden>◉</span>{wide && <span>{label} · 退出登录</span>}</button>), 'desktop: identity footer')
   ctx.effect(() => ctx.slots.register({ name: 'sidebar.navigation', id: 'desktop.obis',
-    inject: () => ({ scope, modules, tenantName: tenant.displayName }) }, BusinessNavigation), 'desktop: OBIS sidebar navigation')
+    inject: () => ({ scope, modules, tenant, preferences: workspace.preferences }) }, BusinessNavigation), 'desktop: OBIS sidebar navigation')
 }

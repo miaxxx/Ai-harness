@@ -23,6 +23,7 @@ export interface DesktopObisIdentityStatus {
   configured: boolean
   required: boolean
   authenticated: boolean
+  businessWebURL?: string
   baseURL?: string
   tenantId?: string
   deviceId?: string
@@ -34,6 +35,7 @@ export interface DesktopObisIdentityStatus {
 }
 
 export interface DesktopObisIdentityConfiguration {
+  businessWebURL?: string
   baseURL: string
   tenantId: string
 }

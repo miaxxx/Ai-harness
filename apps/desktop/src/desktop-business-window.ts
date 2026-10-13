@@ -2,6 +2,7 @@
 import { WebContentsView, session } from 'electron'
 import type { BrowserWindow, Rectangle } from 'electron'
 import type { DesktopApplicationPageRequest, DesktopBusinessEntry } from './desktop-application-shared.ts'
+import type { DesktopEnterpriseScopeRequest } from './desktop-enterprise-runtime-shared.ts'
 
 let host: BrowserWindow | undefined
 let view: WebContentsView | undefined
@@ -97,9 +98,13 @@ export async function refreshBusinessIdentity(issue: () => Promise<BusinessSessi
  * @param entry Fixed route; callers cannot supply an arbitrary URL.
  * @param page Optional Module page already authorized by the native API owner.
  * @param reveal Whether to show the page; false prepares the first entry behind chat.
+ * @param scope Validated native project/environment for fixed routes.
  * @returns Resolves when Next accepts the route, or the initial document finishes loading.
  */
-export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, reveal = true): Promise<void> {
+export async function openBusinessWindow(
+  entry: DesktopBusinessEntry = 'applications', page?: DesktopApplicationPageRequest, reveal = true,
+  scope?: DesktopEnterpriseScopeRequest,
+): Promise<void> {
   const raw = process.env.DSH_DESKTOP_BUSINESS_WEB_URL?.trim()
   if (!raw) throw new Error('请配置 DSH_DESKTOP_BUSINESS_WEB_URL 后打开业务工作台。')
   const base = new URL(raw)
@@ -109,8 +114,7 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
   if (!identityProvider) throw new Error('业务身份尚未就绪。')
   const started = performance.now()
   const revision = ++generation
-  const issued = linkedSession && Date.parse(linkedSession.expiresAt) > Date.now()
-    ? linkedSession : await identityProvider(linkedSession)
+  const issued = await identityProvider(linkedSession)
   if (revision !== generation) return
   const replaceCookie = issued !== linkedSession
   linkedSession = issued
@@ -146,7 +150,7 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
   const paths = { applications: '/workspace', spaces: '/workspace/spaces', knowledge: '/workspace/knowledge', builder: '/builder' }
   const target = page
     ? `/workspace/apps/${encodeURIComponent(page.moduleId)}/${encodeURIComponent(page.pageId)}?${new URLSearchParams({ projectId: page.projectId, environmentId: page.environmentId })}`
-    : paths[entry]
+    : paths[entry] + (scope ? `?${new URLSearchParams({ projectId: scope.projectId, environmentId: scope.environmentId })}` : '')
   view.setBounds(bounds)
   if (reveal) view.setVisible(true)
   try {
