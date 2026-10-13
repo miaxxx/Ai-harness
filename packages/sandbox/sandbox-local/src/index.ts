@@ -356,6 +356,9 @@ export class LocalSandboxProvider extends SandboxProvider {
    * @returns the runner invocation.
    */
   private windowsAclRunnerArgv(policy: SandboxPolicy): string[] {
+    if (policy.mode === 'workspace-write' && policy.extraWriteRoots?.length) {
+      throw new Error('windows-acl does not support extraWriteRoots')
+    }
     const sessionId = policy.sessionId
     if (sessionId === undefined || policy.mode === 'read-only') {
       return [

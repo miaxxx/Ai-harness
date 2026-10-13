@@ -43,7 +43,7 @@ it('uses gateway reasoning defaults and preserves history across a real model Ru
     env: {
       DSH_DESKTOP_MODEL_ENABLED: 'true', DSH_DESKTOP_MODEL_API: 'openai-completions',
       DSH_DESKTOP_MODEL_BASE_URL: `http://127.0.0.1:${address.port}/v1`, DSH_DESKTOP_MODEL_ID: model,
-      DSH_DESKTOP_MODEL_API_KEY: 'test-gateway-key', DSH_DESKTOP_MODEL_INPUT: 'text',
+      DSH_DESKTOP_MODEL_API_KEY: 'test-gateway-key', DSH_DESKTOP_MODEL_CONTEXT_WINDOW: '32768', DSH_DESKTOP_MODEL_INPUT: 'text',
       DSH_DESKTOP_CODE_WORK_ENABLED: 'true', DSH_DESKTOP_COMPUTER_USE_ENABLED: 'false',
       DSH_SNAPSHOT_SESSIONS_ROOT: join(root, 'sessions'),
     },

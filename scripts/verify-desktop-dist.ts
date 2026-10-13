@@ -116,7 +116,7 @@ try {
   if (!result.stderr.includes('desktop-dist-smoke: ready')) {
     throw new Error(`verify-desktop-dist: application exited without the ready marker:\n${result.stderr}`)
   }
-  console.log(`verify-desktop-dist: relocated ${basename(source)} initialized its embedded ACP Runtime without external Node or repository paths, with Computer Use disabled by default and its opt-in closure packaged.`)
+  console.log(`verify-desktop-dist: relocated ${basename(source)} initialized its embedded ACP Runtime and verified light/dark theme styles without external Node or repository paths, with Computer Use disabled by default and its opt-in closure packaged.`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

@@ -20,6 +20,8 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 | 键 | 默认值 | 路由目标 |
 |---|---|---|
+| `diagnosticUpdates` | `false` | 通过 ACP 提供按配置启用的诊断元数据。 |
+| `diagnosticMaxBytes` | `1048576` | 向 ACP 传递诊断证据字节上限。 |
 | `provider` | 必填 | 每个由 ACP 创建的 agent 所用的提供方路由。 |
 | `model` | 必填 | 每个由 ACP 创建的 agent 所用的模型。 |
 | `maxParallelToolCalls` | agent loop（智能体循环）默认值 | 正整数工具调用并发上限；`1` 表示串行。 |

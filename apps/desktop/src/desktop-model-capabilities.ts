@@ -1,5 +1,6 @@
 /** Bounded capability verification for one Desktop OpenAI-compatible endpoint. */
 
+import { REASONING_LEVELS } from './desktop-model-policy.ts'
 import type { DesktopModelCapabilities, DesktopModelProtocol } from './shared.ts'
 
 const PROBE_TIMEOUT_MS = 20_000
@@ -146,7 +147,7 @@ function visionBody(request: DesktopModelProbeRequest): object {
   }
 }
 
-async function listedCapacities(request: DesktopModelProbeRequest): Promise<Pick<DesktopModelCapabilities, 'contextWindow' | 'maxOutputTokens'>> {
+async function listedCapacities(request: DesktopModelProbeRequest): Promise<Partial<DesktopModelCapabilities>> {
   try {
     const response = await fetch(endpoint(request.baseURL, 'models'), {
       headers: { authorization: `Bearer ${request.apiKey}`, accept: 'application/json' },
@@ -160,14 +161,36 @@ async function listedCapacities(request: DesktopModelProbeRequest): Promise<Pick
     if (entry === undefined) return {}
     const contextWindow = positiveInteger(entry.context_window, entry.context_length)
     const maxOutputTokens = positiveInteger(entry.max_output_tokens, entry.max_tokens)
+    const efforts = entry.reasoning_efforts
+    const reasoningEfforts = typeof efforts === 'object' && efforts !== null && !Array.isArray(efforts)
+      && Object.entries(efforts).every(([key, value]) => REASONING_LEVELS.includes(key as typeof REASONING_LEVELS[number]) && ((key === 'off' && value === null) || (typeof value === 'string' && value.length > 0)))
+      ? efforts as DesktopModelCapabilities['reasoningEfforts'] : undefined
     return {
-      ...contextWindow === undefined ? {} : { contextWindow },
-      ...maxOutputTokens === undefined ? {} : { maxOutputTokens },
+      ...contextWindow === undefined ? {} : { contextWindow, contextSource: 'interface' as const },
+      ...maxOutputTokens === undefined ? {} : { maxOutputTokens, outputSource: 'interface' as const },
+      ...reasoningEfforts === undefined ? {} : { reasoningEfforts },
     }
   } catch {
     // Model listings and their non-standard capacity fields are optional.
     return {}
   }
+}
+
+/** Exact model, protocol and official URL lookup; gateways do not inherit official limits.
+ * @param requestValue - Configured endpoint identity.
+ * @returns Catalog metadata or an empty record for unrecognized routes.
+ */
+export async function catalogModelCapabilities(requestValue: Pick<DesktopModelProbeRequest, 'baseURL' | 'model' | 'protocol'>): Promise<Partial<DesktopModelCapabilities>> {
+  const [{ getBuiltinModels, getBuiltinProviders }, { getSupportedThinkingLevels }] = await Promise.all([import('@earendil-works/pi-ai/providers/all'), import('@earendil-works/pi-ai')])
+  for (const provider of getBuiltinProviders()) {
+    const model = getBuiltinModels(provider).find(item => item.id === requestValue.model && item.api === requestValue.protocol
+      && item.baseUrl.replace(/\/+$/, '') === requestValue.baseURL.replace(/\/+$/, ''))
+    if (model === undefined) continue
+    const reasoningEfforts = Object.fromEntries((model.reasoning ? getSupportedThinkingLevels(model) : []).map(level => [level, model.thinkingLevelMap?.[level] ?? (level === 'off' ? null : level)]))
+    return { contextWindow: model.contextWindow, maxOutputTokens: model.maxTokens,
+      contextSource: 'catalog', outputSource: 'catalog', reasoningEfforts }
+  }
+  return {}
 }
 
 /** Verify text/tool requests, then conservatively detect optional image input and advertised capacities. */
@@ -189,6 +212,7 @@ export async function probeDesktopModel(requestValue: DesktopModelProbeRequest):
   return {
     input: image ? ['text', 'image'] : ['text'],
     verified: true,
+    ...await catalogModelCapabilities(requestValueCopy),
     ...await listedCapacities(requestValueCopy),
   }
 }

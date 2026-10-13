@@ -16,6 +16,8 @@ Desktop coalesces adjacent text or reasoning deltas within each ACP message inst
 
 ACP projects a user-role message into the product transcript only when its durable source is the human user. Plugin-authored runtime context, system reminders, and skill instructions remain available to the model without appearing as assistant or user chat content.
 
+History replay skips assistant chunks for steps with a committed assistant message, so finalized text and reasoning are delivered once. Steps without a final message retain their recoverable chunks. Desktop coalesces concurrent loads and uses enterprise-authorized replay phase frames; business reference labels and attachment displays remain projection-only.
+
 ## Alternatives considered
 
 **Keep ACP committed-output-only.** This preserves the former failure and retry semantics, but it leaves product clients without any output until an entire model request has completed.

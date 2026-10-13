@@ -50,10 +50,9 @@
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
   padding-top: 10px;
-  /* Input stroke: black/0.10 light, white/0.06 dark (figma darkmode note says
-     the input border is one notch weaker than buttons) — exactly the
-     l2-darkmode-thin pair. Fill: the input surface token (elevated in dark). */
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  /* Keep the resting composer boundary visible against the conversation canvas;
+     the semantic l4 stroke remains neutral in both themes. */
+  border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 22px;
   /* Desktop hosts may mount before the theme stylesheet has published its
      token values. Keep this surface opaque during that handoff so transcript

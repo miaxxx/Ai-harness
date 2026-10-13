@@ -39,6 +39,7 @@ interface DriverState {
   readonly agent: Agent
   attempt: RoundAttempt | undefined
   competingQueued: boolean
+  consecutiveMaxTokenTurns: number
   needsCheckpoint: boolean
   requested: boolean
   run: Promise<void> | undefined
@@ -84,6 +85,7 @@ export function apply(ctx: Context): void {
       agent,
       attempt: undefined,
       competingQueued: false,
+      consecutiveMaxTokenTurns: 0,
       needsCheckpoint: false,
       requested: false,
       run: undefined,
@@ -254,6 +256,7 @@ export function apply(ctx: Context): void {
       const state = stateFor(agent)
       state.attempt = undefined
       state.competingQueued = false
+      state.consecutiveMaxTokenTurns = 0
       state.needsCheckpoint = false
     })
     ctx.on('agent/status', ({ agent, status }) => {
@@ -310,15 +313,22 @@ export function apply(ctx: Context): void {
       const state = stateFor(agent)
       switch (event.type) {
         case 'user/message':
+          if (event.data.source.kind === 'user') state.consecutiveMaxTokenTurns = 0
           if (state.attempt !== undefined && event.data.id === state.attempt.messageId) {
             state.attempt.phase = 'admitted'
           }
           return
         case 'turn/end':
           if (event.data.reason.kind === 'max-tokens') {
-            disarm(state)
+            // A single output-limit stop is recoverable through the ordinary
+            // next Goal Round. A consecutive repeat gives control back to the
+            // user instead of creating an unbounded continuation loop.
+            if (state.attempt?.phase !== 'admitted' || ++state.consecutiveMaxTokenTurns >= 2) {
+              disarm(state)
+            }
             return
           }
+          state.consecutiveMaxTokenTurns = 0
           if (event.data.reason.kind !== 'aborted') return
           if (state.attempt?.phase === 'claimed' || state.attempt?.phase === 'admitted') {
             state.attempt.cancelled = true

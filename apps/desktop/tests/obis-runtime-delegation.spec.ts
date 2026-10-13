@@ -17,10 +17,10 @@ describe('native runtime ticket delegation', () => {
     const second = transport.mock.calls[1]
     expect(first?.[0]).toBe('https://api.example.test/v1/workspace-launches')
     expect(new Headers(first?.[1]?.headers).get('authorization')).toBe('Bearer human-token')
-    expect(JSON.parse(String(first?.[1]?.body))).toEqual({ projectId: 'project', environmentId: 'test', harnessOrigin: input.harnessOrigin, autonomy: 'read-only' })
+    expect(JSON.parse(typeof first?.[1]?.body === 'string' ? first[1].body : '')).toEqual({ projectId: 'project', environmentId: 'test', harnessOrigin: input.harnessOrigin, autonomy: 'read-only' })
     expect(second?.[0]).toBe('https://api.example.test/v1/workspace-launches/exchange')
     expect(new Headers(second?.[1]?.headers).has('authorization')).toBe(false)
-    expect(JSON.parse(String(second?.[1]?.body))).toEqual({ ticket: 'one-time', harnessOrigin: input.harnessOrigin, deviceId: input.deviceId })
+    expect(JSON.parse(typeof second?.[1]?.body === 'string' ? second[1].body : '')).toEqual({ ticket: 'one-time', harnessOrigin: input.harnessOrigin, deviceId: input.deviceId })
   })
 
   it.each(['tenantId', 'projectId', 'environmentId', 'userId', 'autonomy'])('rejects a mismatched issued %s before consuming the ticket', async (key) => {

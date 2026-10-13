@@ -233,7 +233,6 @@ describe('same-session goal driving', () => {
   it.each([
     ['rate limit', new LlmError('slow down', 'RATE_LIMIT')],
     ['request error', new Error('provider broke')],
-    ['max tokens', maxTokensResponse('unfinished')],
   ] as const)('disarms automatic continuation after a %s', async (_label, response) => {
     const test = await harness([response])
     test.ctx.goals.create(test.agent, { objective: 'stop safely', maxGoalRounds: 8 })
@@ -243,6 +242,30 @@ describe('same-session goal driving', () => {
 
     expect(goal).toMatchObject({ roundsStarted: 1, activation: 'disarmed' })
     expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('continues once after a goal round reaches the output limit', async () => {
+    const test = await harness([maxTokensResponse('unfinished'), textResponse('continued')])
+    test.ctx.goals.create(test.agent, { objective: 'resume unfinished work', maxGoalRounds: 2 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+
+    expect(goal).toMatchObject({ roundsStarted: 2, activation: 'disarmed' })
+    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(test.adapter.requests).toHaveLength(2)
+    expect(requestText(test.adapter.requests[1]!)).toContain('unfinished')
+    expect(requestText(test.adapter.requests[1]!)).toContain('Round: 2/2')
+  })
+
+  it('disarms after two consecutive goal rounds reach the output limit', async () => {
+    const test = await harness([maxTokensResponse('first partial'), maxTokensResponse('second partial')])
+    test.ctx.goals.create(test.agent, { objective: 'stop repeated truncation', maxGoalRounds: 8 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, current =>
+      current?.phase === 'active' && current.activation === 'disarmed')
+
+    expect(goal).toMatchObject({ roundsStarted: 2, activation: 'disarmed' })
+    expect(test.adapter.requests).toHaveLength(2)
   })
 
   it('maps a downstream step rejection to blocked without entering the round', async () => {

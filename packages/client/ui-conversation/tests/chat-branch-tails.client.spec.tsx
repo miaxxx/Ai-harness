@@ -19,7 +19,7 @@ import {
 } from '../src/client/chat/message-chrome.ts'
 import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, UnknownNodeView,
-  UserMessageNodeView,
+  UserMessageNodeView, SteeringMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { StatsLine, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
@@ -71,8 +71,9 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
   const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
+      return <UserMessageNodeView {...props as Parameters<typeof UserMessageNodeView>[0]} renderSlot={() => null} />
     case 'steering':
-      return <UserMessageNodeView {...props as ChatNodeViewProps<'user' | 'steering'>} />
+      return <SteeringMessageNodeView {...props as ChatNodeViewProps<'steering'>} />
     case 'context':
       return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
     case 'compaction':

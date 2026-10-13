@@ -10,7 +10,7 @@ describe('native runtime delegation lifetime', () => {
     lifetime.setExpiry(new Date(Date.now() + 60_000).toISOString())
     expect(await lifetime.run(renew, async () => 'governed')).toBe('governed')
     expect(renew).not.toHaveBeenCalled()
-    expect(() => lifetime.setExpiry('invalid')).toThrow('有效期无效')
+    expect(() => { lifetime.setExpiry('invalid') }).toThrow('有效期无效')
   })
 
   it('shares idle credential renewal and restores readiness before concurrent prompts', async () => {

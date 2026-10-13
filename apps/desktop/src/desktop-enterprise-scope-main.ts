@@ -26,6 +26,7 @@ type ScopeChangeListener = (
 
 let activeScope: DesktopEnterpriseRuntimeScope | undefined
 let ownershipCache: Map<string, SessionOwnershipRecord> | undefined
+let ownershipMutation: Promise<void> = Promise.resolve()
 const scopeChangeListeners = new Set<ScopeChangeListener>()
 
 function filePath(): string {
@@ -113,33 +114,30 @@ async function ownership(): Promise<Map<string, SessionOwnershipRecord>> {
   const map = new Map<string, SessionOwnershipRecord>()
   try {
     const parsed = JSON.parse(await readFile(filePath(), 'utf8')) as Partial<SessionOwnershipFile>
-    if (parsed.version === 2 && Array.isArray(parsed.records)) {
-      for (const value of parsed.records) {
-        if (!isOwnershipRecord(value)) continue
-        const scope: DesktopEnterpriseRuntimeScope = {
-          tenantId: value.tenantId,
-          projectId: value.projectId,
-          environmentId: value.environmentId,
-          installationId: value.installationId,
-          userId: value.userId,
-        }
-        map.set(value.sessionId, {
-          ...value,
-          namespace: typeof value.namespace === 'string' && value.namespace.length > 0
-            ? value.namespace
-            : enterpriseSessionNamespace(scope, value.sessionId),
-          claimedAt: typeof value.claimedAt === 'string' ? value.claimedAt : new Date(0).toISOString(),
-        })
+    if (parsed.version !== 2 || !Array.isArray(parsed.records)) throw new Error('Enterprise session ownership format is invalid.')
+    for (const value of parsed.records) {
+      if (!isOwnershipRecord(value)) throw new Error('Enterprise session ownership record is invalid.')
+      const scope: DesktopEnterpriseRuntimeScope = {
+        tenantId: value.tenantId,
+        projectId: value.projectId,
+        environmentId: value.environmentId,
+        installationId: value.installationId,
+        userId: value.userId,
       }
+      map.set(value.sessionId, {
+        ...value,
+        namespace: typeof value.namespace === 'string' && value.namespace.length > 0
+          ? value.namespace
+          : enterpriseSessionNamespace(scope, value.sessionId),
+        claimedAt: typeof value.claimedAt === 'string' ? value.claimedAt : new Date(0).toISOString(),
+      })
     }
   } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-      console.warn('[enterprise-scope] failed to read session ownership ledger:', error)
-    }
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
   }
 
-  ownershipCache = map
-  return map
+  ownershipCache ??= map
+  return ownershipCache
 }
 
 async function persist(map: Map<string, SessionOwnershipRecord>): Promise<void> {
@@ -155,40 +153,57 @@ async function persist(map: Map<string, SessionOwnershipRecord>): Promise<void> 
   await rename(temporary, path)
 }
 
+/**
+ * Commit a session's validated enterprise owner before publishing its access record.
+ * @param sessionId - The ACP-created session identity.
+ * @param cwd - Its absolute workspace directory.
+ */
 export async function claimEnterpriseSession(sessionId: string, cwd: string): Promise<void> {
   const scope = enterpriseRuntimeScope()
-  if (!scope) return
-
-  const map = await ownership()
-  const existing = map.get(sessionId)
-  if (existing && !sameScope(existing, scope)) {
-    throw new Error('Enterprise session is already owned by another validated runtime scope.')
+  if (!scope) {
+    if (process.env.OBIS_DESKTOP_REQUIRED === '1') throw new Error('A validated enterprise scope is required.')
+    return
   }
-  if (existing) return
-
-  map.set(sessionId, {
-    sessionId,
-    cwd,
-    ...scope,
-    namespace: enterpriseSessionNamespace(scope, sessionId),
-    claimedAt: new Date().toISOString(),
+  const pending = ownershipMutation.then(async () => {
+    const map = await ownership()
+    if (!sameEnterpriseRuntimeScope(scope, enterpriseRuntimeScope())) throw new Error('Enterprise scope changed during session admission.')
+    const existing = map.get(sessionId)
+    if (existing && !sameScope(existing, scope)) {
+      throw new Error('Enterprise session is already owned by another validated runtime scope.')
+    }
+    if (existing) return
+    const next = new Map(map)
+    next.set(sessionId, {
+      sessionId, cwd, ...scope,
+      namespace: enterpriseSessionNamespace(scope, sessionId), claimedAt: new Date().toISOString(),
+    })
+    await persist(next)
+    ownershipCache = next
   })
-  await persist(map)
+  ownershipMutation = pending.catch(() => {
+    // Rejected claims leave ownership unchanged and allow subsequent corrected admissions.
+  })
+  await pending
 }
 
+/**
+ * Resolve current access; signed-out clients cannot access enterprise-owned history.
+ * @param sessionId - Session whose persisted ownership is required.
+ * @returns Whether the current scope owns it or it is an unowned local session in optional mode.
+ */
 export async function canAccessEnterpriseSession(sessionId: string): Promise<boolean> {
-  const scope = enterpriseRuntimeScope()
-  if (!scope) return true
   const owner = (await ownership()).get(sessionId)
+  const scope = enterpriseRuntimeScope()
+  if (!scope) return process.env.OBIS_DESKTOP_REQUIRED !== '1' && owner === undefined
   return owner !== undefined && sameScope(owner, scope)
 }
 
 export async function filterEnterpriseSessions<T extends { sessionId: string }>(
   values: readonly T[],
 ): Promise<T[]> {
-  const scope = enterpriseRuntimeScope()
-  if (!scope) return [...values]
   const map = await ownership()
+  const scope = enterpriseRuntimeScope()
+  if (!scope) return process.env.OBIS_DESKTOP_REQUIRED === '1' ? [] : values.filter(value => !map.has(value.sessionId))
   return values.filter((value) => {
     const owner = map.get(value.sessionId)
     return owner !== undefined && sameScope(owner, scope)

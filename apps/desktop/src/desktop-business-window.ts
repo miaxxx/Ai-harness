@@ -150,7 +150,7 @@ export async function openBusinessWindow(entry: DesktopBusinessEntry = 'applicat
   view.setBounds(bounds)
   if (reveal) view.setVisible(true)
   try {
-    const routed = view.webContents.getURL().startsWith(base.origin + '/')
+    const routed: unknown = view.webContents.getURL().startsWith(base.origin + '/')
       && await view.webContents.executeJavaScript(`window.dispatchEvent(new CustomEvent('obis:navigate', { detail: ${JSON.stringify(target)}, cancelable: true })) === false`)
     if (revision !== generation) return
     if (!routed) await view.webContents.loadURL(new URL(target, base).href)

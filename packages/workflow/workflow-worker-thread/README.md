@@ -77,6 +77,7 @@ The host keeps a ledger of forwarded child starts. A graceful worker supplies th
 | Key | Default | Meaning |
 |---|---|---|
 | `provider` | `spawn` | Host-side subagent provider used by `agent()`. |
+| `agentOptions` | omitted | Default child `provider`, `model`, and `maxTokens`. A script call may override individual fields without discarding the remaining defaults. |
 | `maxConcurrentAgents` | `0` | Concurrent `agent()` ceiling; `0` resolves from available CPU parallelism. |
 | `maxTotalAgents` | `1000` | Total `agent()` calls in one run. |
 | `maxItemsPerCall` | `4096` | Items accepted by one `parallel()` or `pipeline()` call. |

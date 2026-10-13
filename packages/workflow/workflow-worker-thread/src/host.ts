@@ -11,7 +11,7 @@ import { Worker } from 'node:worker_threads'
 import type { WorkerOptions } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -137,6 +137,7 @@ export class WorkerRun implements WorkflowRun {
     private readonly parent: Agent,
     init: WorkerInit,
     private readonly provider: string,
+    private readonly agentOptions: AgentOptions | undefined,
     private readonly disposeGraceMs: number,
     private readonly observer: ExecutionObserver,
     signal: AbortSignal | undefined,
@@ -354,9 +355,10 @@ export class WorkerRun implements WorkflowRun {
         parent: this.parent,
         signal: this.controller.signal,
         ...request.schema !== undefined ? { outputSchema: request.schema } : {},
-        ...request.provider !== undefined || request.model !== undefined
+        ...this.agentOptions !== undefined || request.provider !== undefined || request.model !== undefined
           ? {
             agentOptions: {
+              ...this.agentOptions,
               ...request.provider !== undefined ? { provider: request.provider } : {},
               ...request.model !== undefined ? { model: request.model } : {},
             },

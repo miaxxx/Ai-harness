@@ -34,6 +34,8 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Additional model-facing guidance that distinguishes this configured specialist. */
+  usageGuidance?: string
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -81,6 +83,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
+  usageGuidance: z.string(),
   enableRunInBackground: z.boolean().default(true),
   backgroundMode: z.union(['one-shot', 'continuable'] as const).default('one-shot'),
   // Prevent Schemastery from materializing omitted agentOptions as `{}`.
@@ -305,14 +308,16 @@ export function apply(ctx: Context, config: Config): void {
     }
     disposeTool = ctx.tools.register(defineTool({
       name: toolName,
-      description: wording.description + (backgroundEnabled
+      description: wording.description
+        + (config.usageGuidance === undefined ? '' : ` ${config.usageGuidance}`)
+        + (backgroundEnabled
         // The completion notice is the continuation service's own behavior, not
         // a separately installed capability, so this promise holds whenever the
         // continuable background path is reachable at all.
-        ? continuable
-          ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.'
-          : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
-        : ' This call waits for the subagent and returns its result.'),
+          ? continuable
+            ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.'
+            : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
+          : ' This call waits for the subagent and returns its result.'),
       parameters: {
         description: {
           type: 'string',

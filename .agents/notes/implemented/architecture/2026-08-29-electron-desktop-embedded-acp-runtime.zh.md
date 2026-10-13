@@ -14,7 +14,7 @@ Electron 技术预览会启动普通 Node ACP 运行时，但依赖仓库的入�
 
 暂存脚本下载与宿主 macOS 架构匹配的官方 Node 24.18.1 固定版本，并拒绝 SHA-256 摘要不匹配的归档。electron-builder 把暂存目录复制到 asar 外的 `Contents/Resources/runtime`，在禁用签名的情况下生成宿主架构目录目标。打包后的主进程通过 `process.resourcesPath` 定位 Node、ACP 入口和配置；源码模式保留仓库路径与命令覆盖能力。
 
-Electron 主进程 bundle 包含 ACP 客户端、协议 SDK 和 schema 校验器。只有 Electron 保持为外部模块，因此应用启动不依赖 pnpm workspace 布局。`scripts/verify-desktop-dist.ts` 把完成的应用复制到仓库外，从环境中移除外部 Node 与包管理器路径，启动真实的打包主进程，并要求内置运行时完成初始化及响应 Session 查询。
+Electron 主进程 bundle 包含 ACP 客户端、协议 SDK、schema 校验器和内置模型元数据库。只有 Electron 保持为外部模块，因此应用启动不依赖 pnpm workspace 布局。`scripts/verify-desktop-dist.ts` 把完成的应用复制到仓库外，从环境中移除外部 Node 与包管理器路径，启动真实的打包主进程，并要求内置运行时完成初始化及响应 Session 查询。
 
 Host 在获取单实例锁之前选择独立的 `Orbis AI` 用户数据目录。显式的 `DSH_DESKTOP_USER_DATA` 优先覆盖目录；否则保留显式的 `--user-data-dir`。Mona 等分支可以并行运行，不共用凭证或单实例锁。共享的分支数据目录不自动迁移，因为来源可能属于正在运行的应用。
 

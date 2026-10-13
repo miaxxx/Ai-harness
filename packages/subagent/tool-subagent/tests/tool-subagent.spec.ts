@@ -109,6 +109,17 @@ describe('dsh-tool-subagent', () => {
     expect(schema!.description).toContain('job_output')
   })
 
+  it('appends configured specialist guidance to the model-facing description', async () => {
+    const ctx = await setup({
+      provider: 'mock',
+      toolName: 'delegate_scan',
+      usageGuidance: 'Use for repository discovery; return evidence and do not edit files.',
+    })
+    const schema = ctx.tools.schemas().find(s => s.name === 'delegate_scan')
+    expect(schema?.description).toContain('Use for repository discovery')
+    expect(schema?.description).toContain('do not edit files')
+  })
+
   it('omits run_in_background entirely when the instance disables it (schema and capability never disagree)', async () => {
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')

@@ -234,6 +234,25 @@ describe('dsh-workflow-worker-thread', () => {
       expect(provider.runs[0]!.request.agentOptions).toEqual({ provider: 'openai' })
     })
 
+    it('uses configured child routing by default while preserving per-call overrides', async () => {
+      const { ctx, parent, provider } = await setup({
+        config: { agentOptions: { provider: 'desktop-subagent', model: 'worker-default' } },
+      })
+      await run(ctx, parent, scripted(`
+        await agent('default route')
+        return await agent('override model', { model: 'worker-specialist' })
+      `))
+
+      expect(provider.runs[0]!.request.agentOptions).toEqual({
+        provider: 'desktop-subagent',
+        model: 'worker-default',
+      })
+      expect(provider.runs[1]!.request.agentOptions).toEqual({
+        provider: 'desktop-subagent',
+        model: 'worker-specialist',
+      })
+    })
+
     it('a start-request provider override selects every child without changing the engine default', async () => {
       const { ctx, parent, provider } = await setup()
       const selected = new StubProvider('selected', () => text('selected reply'))

@@ -62,6 +62,16 @@ function fakeSeatbeltExec(status: number): string {
 const SEATBELT_RO_PROFILE = '(version 1) (allow default) (deny file-write*) (allow file-write* (literal "/dev/null"))'
 
 describe('profile dialects', () => {
+  it('grants explicit cache roots in POSIX profiles only under workspace-write', () => {
+    const policy: SandboxPolicy = { ...WW, extraWriteRoots: ['/cache/npm'] }
+    expect(bwrapProfileArgs(policy)).toContain('/cache/npm')
+    expect(landlockProfileArgs(policy)).toContain('/cache/npm')
+    expect(seatbeltProfileArgs(policy).join(' ')).toContain('(subpath "/cache/npm")')
+    const readOnly: SandboxPolicy = { ...policy, mode: 'read-only' }
+    expect(bwrapProfileArgs(readOnly)).not.toContain('/cache/npm')
+    expect(landlockProfileArgs(readOnly)).not.toContain('/cache/npm')
+    expect(seatbeltProfileArgs(readOnly).join(' ')).not.toContain('/cache/npm')
+  })
   it('bwrap read-only: whole tree read-only with fresh /dev and private PID-scoped /proc, no writable mounts', () => {
     expect(bwrapProfileArgs(RO)).toEqual(['--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent'])
   })

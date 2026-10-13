@@ -37,6 +37,37 @@ describe('Desktop model settings storage', () => {
     expect(parseStoredModelSettings(current)).toEqual(current)
   })
 
+  it('upgrades version 3 settings into inherit-parent subagent mode', () => {
+    expect(parseStoredModelSettings({
+      version: 3,
+      ...common,
+      computerUseEnabled: false,
+      capabilities: { input: ['text'], verified: true },
+    })).toEqual({
+      version: MODEL_SETTINGS_VERSION,
+      ...common,
+      computerUseEnabled: false,
+      capabilities: { input: ['text'], verified: true },
+    })
+  })
+
+  it('accepts a complete dedicated subagent endpoint', () => {
+    const current = {
+      version: MODEL_SETTINGS_VERSION,
+      ...common,
+      computerUseEnabled: false,
+      capabilities: { input: ['text'], verified: true },
+      subagent: {
+        baseURL: 'https://worker.example/v1',
+        model: 'worker-model',
+        protocol: 'openai-responses',
+        encryptedApiKey: 'worker-encrypted',
+        capabilities: { input: ['text'], maxOutputTokens: 4096, verified: true },
+      },
+    } as const
+    expect(parseStoredModelSettings(current)).toEqual(current)
+  })
+
   it.each([
     null,
     { version: MODEL_SETTINGS_VERSION, ...common },
@@ -45,6 +76,7 @@ describe('Desktop model settings storage', () => {
     { version: MODEL_SETTINGS_VERSION, ...common, protocol: 'other', computerUseEnabled: false, capabilities: { input: ['text'], verified: true } },
     { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: false, capabilities: { input: ['image'], verified: true } },
     { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: false, capabilities: { input: ['text'], contextWindow: 0, verified: true } },
+    { version: MODEL_SETTINGS_VERSION, ...common, computerUseEnabled: false, capabilities: { input: ['text'], verified: true }, subagent: {} },
   ])('rejects malformed or unsupported settings: %j', (value) => {
     expect(() => parseStoredModelSettings(value)).toThrow('Desktop model settings are malformed')
   })

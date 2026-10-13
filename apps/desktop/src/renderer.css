@@ -39,16 +39,12 @@ body[data-desktop-preview-resizing] * {
 }
 
 html {
-  color-scheme: light;
-  background: #fff;
+  background: var(--dsw-alias-bg-base, #fff);
 }
 
 body {
   --dsh-window-controls-top-inset: 36px;
   --dsh-hero-glow-opacity: 0;
-  --dsw-specific-sidebar-fill: #f3f3f3;
-  --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, .14);
-  --dsw-shadow-lv2: 0 4px 18px rgba(0, 0, 0, .08);
 }
 
 body::before {
@@ -75,13 +71,13 @@ button svg {
 }
 
 button[data-composer-primary] {
-  background: #111318;
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  box-shadow: var(--dsw-shadow-lv1);
 }
 
 button[data-composer-primary]:hover:not(:disabled) {
-  background: #30343b;
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 html,

@@ -77,6 +77,12 @@ flowchart LR
   cfg --> plugin_acp_tool_subagent
   plugin_acp_tool_subagent_fork["tool-subagent-fork<br/>@deepseek-ai/dsh-tool-subagent"]
   cfg --> plugin_acp_tool_subagent_fork
+  plugin_acp_tool_repo_scout["tool-repo-scout<br/>@deepseek-ai/dsh-tool-subagent"]
+  cfg --> plugin_acp_tool_repo_scout
+  plugin_acp_tool_change_worker["tool-change-worker<br/>@deepseek-ai/dsh-tool-subagent"]
+  cfg --> plugin_acp_tool_change_worker
+  plugin_acp_tool_quality_auditor["tool-quality-auditor<br/>@deepseek-ai/dsh-tool-subagent"]
+  cfg --> plugin_acp_tool_quality_auditor
   plugin_acp_workflow_worker_thread["workflow-worker-thread<br/>@deepseek-ai/dsh-workflow-worker-thread"]
   cfg --> plugin_acp_workflow_worker_thread
   plugin_acp_tool_workflow["tool-workflow<br/>@deepseek-ai/dsh-tool-workflow"]
@@ -146,6 +152,9 @@ flowchart LR
 | `tool-subagent-report` | `@deepseek-ai/dsh-tool-subagent-report` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-fork` | `@deepseek-ai/dsh-tool-subagent` |
+| `tool-repo-scout` | `@deepseek-ai/dsh-tool-subagent` |
+| `tool-change-worker` | `@deepseek-ai/dsh-tool-subagent` |
+| `tool-quality-auditor` | `@deepseek-ai/dsh-tool-subagent` |
 | `workflow-worker-thread` | `@deepseek-ai/dsh-workflow-worker-thread` |
 | `tool-workflow` | `@deepseek-ai/dsh-tool-workflow` |
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |

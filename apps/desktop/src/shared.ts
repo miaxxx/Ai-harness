@@ -107,32 +107,78 @@ export type DesktopPreviewTarget =
 /** OpenAI-compatible wire protocol selected for the Desktop primary model. */
 export type DesktopModelProtocol = 'openai-completions' | 'openai-responses'
 
+/** Provider-supported reasoning levels; auto omits a request override. */
+export type DesktopReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** User-owned limits override discovery without changing the advertised capacity. */
+export interface DesktopModelOverrides {
+  contextWindow?: number
+  maxOutputTokens?: number
+  reasoning?: DesktopReasoningLevel
+}
+
 /** Capabilities verified against the configured Desktop model endpoint. */
 export interface DesktopModelCapabilities {
   input: ('text' | 'image')[]
   contextWindow?: number
   maxOutputTokens?: number
   verified: boolean
+  reasoningEfforts?: Partial<Record<DesktopReasoningLevel, string | null>>
+  contextSource?: 'interface' | 'catalog'
+  outputSource?: 'interface' | 'catalog'
+}
+
+/** Redacted configuration for one optional dedicated subagent endpoint. */
+interface DesktopSubagentModelSettings {
+  baseURL: string
+  model: string
+  protocol: DesktopModelProtocol
+  apiKeyConfigured: boolean
+  capabilities: DesktopModelCapabilities
+  overrides?: DesktopModelOverrides | undefined
 }
 
 /** Redacted primary-model configuration safe to expose to the Renderer. */
 export interface DesktopModelSettings {
+  id?: string | undefined
+  name?: string | undefined
+  overrides?: DesktopModelOverrides | undefined
   configured: boolean
+  detectedCapabilities?: DesktopModelCapabilities
   baseURL: string
   model: string
   protocol: DesktopModelProtocol
   apiKeyConfigured: boolean
   computerUseEnabled: boolean
   capabilities: DesktopModelCapabilities
+  /** Omission means every subagent inherits its parent Agent's current model route. */
+  subagent?: DesktopSubagentModelSettings
+}
+
+/** Writable fields for one dedicated subagent endpoint. */
+export interface DesktopSubagentModelSettingsUpdate {
+  overrides?: DesktopModelOverrides | undefined
+  baseURL: string
+  model: string
+  protocol: DesktopModelProtocol
+  /** Empty preserves an existing dedicated key. */
+  apiKey: string
 }
 
 /** Writable primary-model fields; an empty API key preserves the stored secret. */
 export interface DesktopModelSettingsUpdate {
+  id?: string | undefined
+  name?: string | undefined
+  reuseKeyFrom?: string | undefined
+  overrides?: DesktopModelOverrides | undefined
+  recheck?: boolean
   baseURL: string
   model: string
   protocol: DesktopModelProtocol
   apiKey: string
   computerUseEnabled: boolean
+  /** Omission removes a dedicated route and restores dynamic parent-model inheritance. */
+  subagent?: DesktopSubagentModelSettingsUpdate
 }
 
 /** One advertised model; inference access is verified when it is selected. */
@@ -146,7 +192,7 @@ export interface DesktopModelCatalog {
 }
 
 /** Draft endpoint fields; an omitted key can reuse the saved key only for the same URL. */
-export interface DesktopModelDiscoveryInput { baseURL: string; apiKey: string; model: string }
+export interface DesktopModelDiscoveryInput { baseURL: string; apiKey: string; model: string; id?: string; protocol?: DesktopModelProtocol }
 
 /** Redacted You.com web-search configuration safe to expose to the Renderer. */
 export interface DesktopWebSearchSettings {
@@ -248,6 +294,16 @@ export interface DesktopBridge {
   discoverModels(input?: DesktopModelDiscoveryInput): Promise<DesktopModelCatalog>
   /** Verify and persist one directory model, then reconnect the ACP Runtime. */
   selectModel(model: string): Promise<DesktopModelSettings>
+  /** Inspect one main or subagent draft without persisting credentials. */
+  inspectModelSettings(input: DesktopModelSettingsUpdate | DesktopSubagentModelSettingsUpdate, target?: 'primary' | 'subagent', profileId?: string): Promise<DesktopModelCapabilities>
+  /** Return saved profiles with encrypted credentials omitted. */
+  modelProfiles(): Promise<{ profiles: DesktopModelSettings[]; defaultId?: string }>
+  /** Select a saved profile for subsequent requests. */
+  selectProfile(id: string): Promise<void>
+  /** Remove one saved profile; an active request retains its captured settings. */
+  removeModel(id: string): Promise<void>
+  /** Open an authorized message's local diagnostic file. */
+  openTurnLog(sessionId: string, messageId: string): Promise<void>
   /** Read whether a You.com key is configured without exposing its value. */
   webSearchSettings(): Promise<DesktopWebSearchSettings>
   /** Save the You.com key in encrypted storage and restart the ACP Runtime. */
@@ -271,6 +327,8 @@ export type DesktopRendererFrame =
     status: 'starting' | 'ready' | 'stopped' | 'failed'
     /** Host performs authorized replay before admitting a pending prompt. */
     sessionsRestoredByHost?: boolean
+    /** A process revision changed without detaching other sessions in the pool. */
+    preserveSessions?: boolean
     message?: string
   }
   | {

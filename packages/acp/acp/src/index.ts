@@ -81,9 +81,15 @@ export interface AcpConfig {
   sessionListPageSize?: number
   /** Protocol stream; omitted to use JSON-RPC over process stdin and stdout. */
   stream?: Stream
+  /** Send bounded request and durable-event diagnostic metadata to the owning ACP client. */
+  diagnosticUpdates?: boolean
+  /** Maximum serialized diagnostic evidence bytes per update; at least 1024. */
+  diagnosticMaxBytes?: number
 }
 
 export const Config: Schema<AcpConfig> = Schema.object({
+  diagnosticUpdates: Schema.boolean().default(false),
+  diagnosticMaxBytes: Schema.natural().min(1024).default(1024 * 1024),
   provider: Schema.string(),
   model: Schema.string(),
   sessionListPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_LIST_PAGE_SIZE),
@@ -121,6 +127,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const sessions = new Map<SessionId, SessionRecord>()
   const activating = new Set<SessionId>()
   const pageSize = config.sessionListPageSize ?? DEFAULT_SESSION_LIST_PAGE_SIZE
+  const diagnosticMaxBytes = config.diagnosticMaxBytes ?? 1024 * 1024
   let closed = false
   let conn: AgentSideConnection
   let imagePromptEnabled = false
@@ -163,7 +170,13 @@ export function apply(ctx: Context, config: AcpConfig): void {
   }
 
   /** Live and replay delivery share exactly this materialization path. */
-  const deliverEvent = async (sessionId: SessionId, event: SessionEvent): Promise<void> => {
+  const deliverEvent = async (
+    sessionId: SessionId,
+    event: SessionEvent,
+    finalizedAssistantSteps?: ReadonlySet<string>,
+  ): Promise<void> => {
+    if (event.type === 'assistant/chunk'
+      && finalizedAssistantSteps?.has(`${event.data.turn}:${event.data.step}`) === true) return
     const record = sessions.get(sessionId)
     const streamKey = event.type === 'assistant/chunk' || event.type === 'assistant/message'
       ? `${event.data.turn}:${event.data.step}`
@@ -249,9 +262,33 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
   }
 
+  const diagnosticUpdate = (sessionId: SessionId, kind: string, data: unknown): void => {
+    if (!config.diagnosticUpdates) return
+    const json = JSON.stringify(data, (key, value: unknown) => {
+      if (/api.?key|authorization|password|secret|(?:access|refresh|delegated|bearer|session|id)[._-]?token|(^|[_-])token$|capability.?lease|cookie|credential/i.test(key)) return '[REDACTED]'
+      if (key === 'data' && typeof value === 'string' && value.length > 4096) return '[binary omitted]'
+      if (typeof value === 'string') return value.replace(/\b((?:set-)?cookie\s*:\s*)[^\r\n]+/gi, '$1[REDACTED]').replace(/\bBearer\s+[^\s"']+/gi, 'Bearer [REDACTED]').replace(/\b((?:[A-Z_]*API_KEY|password|secret|[A-Z_]*TOKEN|capability[_-]?lease|cookie|credential)\s*[:=]\s*["']?)[^\s,"']+/gi, '$1[REDACTED]')
+      if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack }
+      return value
+    })
+    const evidence: unknown = Buffer.byteLength(json) > diagnosticMaxBytes
+      ? { truncated: true, originalBytes: Buffer.byteLength(json), preview: json.slice(0, Math.floor(diagnosticMaxBytes / 8)) }
+      : JSON.parse(json) as unknown
+    void notify({ sessionId, update: { sessionUpdate: 'session_info_update', _meta: { harnessDiagnostics: { kind, data: evidence } } } })
+  }
+
+  ctx.on('llm/stream', (options, next) => {
+    if (config.diagnosticUpdates && options.sessionId !== undefined && sessions.has(options.sessionId)) {
+      const { signal: _signal, ...request } = options
+      diagnosticUpdate(options.sessionId, 'model-request', request)
+    }
+    return next()
+  })
+
   ctx.on('session/event', (session, event: SessionEvent) => {
     const record = sessions.get(session.header.id)
     if (record === undefined || record.agent.session !== session) return
+    if (event.type !== 'assistant/chunk') diagnosticUpdate(session.header.id, 'session-event', event)
     try {
       enqueueLiveEvent(record, event)
     } finally {
@@ -260,6 +297,19 @@ export function apply(ctx: Context, config: AcpConfig): void {
         inflight.endReason = event.data.reason
       }
     }
+  })
+
+  ctx.on('agent/status', ({ agent, status }) => {
+    if (ownedRecord(agent) !== undefined) diagnosticUpdate(agent.session.header.id, 'agent-status', { status })
+  })
+
+  ctx.on('agent/request-error', (payload, next) => {
+    if (ownedRecord(payload.agent) !== undefined) {
+      diagnosticUpdate(payload.agent.session.header.id, 'model-request-error', {
+        turn: payload.turn, step: payload.step, provider: payload.provider, failure: payload.failure,
+      })
+    }
+    return next()
   })
 
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
@@ -343,7 +393,15 @@ export function apply(ctx: Context, config: AcpConfig): void {
       try {
         if (replay) {
           // ACP load requires history to be delivered before the response.
-          for (const event of record.agent.session.events) await deliverEvent(sessionId, event)
+          const history = record.agent.session.events
+          const finalizedAssistantSteps = new Set(history.flatMap(event => (
+            event.type === 'assistant/message'
+              ? [`${event.data.turn}:${event.data.step}`]
+              : []
+          )))
+          for (const event of history) {
+            await deliverEvent(sessionId, event, finalizedAssistantSteps)
+          }
         }
         assertOpen()
         return record

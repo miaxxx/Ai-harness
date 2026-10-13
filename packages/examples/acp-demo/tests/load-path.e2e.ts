@@ -116,7 +116,7 @@ async function boot(): Promise<Spawned & { cwd: string }> {
 }
 
 describe('dsh-acp-demo real-load-path smoke (bin + Loader, keyless)', () => {
-  it('boots via its bin and exposes only fresh text sessions', async () => {
+  it('boots via its bin and exposes text prompts and durable session lifecycle capabilities', async () => {
     const { client, cwd, stderr } = await boot()
     // initialize: a broken export shape (collapsed bridge plugin, dropped inject)
     // crashes the tree on the first service read here — see postmortem 0001.
@@ -126,6 +126,8 @@ describe('dsh-acp-demo real-load-path smoke (bin + Loader, keyless)', () => {
     })
     expect(init.agentCapabilities).toEqual({
       promptCapabilities: { image: false, audio: false, embeddedContext: false },
+      sessionCapabilities: { close: {}, list: {}, resume: {} },
+      loadSession: true,
     })
 
     // session/new reaches the agent FACTORY (create) without the model.

@@ -9,7 +9,7 @@
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 1px solid var(--dsw-alias-border-l4);
   background: #fff;
   box-shadow: none;
   isolation: isolate;

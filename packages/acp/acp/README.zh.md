@@ -12,6 +12,8 @@
 
 | 配置 | 默认值 | 含义 |
 |---|---|---|
+| `diagnosticUpdates` | `false` | 通过 `session_info_update._meta.harnessDiagnostics` 提供模型请求、持久化事件、代理状态和模型错误。 |
+| `diagnosticMaxBytes` | `1048576` | 每条证据的字节上限，至少为 1024；超大内容携带标记预览。 |
 | `provider` | 无 | 每个已创建 agent 的初始提供方路由。 |
 | `model` | 无 | 每个已创建 agent 的初始模型。 |
 

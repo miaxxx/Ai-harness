@@ -1,3 +1,4 @@
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 // MessageItem: simple chat nodes — user and consumed-steering bubbles
 // (right-aligned, with clock + copy IconActions; branch lives only under
 // assistant answers), pending steering (copy only), context injection,
@@ -293,10 +294,35 @@ export function PendingSteeringBubble({ content, renderMessageImages, t }: {
   )
 }
 
-/** User and admitted-steering keyed Chat renderer. */
+/** Turn-opening user renderer with contributed message actions. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
+  node, renderMessageImages, renderSlot, t,
+}: ChatNodeViewProps<'user'> & PropsRenderSlots<'conversation.chat.user-actions'>) {
+  const data = node.data
+  return (
+    <UserStyleBubble
+      content={data.content}
+      renderMessageImages={renderMessageImages}
+      {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
+      t={t}
+      actions={text => (
+        <MessageIconActions
+          text={text}
+          extraActions={renderSlot('conversation.chat.user-actions', { messageId: data.messageId })}
+          time={data.time}
+          clock="start"
+          className={css.actions}
+          t={t}
+        />
+      )}
+    />
+  )
+})
+
+/** Admitted-steering keyed Chat renderer. */
+export const SteeringMessageNodeView = memo(function SteeringMessageNodeView({
   node, renderMessageImages, t,
-}: ChatNodeViewProps<'user' | 'steering'>) {
+}: ChatNodeViewProps<'steering'>) {
   const data = node.data
   return (
     <UserStyleBubble

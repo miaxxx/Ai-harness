@@ -156,11 +156,11 @@ describe('dsh-acp-demo composition', () => {
       provider: 'mock',
       model: 'mock',
       includeHarnessIdentity: false,
-      persona: 'You are Orbis AI.',
+      persona: 'You are Mona.',
       workspaceContext: false,
     })
     const assembly = await ctx.get('systemPrompt')!.assemble()
-    expect(assembly.sections[0]?.text).toBe('You are Orbis AI.')
+    expect(assembly.sections[0]?.text).toBe('You are Mona.')
     expect(assembly.sections.map(section => section.name)).not.toContain('harness:identity')
     await ctx.fiber.dispose()
   })

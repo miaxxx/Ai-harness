@@ -77,6 +77,7 @@ worker 错误、消息失败或提前退出会在清理前关闭消息接纳，�
 | 键 | 默认值 | 含义 |
 |---|---|---|
 | `provider` | `spawn` | `agent()` 使用的宿主侧 subagent 提供方。 |
+| `agentOptions` | 省略 | 默认子 agent 的 `provider`、`model` 和 `maxTokens`。脚本调用可覆盖单个字段，同时保留其余默认值。 |
 | `maxConcurrentAgents` | `0` | 并发 `agent()` 上限；`0` 会根据可用 CPU 并行度解析。 |
 | `maxTotalAgents` | `1000` | 一次运行中的 `agent()` 调用总数。 |
 | `maxItemsPerCall` | `4096` | 一次 `parallel()` 或 `pipeline()` 调用接受的条目数。 |

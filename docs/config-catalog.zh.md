@@ -28,6 +28,10 @@ export interface AcpConfig {
   sessionListPageSize?: number
   /** Protocol stream; omitted to use JSON-RPC over process stdin and stdout. */
   stream?: Stream
+  /** Send bounded request and durable-event diagnostic metadata to the owning ACP client. */
+  diagnosticUpdates?: boolean
+  /** Maximum serialized diagnostic evidence bytes per update; at least 1024. */
+  diagnosticMaxBytes?: number
 }
 ```
 
@@ -49,6 +53,10 @@ export interface AcpConfig {
  * through agent-spine-demo); `persistenceRoot` is the JSONL backend's directory.
  */
 export interface Config {
+  /** Forward request and event evidence as bounded ACP diagnostic metadata. */
+  diagnosticUpdates?: boolean
+  /** Maximum evidence bytes forwarded in each ACP diagnostic update. */
+  diagnosticMaxBytes?: number
   /** Provider route for ACP-created agents. */
   provider: string
   /** Model name for ACP-created agents (must have a registered adapter). */
@@ -1263,7 +1271,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`)
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:213`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:216`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -1733,6 +1741,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Absolute deployment-owned directories writable under workspace-write, in addition to the workspace and temporary areas. */
+  extraWriteRoots?: string[]
 }
 ```
 
@@ -1762,7 +1772,7 @@ export interface JsonRpcConfig {
 
 依赖：`Readable`（`node:stream`）· `Writable`（`node:stream`）
 
-来源：[`packages/sdk/server/src/index.ts:29`](../packages/sdk/server/src/index.ts)
+来源：[`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -2771,7 +2781,7 @@ export interface Config {
 export type WorkspaceAutonomy = 'read-only' | 'recommend' | 'draft' | 'human-approved' | 'bounded-autonomous'
 ```
 
-源码： [`packages/obis/tool-obis/src/index.ts:25`](../packages/obis/tool-obis/src/index.ts)
+源码： [`packages/obis/tool-obis/src/index.ts:26`](../packages/obis/tool-obis/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -2901,6 +2911,8 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Additional model-facing guidance that distinguishes this configured specialist. */
+  usageGuidance?: string
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -3324,6 +3336,8 @@ export interface Config {
 export interface Config {
   /** The `ctx.subagents` provider children run on (default `spawn`). */
   provider?: string
+  /** Default model route for children; an explicit `agent()` option may override one field. */
+  agentOptions?: AgentOptions
   /** Concurrent `agent()` ceiling; `0` (the default) auto-resolves to `min(16, max(1, cores - 2))`. */
   maxConcurrentAgents?: number
   /** Total `agent()` calls one run may start — the runaway-loop backstop (default 1000). */
@@ -3341,7 +3355,9 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
+依赖：[`AgentOptions`](subsystems/core.zh.md)
+
+来源：[`packages/workflow/workflow-worker-thread/src/index.ts:33`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
 ## 无配置的可加载插件
 

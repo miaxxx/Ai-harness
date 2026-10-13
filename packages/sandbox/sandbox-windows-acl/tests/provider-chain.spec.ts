@@ -25,6 +25,11 @@ async function setup(internals: LocalSandboxProvider['internals']) {
 }
 
 describe('windows-acl win32 chain (LocalSandboxProvider)', () => {
+  it('rejects additional writable roots that the ACL runner cannot enforce', async () => {
+    const sandbox = await setup({ platform: 'win32', windowsAclRunnerArgs: ['node', 'windows-acl-runner.js'] })
+    expect(() => sandbox.confine(['true'], { ...WW, extraWriteRoots: ['/cache/npm'] })).toThrow('does not support extraWriteRoots')
+    expect(() => sandbox.confine(['true'], { ...RO, extraWriteRoots: ['/cache/npm'] })).not.toThrow()
+  })
   it('agentless workspace-write: runner argv prefix, temp root, mode flag, partial enforcement, ACL denial dialect', async () => {
     const probeWindowsAcl = vi.fn(() => true)
     const sandbox = await setup({

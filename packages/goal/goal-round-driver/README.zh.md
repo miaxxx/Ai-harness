@@ -29,7 +29,9 @@
 
 ## Idle 检查点
 
-整个 agent 进入 idle 时，持久 goal phase 和 revision 具有权威性。phase 为 active、已启用续行且仍有容量的 goal 会预留下一 Round；完成、暂停、阻塞和编辑都会阻止续行。驱动器不会通过关联 goal 消息与 `turn/end` 来对前一段活动分类，因此提供方错误和 token 上限不属于提示词级 goal 结果。
+整个 agent 进入 idle 时，持久 goal phase 和 revision 具有权威性。phase 为 active、已启用续行且仍有容量的 goal 会预留下一 Round；完成、暂停、阻塞和编辑都会阻止续行。提供方错误不属于提示词级 goal 结果，并通过常规 `agent/error` 路径停用续行。
+
+输出上限停止只有一条有界的软恢复路径。已准入 goal Round 第一次返回 `max-tokens` 时会保持续行启用，因此常规检查点和下一 Goal Round 可以基于已保留的局部输出继续。连续第二次达到输出上限时会停用续行。非输出上限的 turn、用户直接消息或会话启动会重置这个进程本地计数；已准入 goal Round 之外的输出上限结果仍采用保守策略并停用续行。这项策略不增加持久 workflow 状态，详情见[有界输出上限续行 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-same-session-goal-round-driver.zh.md)。
 
 ## 生命周期与持久性
 
@@ -61,4 +63,4 @@
 - **只在同一会话执行**：此包有意不 spawn 新 agent、不 fork 会话前缀，也不实现 Ralph 风格的独立尝试；该工作流属于单独的插件层。
 - **已接受队列的卸载竞态**：Cordis 插件卸载是异步的。已经被 agent inbox 接受的 goal 提示词可以在卸载开始前启动并消耗其 Round；teardown 随后会取消请求、停用 goal 的续行并等待完全停稳。不会再启动后续 Round。
 - **只有 Round 上限，不是资源预算**：token、货币、时间与提供方配额策略保持独立。对应的会话事件不会归属于 goal 消息，也不会映射为 goal 阻塞代码。
-- **异常情况不自动重试**：暂时性的提供方与持久化失败需要之后由用户授权 resume，而不会采用隐式重试策略。
+- **提供方异常不自动重试**：暂时性的提供方与持久化失败需要之后由用户授权 resume。只有第一次连续输出上限停止会获得上述有界续行。

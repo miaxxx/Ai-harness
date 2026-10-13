@@ -31,6 +31,8 @@ describe('Desktop model capability verification', () => {
       input: ['text', 'image'],
       verified: true,
       contextWindow: 131_072,
+      contextSource: 'interface',
+      outputSource: 'interface',
       maxOutputTokens: 16_384,
     })
     expect(fetchMock).toHaveBeenCalledTimes(3)

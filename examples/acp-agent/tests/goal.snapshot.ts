@@ -62,6 +62,42 @@ function normalizeGoalLog(content: string, context: NormalizeContext): string {
 }
 
 describe('same-session goal snapshot through the ACP automation driver', () => {
+  it('continues one output-limited round and preserves both partial replies before stopping the second', async () => {
+    const limitedDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-snapshots/goal-output-limit')
+    const result = await runScenario({ steps: [
+      { op: 'initialize' }, { op: 'newSession' },
+      { op: 'promptAndWaitForAgentMessage', text: 'Create a durable four-round goal, inspect it, then report readiness.', waitForText: 'GOAL ROUND TWO PARTIAL' },
+      { op: 'waitForTurnEnd' },
+    ] }, { agent, mode: 'replay', fixtureFile, overrideFile: join(limitedDir, 'replay.override.json'), configPath: agent.configPath })
+    expect(result.stderr).toBe('')
+    const log = result.sessionLogs[0]
+    if (!log) throw new Error('Output-limited Goal did not persist its session')
+    const events = parseJsonl(log.content).slice(1) as unknown as SessionEvent[]
+    const replies = events.flatMap(event => event.type === 'assistant/message'
+      ? event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])
+    const rounds = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'goal'
+      ? [event.data.source.round] : [])
+    const reasons = events.flatMap(event => event.type === 'turn/end' ? [event.data.reason.kind] : [])
+    expect(foldGoal(events).goal?.phase).toBe('active')
+    expect({ replies, rounds, reasons }).toMatchInlineSnapshot(`
+      {
+        "reasons": [
+          "completed",
+          "max-tokens",
+          "max-tokens",
+        ],
+        "replies": [
+          "GOAL READY",
+          "GOAL ROUND ONE PARTIAL",
+          "GOAL ROUND TWO PARTIAL",
+        ],
+        "rounds": [
+          1,
+          2,
+        ],
+      }
+    `)
+  })
   it('runs exact automatic rounds in the shipped application and persists cancellation', async () => {
     const input = JSON.parse(await readFile(join(scenarioDir, 'input.json'), 'utf8')) as InputScript
     const result = await runScenario(input, {

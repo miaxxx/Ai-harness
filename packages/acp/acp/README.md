@@ -12,6 +12,8 @@ This package is a transport adapter, not a UI integration or a capability seam. 
 
 | Config | Default | Meaning |
 |---|---|---|
+| `diagnosticUpdates` | `false` | Send model requests, durable events, agent statuses, and model failures in `session_info_update._meta.harnessDiagnostics`. |
+| `diagnosticMaxBytes` | `1048576` | Per-update evidence byte limit, at least 1024; larger payloads carry a marked preview. |
 | `provider` | — | Initial provider route for every created agent. |
 | `model` | — | Initial model for every created agent. |
 

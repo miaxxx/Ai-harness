@@ -15,7 +15,8 @@ describe('bounded Host run event read', () => {
     const result = await createRunEventTool(client(transport), 5000).execute({ afterId: 'event-1' }, context)
     expect(result).toEqual({ runId: 'run', event, timedOut: false })
     expect(JSON.stringify(result)).not.toMatch(/private-lease|private-token/)
-    expect(String(transport.mock.calls[0]?.[0])).toContain('after=event-1')
+    const request = transport.mock.calls[0]?.[0]
+    expect(request instanceof Request ? request.url : request?.toString()).toContain('after=event-1')
     const headers = new Headers(transport.mock.calls[0]?.[1]?.headers)
     expect(headers.get('OHP-Capability-Lease')).toBe('private-lease')
     expect(headers.get('OHP-Agent-Run')).toBe('run')
@@ -30,8 +31,8 @@ describe('bounded Host run event read', () => {
   it('bounds waiting without swallowing caller cancellation', async () => {
     const transport: typeof fetch = (_url, init) => new Promise((_resolve, reject) => {
       const signal = init?.signal
-      if (signal?.aborted) reject(signal.reason)
-      else signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+      if (signal?.aborted) reject(signal.reason as Error)
+      else signal?.addEventListener('abort', () => { reject(signal.reason as Error) }, { once: true })
     })
     expect(await createRunEventTool(client(transport), 5).execute({}, context)).toEqual({ runId: 'run', event: null, timedOut: true })
     const controller = new AbortController()

@@ -12,6 +12,8 @@ Policy rides the call, not the provider: two consumers may confine under differe
 
 Implementations: [`@deepseek-ai/dsh-sandbox-local`](../sandbox-local/) (Linux: `bwrap`, else the per-platform Landlock launcher; macOS: `sandbox-exec`/Seatbelt). Consumers: [`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/) (wraps `['bash', '-c', command]`).
 
+`SandboxExecutionPolicy.extraWriteRoots` names deployment-owned directories in addition to workspace and temporary roots under workspace-write. `writableRoots()` canonicalizes and deduplicates these grants; read-only returns no writable roots even when extras are configured.
+
 ## Model Experience
 
 ### Confinement error, indirectly

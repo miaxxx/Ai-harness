@@ -93,10 +93,10 @@ describe('ACP Desktop model composition', () => {
   it('does not force image input or one reasoning effort across compatible models', () => {
     const row = configRow('llm-desktop-primary')
     expect(row).toContain("process.env.DSH_DESKTOP_MODEL_INPUT === 'text,image'")
-    expect(row).toContain('defaultContextWindow: 32768')
+    expect(row).toContain('Number(process.env.DSH_DESKTOP_MODEL_CONTEXT_WINDOW)')
     expect(row).toContain('supportsDeveloperRole: false')
     expect(row).not.toContain('reasoning: high')
-    expect(row).not.toContain('reasoningEfforts:')
+    expect(row).toContain('DSH_DESKTOP_MODEL_REASONING_EFFORTS')
   })
 
   it('boots the real ACP product composition with a verified conservative model profile', async () => {

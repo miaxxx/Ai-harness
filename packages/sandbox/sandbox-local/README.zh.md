@@ -25,6 +25,8 @@ Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，但
 
 消费方：[`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/)；可运行的默认组合见 [acp-agent 示例](../../../examples/acp-agent/)。
 
+POSIX 策略仅在 workspace-write 下授予 `extraWriteRoots` 写入权限。Windows ACL 执行器拒绝非空的额外授权，因为当前工作区 SID 协议不能表示多个可写根目录。
+
 ## 模型体验
 
 通过 [`dsh-bash-sandbox`](../../shell/bash-sandbox/README.zh.md) 和 [`dsh-tool-bash`](../../shell/tool-bash/README.zh.md) 间接影响；它们渲染该提供方的强制执行与拒绝事实，而 [`dsh-sandbox`](../sandbox/README.zh.md) seam 负责定义 `SANDBOX_UNAVAILABLE` 文本，runner 选择与 profile 则不进入上下文。

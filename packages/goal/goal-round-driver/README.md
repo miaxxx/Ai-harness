@@ -29,7 +29,9 @@ The retained prompt names the JSON-quoted objective and `round/maxGoalRounds`, t
 
 ## Idle checkpoint
 
-At whole-agent idle, durable goal phase and revision are authoritative. An active, armed goal with capacity reserves its next round; completion, pause, blocking, and edits suppress continuation. The driver does not classify the preceding activity by correlating the goal message with `turn/end`, so provider errors and token limits are not prompt-level goal outcomes.
+At whole-agent idle, durable goal phase and revision are authoritative. An active, armed goal with capacity reserves its next round; completion, pause, blocking, and edits suppress continuation. Provider errors are not prompt-level goal outcomes and disarm continuation through the ordinary `agent/error` path.
+
+An output-limit stop has one bounded soft-recovery path. The first `max-tokens` result from an admitted goal round leaves activation armed, so the ordinary checkpoint and next Goal Round continue from the retained partial output. A second consecutive output-limit result disarms continuation. A non-output-limit turn, direct human message, or session start resets the process-local counter; an output-limit result outside an admitted goal round remains conservative and disarms. This policy adds no durable workflow state and is detailed in the [bounded output-limit continuation Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-same-session-goal-round-driver.md).
 
 ## Lifecycle and durability
 
@@ -61,4 +63,4 @@ Append-only within an epoch: each admitted round extends the existing conversati
 - **Same-session execution only** — this package deliberately does not spawn a fresh agent, fork a session prefix, or implement Ralph-style independent attempts; that workflow belongs to its own plugin layer.
 - **Accepted-queue unload race** — Cordis plugin unload is asynchronous. A goal prompt already accepted by the agent inbox can begin and consume its round before unload starts; teardown then cancels the request, disarms the goal, and awaits quiescence. No later round starts.
 - **Round cap, not resource budget** — token, currency, time, and provider quota policies remain independent. Their session events are not attributed to the goal message or mapped into goal blocker codes.
-- **No abnormal auto-retry** — transient provider and persistence failures require a later human-authorized resume rather than an implicit retry policy.
+- **No abnormal provider auto-retry** — transient provider and persistence failures require a later human-authorized resume. Only the first consecutive output-limit stop receives the bounded continuation described above.

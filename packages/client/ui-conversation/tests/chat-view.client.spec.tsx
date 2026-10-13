@@ -28,7 +28,7 @@ import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
-  TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
+  TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView, SteeringMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
 import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
@@ -198,8 +198,9 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     )
     switch (nodeOwner.node.kind) {
       case 'user':
+        return <UserMessageNodeView {...nodeProps<'user'>() as Parameters<typeof UserMessageNodeView>[0]} />
       case 'steering':
-        return <UserMessageNodeView {...nodeProps<'user' | 'steering'>()} />
+        return <SteeringMessageNodeView {...nodeProps<'steering'>()} />
       case 'context':
         return <ContextMessageNodeView {...nodeProps<'context'>()} />
       case 'assistant-step':

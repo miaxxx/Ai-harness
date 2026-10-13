@@ -82,6 +82,8 @@ The core cancellation test proves notification order and containment: observers 
 - **Fork conversation history or spawn a fresh agent for every round** — rejected for this package because the goal is explicitly same-session work. Fresh-agent Ralph execution remains a separate workflow plugin built from subagent and workflow primitives.
 - **Reuse every session turn as the round counter** — rejected because human clarification and unrelated work share the session but not the automatic-work budget.
 
+An admitted Goal Round ending in max-tokens retains its partial output and may continue through the ordinary scheduler once. A second consecutive output-limit stop disarms continuation. Non-limit turns, human input and agent startup reset the counter. Ordinary non-Goal truncation still stops continuation; disarming does not complete the durable Goal.
+
 ## Consequences
 
 - Goal continuation remains a removable plugin and the concrete loop gains only a generic observe-before-cancel notification.

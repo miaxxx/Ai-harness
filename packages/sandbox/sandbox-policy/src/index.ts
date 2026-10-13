@@ -18,7 +18,7 @@
  * @module @deepseek-ai/dsh-sandbox-policy
  */
 
-import { resolve as resolvePath } from 'node:path'
+import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -40,7 +40,7 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
     case 'read-only':
       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.${policy.extraWriteRoots?.length ? ` Additional writable directories: ${JSON.stringify(policy.extraWriteRoots)}.` : ''}`
     case 'danger-full-access':
       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -72,6 +72,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Absolute deployment-owned directories writable under workspace-write, in addition to the workspace and temporary areas. */
+  extraWriteRoots?: string[]
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -95,12 +97,15 @@ export class SandboxPolicyService extends Service {
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    extraWriteRoots: z.array(z.string()).default([]),
   })
 
   /** The deployment default mode — the fallback beneath a session override. */
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  /** Canonical deployment-owned directories granted by workspace-write. */
+  readonly extraWriteRoots: readonly string[]
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
     // schemastery (static Config) already filled `mode`; the cast records that
@@ -108,6 +113,10 @@ export class SandboxPolicyService extends Service {
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    this.extraWriteRoots = (config.extraWriteRoots ?? []).map((path) => {
+      if (!isAbsolute(path)) throw new Error('sandbox-policy extraWriteRoots must be absolute paths')
+      return resolveWorkspaceRoot(path)
+    })
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
       scope.systemPrompt.context({
@@ -137,6 +146,7 @@ export class SandboxPolicyService extends Service {
     return {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      ...(this.extraWriteRoots.length === 0 ? {} : { extraWriteRoots: this.extraWriteRoots }),
       ...session === undefined ? {} : { sessionId: session.id },
     }
   }

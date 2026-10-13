@@ -170,15 +170,25 @@ describe.skipIf(!existsSync(acpBin))('dsh-acp-demo BUILT bin (node lib/bin.js, n
     const init = await client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     expect(init.agentCapabilities).toEqual({
       promptCapabilities: { image: false, audio: false, embeddedContext: false },
+      sessionCapabilities: { close: {}, list: {}, resume: {} },
+      loadSession: true,
     })
     const sessionCwd = consumer
     const { sessionId } = await client.newSession({ cwd: sessionCwd, mcpServers: [] })
     const result = await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'reply' }] })
     expect(result.stopReason).toBe('end_turn')
-    await expect.poll(() => updates).toEqual([{
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'ACP BUILT OK' },
-    }])
+    await expect.poll(() => updates).toEqual([
+      {
+        sessionUpdate: 'user_message_chunk',
+        messageId: expect.any(String) as unknown,
+        content: { type: 'text', text: 'reply' },
+      },
+      {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: expect.any(String) as unknown,
+        content: { type: 'text', text: 'ACP BUILT OK' },
+      },
+    ])
     const sessionsRoot = join(sessionCwd, '.sessions')
     let log: string | undefined
     await expect.poll(async () => {

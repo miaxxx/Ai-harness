@@ -20,6 +20,8 @@ The app does not install commands, user interaction, session navigation, configu
 
 | Key | Default | Routed to |
 |---|---|---|
+| `diagnosticUpdates` | `false` | Forward opt-in diagnostic metadata through ACP. |
+| `diagnosticMaxBytes` | `1048576` | Forward the ACP diagnostic evidence byte limit. |
 | `provider` | required | Provider route for each ACP-created agent. |
 | `model` | required | Model for each ACP-created agent. |
 | `maxParallelToolCalls` | agent-loop default | Positive-integer tool-call concurrency cap; `1` is serial. |

@@ -46,7 +46,9 @@ import * as deliverablesPlugin from '@deepseek-ai/dsh-client-ui-deliverables/cli
 import * as workspacePlugin from '@deepseek-ai/dsh-client-ui-workspace/client'
 import * as nativeDirectoryPickerPlugin from '@deepseek-ai/dsh-client-ui-directory-picker-native/client'
 import * as settingsGeneralPlugin from '@deepseek-ai/dsh-client-ui-settings-general/client'
-import * as desktopModelSettingsPlugin from './desktop-model-settings.tsx'
+import * as desktopModelSelectorPlugin from './models/renderer/model-selector.tsx'
+import * as desktopLogPlugin from './diagnostics/renderer/log-ui.tsx'
+import * as desktopModelSettingsPlugin from './models/renderer/model-settings.tsx'
 import * as desktopWebSearchSettingsPlugin from './desktop-web-search-settings.tsx'
 import * as desktopMcpSettingsPlugin from './desktop-mcp-settings.tsx'
 import * as desktopBrandPlugin from './desktop-brand.tsx'
@@ -255,6 +257,7 @@ class DesktopSession {
   private replaying = false
   private readonly pendingUserDisplays: Array<{ readonly text: string }> = []
   private plan: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed' }> = []
+  private loading: Promise<void> | undefined
   private loaded: boolean
   private blank: boolean
   private running = false
@@ -333,8 +336,10 @@ class DesktopSession {
 
   async ensureLoaded(): Promise<void> {
     if (this.loaded) return
-    await window.dshDesktop.loadSession(this.sessionId, this.cwd)
-    this.loaded = true
+    const pending = this.loading ?? window.dshDesktop.loadSession(this.sessionId, this.cwd)
+    this.loading = pending
+    try { await pending; this.loaded = true }
+    finally { if (this.loading === pending) this.loading = undefined }
   }
 
   rebuildRegistry(): void {
@@ -1353,6 +1358,8 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
   await mountPlugin(ctx, nativeDirectoryPickerPlugin)
   await mountPlugin(ctx, settingsGeneralPlugin)
   await mountPlugin(ctx, desktopModelSettingsPlugin)
+  await mountPlugin(ctx, desktopModelSelectorPlugin)
+  await mountPlugin(ctx, desktopLogPlugin)
   await mountPlugin(ctx, desktopWebSearchSettingsPlugin)
   await mountPlugin(ctx, desktopMcpSettingsPlugin)
   await mountPlugin(ctx, deliverablesPlugin)
@@ -1372,10 +1379,10 @@ export async function mountDesktopProduct(container: HTMLElement): Promise<() =>
       sessions.accept(frame)
       return
     }
-    if (frame.status === 'starting' || frame.status === 'stopped') sessions.runtimeDetached()
+    if (!frame.preserveSessions && (frame.status === 'starting' || frame.status === 'stopped')) sessions.runtimeDetached()
     if (frame.status === 'ready' && !frame.sessionsRestoredByHost) sessions.resumeCurrent()
     if (frame.status === 'failed') {
-      sessions.runtimeDetached()
+      if (!frame.preserveSessions) sessions.runtimeDetached()
       console.error('[desktop-product] ACP Runtime failed:', frame.message ?? 'unknown error')
     }
   })

@@ -3,7 +3,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib/types/main",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "src/desktop-application-shared.ts",
@@ -15,7 +17,6 @@
     "src/preload.ts",
     "src/shared.ts",
     "src/models/main/catalog.ts",
-    "src/models/main/manager.ts",
     "src/desktop-obis-identity-main.ts",
     "src/desktop-obis-identity-protocol.ts",
     "src/desktop-obis-runtime-protocol.ts",
@@ -33,11 +34,24 @@
     "src/desktop-update.ts",
     "src/desktop-update-shared.ts",
     "src/desktop-update-main.ts",
-    "src/desktop-update-preload.ts"
+    "src/desktop-update-preload.ts",
+    "src/models/main/profiles.ts",
+    "src/runtime/main/pool.ts",
+    "src/runtime/main/supervisor.ts",
+    "src/diagnostics/main/diagnostics.ts",
+    "src/platform/main/tool-path.ts",
+    "src/desktop-model-policy.ts",
+    "src/platform/main/theme-smoke.ts"
   ],
   "references": [
-    { "path": "../../packages/obis/bridge" },
-    { "path": "../../packages/acp/acp-client" },
-    { "path": "../../packages/mcp/mcp-user-config" }
+    {
+      "path": "../../packages/obis/bridge"
+    },
+    {
+      "path": "../../packages/acp/acp-client"
+    },
+    {
+      "path": "../../packages/mcp/mcp-user-config"
+    }
   ]
 }

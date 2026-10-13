@@ -37,6 +37,10 @@ const DEFAULT_PERSISTENCE_ROOT = './.sessions'
  * through agent-spine-demo); `persistenceRoot` is the JSONL backend's directory.
  */
 export interface Config {
+  /** Forward request and event evidence as bounded ACP diagnostic metadata. */
+  diagnosticUpdates?: boolean
+  /** Maximum evidence bytes forwarded in each ACP diagnostic update. */
+  diagnosticMaxBytes?: number
   /** Provider route for ACP-created agents. */
   provider: string
   /** Model name for ACP-created agents (must have a registered adapter). */
@@ -79,6 +83,8 @@ export interface Config {
 // the common fields would make two small app contracts depend on a new facade.
 /* jscpd:ignore-start */
 export const Config: z<Config> = z.object({
+  diagnosticUpdates: z.boolean().default(false),
+  diagnosticMaxBytes: z.natural().min(1024).default(1024 * 1024),
   provider: z.string().required(),
   model: z.string().required(),
   maxParallelToolCalls: z.number().step(1).min(1),
@@ -137,7 +143,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const query = ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, 'session-query.db') })
     await query
     yield query.dispose
-    const transport = ctx.plugin(acp, { provider: config.provider, model: config.model })
+    const transport = ctx.plugin(acp, {
+      provider: config.provider, model: config.model, diagnosticUpdates: config.diagnosticUpdates ?? false,
+      diagnosticMaxBytes: config.diagnosticMaxBytes ?? 1024 * 1024,
+    })
     await transport
     yield transport.dispose
   }, 'acp-demo.composition')

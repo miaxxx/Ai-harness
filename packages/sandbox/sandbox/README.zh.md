@@ -12,6 +12,8 @@
 
 实现：[`@deepseek-ai/dsh-sandbox-local`](../sandbox-local/)（Linux：`bwrap`，否则使用相应平台的 Landlock launcher；macOS：`sandbox-exec`／Seatbelt）。消费方：[`@deepseek-ai/dsh-bash-sandbox`](../../shell/bash-sandbox/)（包装 `['bash', '-c', command]`）。
 
+`SandboxExecutionPolicy.extraWriteRoots` 指定 workspace-write 在工作区和临时目录之外允许写入的部署专用目录。`writableRoots()` 将授权路径规范化并去重；即使配置额外目录，read-only 也不返回可写路径。
+
 ## 模型体验
 
 <a id="confinement-error-indirectly"></a>

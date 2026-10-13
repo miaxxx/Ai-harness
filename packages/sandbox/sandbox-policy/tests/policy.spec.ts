@@ -14,7 +14,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SandboxPolicyService, { SANDBOX_MODES, effectiveSandboxMode, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SystemPrompt, { renderContextSnapshot, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 
-async function mounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string } = {}) {
+async function mounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string; extraWriteRoots?: string[] } = {}) {
   const ctx = new Context()
   await ctx.plugin(SandboxPolicyService, config)
   return ctx
@@ -40,6 +40,11 @@ async function policyContext(ctx: Context, activeSession: Session): Promise<stri
 }
 
 describe('SandboxPolicyService', () => {
+  it('resolves deployment cache grants and rejects relative grants', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', extraWriteRoots: ['/cache/npm'] })
+    expect(ctx.sandboxPolicy.resolve().extraWriteRoots).toEqual(['/cache/npm'])
+    await expect(mounted({ extraWriteRoots: ['relative-cache'] })).rejects.toThrow('absolute paths')
+  })
   it('defaults to read-only under the process cwd', async () => {
     const ctx = await mounted()
     expect(ctx.sandboxPolicy.defaultMode).toBe('read-only')

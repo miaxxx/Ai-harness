@@ -31,6 +31,7 @@
     "@deepseek-ai/dsh-acp-client": "workspace:^",
     "@deepseek-ai/dsh-mcp-user-config": "workspace:^",
     "@deepseek-ai/dsh-obis-bridge": "workspace:^",
+    "@earendil-works/pi-ai": "0.82.1",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",

@@ -26,6 +26,10 @@ export interface AcpConfig {
   sessionListPageSize?: number
   /** Protocol stream; omitted to use JSON-RPC over process stdin and stdout. */
   stream?: Stream
+  /** Send bounded request and durable-event diagnostic metadata to the owning ACP client. */
+  diagnosticUpdates?: boolean
+  /** Maximum serialized diagnostic evidence bytes per update; at least 1024. */
+  diagnosticMaxBytes?: number
 }
 ```
 
@@ -47,6 +51,10 @@ Source: [`packages/acp/acp/src/index.ts:75`](../packages/acp/acp/src/index.ts)
  * through agent-spine-demo); `persistenceRoot` is the JSONL backend's directory.
  */
 export interface Config {
+  /** Forward request and event evidence as bounded ACP diagnostic metadata. */
+  diagnosticUpdates?: boolean
+  /** Maximum evidence bytes forwarded in each ACP diagnostic update. */
+  diagnosticMaxBytes?: number
   /** Provider route for ACP-created agents. */
   provider: string
   /** Model name for ACP-created agents (must have a registered adapter). */
@@ -1731,6 +1739,8 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /** Absolute deployment-owned directories writable under workspace-write, in addition to the workspace and temporary areas. */
+  extraWriteRoots?: string[]
 }
 ```
 
@@ -2899,6 +2909,8 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Additional model-facing guidance that distinguishes this configured specialist. */
+  usageGuidance?: string
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -3322,6 +3334,8 @@ Requires: `subagents`
 export interface Config {
   /** The `ctx.subagents` provider children run on (default `spawn`). */
   provider?: string
+  /** Default model route for children; an explicit `agent()` option may override one field. */
+  agentOptions?: AgentOptions
   /** Concurrent `agent()` ceiling; `0` (the default) auto-resolves to `min(16, max(1, cores - 2))`. */
   maxConcurrentAgents?: number
   /** Total `agent()` calls one run may start — the runaway-loop backstop (default 1000). */
@@ -3339,7 +3353,9 @@ export interface Config {
 }
 ```
 
-Source: [`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
+Depends on: [`AgentOptions`](subsystems/core.md)
+
+Source: [`packages/workflow/workflow-worker-thread/src/index.ts:33`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
 ## Loadable plugins with no config
 

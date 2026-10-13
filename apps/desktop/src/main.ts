@@ -1,6 +1,6 @@
 /**
  * Electron main process: secure window/resource ownership, typed Renderer IPC,
- * and lifecycle supervision for one standalone ACP Runtime subprocess.
+ * and lifecycle supervision for leased standalone ACP Runtime revisions.
  */
 
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
@@ -10,12 +10,8 @@ import {
   app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, safeStorage, shell,
 } from 'electron'
 import {
-  connectAcpRuntime,
-  type AcpClientHandlers,
-  type AcpRuntimeConnection,
   type AcpRuntimeSpec,
 } from '@deepseek-ai/dsh-acp-client'
-import type { ContentBlock } from '@agentclientprotocol/sdk'
 import {
   parseUserMcpServer,
   readUserMcpServers,
@@ -30,24 +26,22 @@ import type {
   DesktopAttachmentPaste,
   DesktopMcpServerSummary,
   DesktopMcpServerUpdate,
-  DesktopModelProtocol,
-  DesktopModelSettings,
-  DesktopModelSettingsUpdate,
   DesktopWebSearchSettings,
   DesktopWebSearchSettingsUpdate,
-  DesktopPromptResult,
-  DesktopRendererFrame,
-  DesktopSessionSummary,
 } from './shared.ts'
 import { attachBusinessHost, openBusinessWindow } from './desktop-business-window.ts'
 import { desktopMediaType, DesktopContentStore } from './desktop-content.ts'
 import { desktopObisRuntimeEnvironment } from './desktop-obis-identity-main.ts'
 import type { DesktopPromptPart } from './desktop-prompt.ts'
 import { DesktopRuntimeCredentialLifetime } from './desktop-runtime-credential.ts'
-import { DesktopModelManager } from './models/main/manager.ts'
+import { DesktopModelProfiles } from './models/main/profiles.ts'
+import { DesktopRuntimePool } from './runtime/main/pool.ts'
+import { AcpRuntimeSupervisor } from './runtime/main/supervisor.ts'
+import { DesktopDiagnostics } from './diagnostics/main/diagnostics.ts'
+import { verifyDesktopTheme } from './platform/main/theme-smoke.ts'
+import { resolveDesktopToolPath } from './platform/main/tool-path.ts'
+import { effectiveModelCapabilities } from './desktop-model-policy.ts'
 import {
-  MODEL_SETTINGS_VERSION,
-  parseStoredModelSettings,
   type StoredModelSettings,
 } from './desktop-model-storage.ts'
 import {
@@ -57,9 +51,7 @@ import {
 } from './desktop-web-search-storage.ts'
 import {
   assertEnterpriseSessionAccess,
-  claimEnterpriseSession,
   enterpriseRuntimeScope,
-  filterEnterpriseSessions,
   onEnterpriseRuntimeScopeChange,
 } from './desktop-enterprise-scope-main.ts'
 
@@ -72,12 +64,6 @@ const APP_ORIGIN = 'dsh-app://app'
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const RENDERER_ROOT = resolve(fileURLToPath(new URL('./renderer/', import.meta.url)))
 const DIRECTORY_LIST_LIMIT = 500
-const MODEL_PROTOCOLS: readonly DesktopModelProtocol[] = ['openai-completions', 'openai-responses']
-
-function modelSettingsPath(): string {
-  return join(app.getPath('userData'), 'primary-model.json')
-}
-
 function desktopMcpPath(): string {
   return join(app.getPath('userData'), 'mcp-servers.json')
 }
@@ -86,85 +72,8 @@ function webSearchSettingsPath(): string {
   return join(app.getPath('userData'), 'web-search.json')
 }
 
-function defaultModelSettings(): DesktopModelSettings {
-  return {
-    configured: false,
-    baseURL: 'https://api.openai.com/v1',
-    model: '',
-    protocol: 'openai-completions',
-    apiKeyConfigured: false,
-    computerUseEnabled: false,
-    capabilities: { input: ['text'], verified: false },
-  }
-}
-
-function isMissingFile(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
-}
-
-async function readStoredModelSettings(): Promise<StoredModelSettings | undefined> {
-  try {
-    return parseStoredModelSettings(JSON.parse(await readFile(modelSettingsPath(), 'utf8')) as unknown)
-  } catch (error: unknown) {
-    if (isMissingFile(error)) return undefined
-    throw error
-  }
-}
-
-function publicModelSettings(stored: StoredModelSettings | undefined): DesktopModelSettings {
-  if (stored === undefined) return defaultModelSettings()
-  return {
-    configured: true,
-    baseURL: stored.baseURL,
-    model: stored.model,
-    protocol: stored.protocol,
-    apiKeyConfigured: stored.encryptedApiKey.length > 0,
-    computerUseEnabled: stored.computerUseEnabled,
-    capabilities: stored.capabilities,
-  }
-}
-
-interface ValidatedModelUpdate {
-  stored: Omit<StoredModelSettings, 'capabilities'>
-  apiKey: string
-}
-
-function validateModelUpdate(value: unknown, existing: StoredModelSettings | undefined): ValidatedModelUpdate {
-  if (typeof value !== 'object' || value === null) throw new Error('Model settings must be an object')
-  const row = value as Partial<DesktopModelSettingsUpdate>
-  const baseURL = nonEmptyString(row.baseURL, 'Base URL').trim().replace(/\/$/, '')
-  const parsed = new URL(baseURL)
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Base URL must use HTTP or HTTPS')
-  const model = nonEmptyString(row.model, 'Model ID').trim()
-  if (!MODEL_PROTOCOLS.includes(row.protocol as DesktopModelProtocol)) throw new Error('Unsupported OpenAI-compatible protocol')
-  if (typeof row.computerUseEnabled !== 'boolean') throw new Error('Computer Use setting must be a boolean')
-  const apiKey = typeof row.apiKey === 'string' ? row.apiKey.trim() : ''
-  if (apiKey === '' && existing === undefined) throw new Error('API Key is required')
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS secure storage is unavailable; the API Key was not saved')
-  const effectiveApiKey = apiKey === ''
-    ? safeStorage.decryptString(Buffer.from(existing?.encryptedApiKey ?? '', 'base64'))
-    : apiKey
-  return {
-    stored: {
-      version: MODEL_SETTINGS_VERSION,
-      baseURL,
-      model,
-      protocol: row.protocol as DesktopModelProtocol,
-      encryptedApiKey: apiKey === '' ? existing?.encryptedApiKey ?? '' : safeStorage.encryptString(apiKey).toString('base64'),
-      computerUseEnabled: row.computerUseEnabled,
-    },
-    apiKey: effectiveApiKey,
-  }
-}
-
-async function writeStoredModelSettings(stored: StoredModelSettings): Promise<void> {
-  const path = modelSettingsPath()
-  const temporary = `${path}.tmp`
-  await mkdir(app.getPath('userData'), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 })
-  await rename(temporary, path)
-}
-
+function isMissingFile(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT' }
+const modelManager = new DesktopModelProfiles()
 async function readStoredWebSearchSettings(): Promise<StoredWebSearchSettings | undefined> {
   try {
     return parseStoredWebSearchSettings(JSON.parse(await readFile(webSearchSettingsPath(), 'utf8')) as unknown)
@@ -205,26 +114,45 @@ async function webSearchRuntimeEnv(): Promise<Record<string, string>> {
   return { YDC_API_KEY: safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64')) }
 }
 
-async function modelRuntimeEnv(): Promise<Record<string, string>> {
+async function modelRuntimeEnv(snapshot: StoredModelSettings | undefined): Promise<Record<string, string>> {
   const scope = enterpriseRuntimeScope()
   const enterpriseEnv: Record<string, string> = scope === undefined ? {} : {
-    ...await desktopObisRuntimeEnvironment(scope),
-    OBIS_TENANT_ID: scope.tenantId,
-    OBIS_PROJECT_ID: scope.projectId,
-    OBIS_ENVIRONMENT_ID: scope.environmentId,
+    ...await desktopObisRuntimeEnvironment(scope), OBIS_TENANT_ID: scope.tenantId,
+    OBIS_PROJECT_ID: scope.projectId, OBIS_ENVIRONMENT_ID: scope.environmentId,
     OBIS_INSTALLATION_ID: scope.installationId,
   }
   const desktopModeEnv = {
+    ...enterpriseEnv,
+    DSH_DESKTOP_MODEL_ENABLED: 'false',
+    DSH_DESKTOP_SUBAGENT_MODEL_ENABLED: 'false',
+    DSH_DESKTOP_MODEL_REASONING: '',
+    DSH_DESKTOP_SUBAGENT_MODEL_REASONING: '',
+    DSH_DESKTOP_NPM_CACHE: (process.platform === 'win32' ? join(desktopWorkspace(), '.dsh', 'cache', 'npm') : join(app.getPath('userData'), 'cache', 'npm')),
+    npm_config_cache: (process.platform === 'win32' ? join(desktopWorkspace(), '.dsh', 'cache', 'npm') : join(app.getPath('userData'), 'cache', 'npm')),
+    NPM_CONFIG_CACHE: (process.platform === 'win32' ? join(desktopWorkspace(), '.dsh', 'cache', 'npm') : join(app.getPath('userData'), 'cache', 'npm')),
     DSH_DESKTOP_CODE_WORK_ENABLED: 'true',
+    DSH_DESKTOP_DIAGNOSTICS_ENABLED: 'true',
+    // Mutating actions remain one-shot approval-gated in the ACP Runtime.
     DSH_DESKTOP_COMPUTER_USE_ENABLED: 'false',
     DSH_MCP_CONFIG_PATH: desktopMcpPath(),
+    // A local Chromium DevTools endpoint takes precedence over visual macOS control.
     DSH_COMPUTER_PROVIDER: process.env.DSH_BROWSER_CDP_URL === undefined ? 'macos-accessibility' : 'browser-cdp',
-    DSH_BUNDLED_SKILL_DIR: app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'),
-    ...enterpriseEnv,
+    DSH_BUNDLED_SKILL_DIR: app.isPackaged
+      ? packagedRuntimePath('app', 'skills')
+      : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'),
   }
   const webSearchEnv = await webSearchRuntimeEnv()
-  const stored = await readStoredModelSettings()
-  if (stored === undefined) return { ...desktopModeEnv, ...webSearchEnv }
+  if (snapshot === undefined) return { ...desktopModeEnv, ...webSearchEnv }
+  const stored = { ...snapshot, capabilities: effectiveModelCapabilities(snapshot.capabilities, snapshot.overrides),
+    ...(snapshot.subagent === undefined ? {} : { subagent: {
+      ...snapshot.subagent, capabilities: effectiveModelCapabilities(snapshot.subagent.capabilities, snapshot.subagent.overrides),
+    } }),
+  }
+  // Unknown legacy profiles can open Settings and session history, but cannot admit a model request.
+  if (stored.capabilities.contextWindow === undefined
+    || (stored.subagent !== undefined && stored.subagent.capabilities.contextWindow === undefined)) {
+    throw new Error('请先在模型设置中填写整个上下文窗口')
+  }
   if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS secure storage is unavailable')
   return {
     ...desktopModeEnv,
@@ -235,13 +163,34 @@ async function modelRuntimeEnv(): Promise<Record<string, string>> {
     DSH_DESKTOP_MODEL_ID: stored.model,
     DSH_DESKTOP_MODEL_API_KEY: safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64')),
     DSH_DESKTOP_MODEL_INPUT: stored.capabilities.input.join(','),
-    ...(stored.capabilities.contextWindow === undefined
+    ...snapshot.overrides?.reasoning === undefined ? {} : { DSH_DESKTOP_MODEL_REASONING: snapshot.overrides.reasoning },
+    DSH_DESKTOP_MODEL_REASONING_EFFORTS: JSON.stringify(Object.keys(snapshot.capabilities.reasoningEfforts ?? {}).some(level => level !== 'off') ? snapshot.capabilities.reasoningEfforts : false),
+    DSH_DESKTOP_MODEL_CONTEXT_WINDOW: String(stored.capabilities.contextWindow),
+    ...stored.capabilities.maxOutputTokens === undefined
       ? {}
-      : { DSH_DESKTOP_MODEL_CONTEXT_WINDOW: String(stored.capabilities.contextWindow) }),
-    ...(stored.capabilities.maxOutputTokens === undefined
-      ? {}
-      : { DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS: String(stored.capabilities.maxOutputTokens) }),
+      : { DSH_DESKTOP_MODEL_MAX_OUTPUT_TOKENS: String(stored.capabilities.maxOutputTokens) },
     DSH_DESKTOP_COMPUTER_USE_ENABLED: String(stored.computerUseEnabled),
+    ...stored.subagent === undefined
+      ? {}
+      : {
+        DSH_DESKTOP_SUBAGENT_MODEL_ENABLED: 'true',
+        DSH_DESKTOP_SUBAGENT_MODEL_API: stored.subagent.protocol,
+        DSH_DESKTOP_SUBAGENT_MODEL_BASE_URL: stored.subagent.baseURL,
+        DSH_DESKTOP_SUBAGENT_MODEL_ID: stored.subagent.model,
+        DSH_DESKTOP_SUBAGENT_MODEL_API_KEY: safeStorage.decryptString(
+          Buffer.from(stored.subagent.encryptedApiKey, 'base64'),
+        ),
+        DSH_DESKTOP_SUBAGENT_MODEL_INPUT: stored.subagent.capabilities.input.join(','),
+        DSH_DESKTOP_SUBAGENT_MODEL_REASONING_EFFORTS: JSON.stringify(Object.keys(stored.subagent.capabilities.reasoningEfforts ?? {}).some(level => level !== 'off') ? stored.subagent.capabilities.reasoningEfforts : false),
+        ...(stored.subagent.overrides?.reasoning === undefined
+          ? {} : { DSH_DESKTOP_SUBAGENT_MODEL_REASONING: stored.subagent.overrides.reasoning }),
+        ...stored.subagent.capabilities.contextWindow === undefined
+          ? {}
+          : { DSH_DESKTOP_SUBAGENT_MODEL_CONTEXT_WINDOW: String(stored.subagent.capabilities.contextWindow) },
+        ...stored.subagent.capabilities.maxOutputTokens === undefined
+          ? {}
+          : { DSH_DESKTOP_SUBAGENT_MODEL_MAX_OUTPUT_TOKENS: String(stored.subagent.capabilities.maxOutputTokens) },
+      },
   }
 }
 
@@ -278,15 +227,19 @@ function desktopWorkspace(): string { return resolve(process.env.DSH_DESKTOP_WOR
 function workspacePath(value: unknown): string { if (value === undefined || value === null || value === '') return desktopWorkspace(); const raw = nonEmptyString(value, 'cwd'); if (!isAbsolute(raw)) throw new Error('cwd must be an absolute path'); return resolve(raw) }
 function isBrowserPreviewable(mediaType: string): boolean { return mediaType.startsWith('text/') || mediaType.startsWith('image/') || mediaType === 'application/json' || mediaType === 'application/jsonl' || mediaType === 'application/pdf' }
 function previewWebUrl(value: unknown): string { const url = new URL(nonEmptyString(value, 'url')); if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('URL must use HTTP or HTTPS'); return url.href }
-type PermissionRequest = Parameters<NonNullable<AcpClientHandlers['onPermissionRequest']>>[0]
 function isStringArray(value: unknown): value is string[] { return Array.isArray(value) && value.every((item): item is string => typeof item === 'string') }
 function promptParts(value: unknown): DesktopPromptPart[] { if (!Array.isArray(value) || value.length === 0) throw new Error('prompt must contain text or attachments'); return value.map((part): DesktopPromptPart => { if (typeof part !== 'object' || part === null) throw new Error('prompt contains an invalid part'); const candidate = part as Partial<DesktopPromptPart>; if (candidate.type === 'text' && typeof candidate.text === 'string') return { type: 'text', text: candidate.text }; if (candidate.type === 'attachment' && typeof candidate.attachmentId === 'string' && candidate.attachmentId !== '') return { type: 'attachment', attachmentId: candidate.attachmentId, name: typeof candidate.name === 'string' && candidate.name !== '' ? candidate.name : '附件' }; throw new Error('prompt contains an invalid part') }) }
 function attachmentPaste(value: unknown): DesktopAttachmentPaste { if (typeof value !== 'object' || value === null) throw new Error('attachment paste must be an object'); const row = value as Partial<DesktopAttachmentPaste>; const selection = row.selection as DesktopAttachmentPaste['selection'] | null | undefined; if (!isStringArray(row.paths) || typeof row.imageWithoutPath !== 'boolean' || typeof selection !== 'object' || selection === null || !Number.isSafeInteger(selection.start) || !Number.isSafeInteger(selection.end) || selection.start < 0 || selection.end < selection.start) throw new Error('attachment paste has invalid fields'); const paths = row.paths.map((path) => { if (!isAbsolute(path)) throw new Error('clipboard attachment paths must be absolute'); return resolve(path) }); return { paths, imageWithoutPath: row.imageWithoutPath, selection } }
 async function clipboardPayload(readImage: boolean): Promise<{ paths: string[]; image?: Uint8Array }> { const items = await clipboard.read(); const values: string[] = []; let image: Uint8Array | undefined; for (const item of items) { for (const type of item.types) { const fileUrl = type === 'text/uri-list' || type.includes('public.file-url'); const png = readImage && image === undefined && type === 'image/png'; if (!fileUrl && !png) continue; const payload = await item.getType(type); if ('url' in payload) continue; if (fileUrl) values.push(await payload.text()); else image = new Uint8Array(await payload.arrayBuffer()) } } const paths: string[] = []; for (const value of values.flatMap(value => value.split(/\r?\n/))) { if (!value.startsWith('file:')) continue; try { paths.push(fileURLToPath(value)) } catch {} } return { paths, ...(image === undefined ? {} : { image }) } }
 function parseRuntimeArgs(value: string | undefined): string[] { if (value === undefined || value.trim().length === 0) return []; const parsed: unknown = JSON.parse(value); if (!isStringArray(parsed)) throw new Error('DSH_DESKTOP_ACP_ARGS_JSON must be a JSON array of strings'); return parsed }
 
-async function desktopRuntimeSpec(lifetime: DesktopRuntimeCredentialLifetime): Promise<AcpRuntimeSpec> {
-  const env = await modelRuntimeEnv()
+async function desktopRuntimeSpec(
+  lifetime: DesktopRuntimeCredentialLifetime, snapshot: StoredModelSettings | undefined,
+): Promise<AcpRuntimeSpec> {
+  const env = await modelRuntimeEnv(snapshot)
+  env.PATH = await resolveDesktopToolPath(
+    app.isPackaged ? packagedRuntimePath('node', 'bin') : undefined,
+  )
   lifetime.setExpiry(env.OBIS_DELEGATED_EXPIRES_AT)
   delete env.OBIS_DELEGATED_EXPIRES_AT
   const command = process.env.DSH_DESKTOP_ACP_COMMAND
@@ -302,177 +255,56 @@ async function desktopRuntimeSpec(lifetime: DesktopRuntimeCredentialLifetime): P
   return { command: process.env.DSH_DESKTOP_NODE ?? process.env.npm_node_execpath ?? 'node', args: [resolve(REPOSITORY_ROOT, 'packages/examples/acp-demo/lib/bin.js'), '--config', resolve(REPOSITORY_ROOT, 'examples/acp-agent/cordis.yml')], cwd: desktopWorkspace(), env }
 }
 
-function permissionLabel(kind: PermissionRequest['options'][number]['kind']): string { switch (kind) { case 'allow_once': return '仅本次允许'; case 'allow_always': return '本任务内允许'; case 'reject_once': return '拒绝'; case 'reject_always': return '始终拒绝'; default: return kind } }
 function directoryCrumbs(path: string): DesktopDirectoryCrumb[] { const parsed = parse(path); const crumbs: DesktopDirectoryCrumb[] = []; let current = parsed.root; if (current !== '') crumbs.push({ name: parsed.root, path: parsed.root, hidden: false }); const relative = path.slice(parsed.root.length); for (const segment of relative.split(sep).filter(Boolean)) { current = current === '' ? segment : join(current, segment); crumbs.push({ name: segment, path: current, hidden: segment.startsWith('.') }) } return crumbs }
 async function listDirectory(value: unknown): Promise<DesktopDirectoryListing> { const home = app.getPath('home'); const path = value === undefined || value === null || value === '' ? home : workspacePath(value); const children = await readdir(path, { withFileTypes: true }); const visible = children.filter(entry => entry.isDirectory() || entry.isFile()).sort((left, right) => { if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1; return left.name.localeCompare(right.name) }); const truncated = visible.length > DIRECTORY_LIST_LIMIT; return { path, home, crumbs: directoryCrumbs(path), entries: visible.slice(0, DIRECTORY_LIST_LIMIT).map(entry => ({ name: entry.name, path: join(path, entry.name), kind: entry.isDirectory() ? 'directory' : 'file', hidden: entry.name.startsWith('.') })), truncated } }
 function childDirectory(parentValue: unknown, nameValue: unknown): string { const parent = workspacePath(parentValue), name = nonEmptyString(nameValue, 'directory name').trim(); if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) throw new Error('directory name must be one path segment'); return join(parent, name) }
 
-class AcpRuntimeSupervisor {
-  private readonly credentialLifetime = new DesktopRuntimeCredentialLifetime()
-  private notifications: Promise<void> = Promise.resolve()
-  private restoringSessions = false
-  private readonly loadingSessions = new Map<string, { cwd: string; promise: Promise<void> }>()
-  private connection: AcpRuntimeConnection | undefined
-  private connecting: Promise<AcpRuntimeConnection> | undefined
-  private window: BrowserWindow | undefined
-  private readonly unsubmittedSessions = new Set<string>()
-  private readonly detachedEmptySessions = new Set<string>()
-  private readonly preparingSessions = new Map<string, Promise<string>>()
-  private readonly sessionWorkspaces = new Map<string, string>()
-  attachWindow(window: BrowserWindow): void { this.window = window }
-  running(): boolean { return this.connection !== undefined || this.connecting !== undefined }
-  private publish(frame: DesktopRendererFrame): void {
-    const window = this.window
-    if (window === undefined || window.isDestroyed() || window.webContents.isDestroyed()) return
-    window.webContents.send('dsh:frame', frame)
-  }
-  private publishStatus(status: Extract<DesktopRendererFrame, { type: 'runtime-status' }>['status'], message?: string): void { this.publish({ type: 'runtime-status', status, ...(this.restoringSessions ? { sessionsRestoredByHost: true } : {}), ...(message === undefined ? {} : { message }) }) }
-  private async requestPermission(request: PermissionRequest): Promise<ReturnType<NonNullable<AcpClientHandlers['onPermissionRequest']>> extends Promise<infer R> ? R : never> { const window = this.window; if (window === undefined || request.options.length === 0) return { outcome: { outcome: 'cancelled' } }; const buttons = request.options.map(option => permissionLabel(option.kind)); const result = await dialog.showMessageBox(window, { type: 'warning', message: `Orbis AI 请求执行工具操作 ${request.toolCall.toolCallId}`, detail: '请确认是否执行此操作。文件与系统访问仍受客户端权限限制。', buttons, cancelId: Math.max(0, request.options.findIndex(option => option.kind.startsWith('reject_'))), noLink: true }); const option = request.options[result.response]; return option === undefined ? { outcome: { outcome: 'cancelled' } } : { outcome: { outcome: 'selected', optionId: option.optionId } } }
-  async start(): Promise<void> {
-    if (process.env.OBIS_DESKTOP_REQUIRED?.trim() === '1' && enterpriseRuntimeScope() === undefined) {
-      this.publishStatus('stopped', 'Waiting for a validated enterprise runtime scope')
-      throw new Error('A validated enterprise runtime scope is required before ACP Runtime can start')
-    }
-    if (this.connection !== undefined) return; if (this.connecting !== undefined) { await this.connecting; return } this.publishStatus('starting'); const pending = desktopRuntimeSpec(this.credentialLifetime).then(spec => connectAcpRuntime(spec, { onSessionUpdate: (notification) => { this.notifications = this.notifications.then(() => assertEnterpriseSessionAccess(notification.sessionId)).then(() => { this.publish({ type: 'session-update', sessionId: notification.sessionId, notification }) }).catch(() => {}) }, onPermissionRequest: request => this.requestPermission(request), onRuntimeStderr: (text) => { process.stderr.write(`[desktop-runtime] ${text}`) } })); this.connecting = pending; try { const connection = await pending; this.connection = connection; this.publishStatus('ready'); void connection.client.closed.then(() => { if (this.connection !== connection) return; this.connection = undefined; this.publishStatus('failed', 'ACP Runtime connection closed unexpectedly') }) } catch (error: unknown) { this.publishStatus('failed', error instanceof Error ? error.message : String(error)); throw error } finally { if (this.connecting === pending) this.connecting = undefined } }
-  async stop(): Promise<void> { if (this.connection === undefined && this.connecting !== undefined) await this.connecting.catch(() => {}); const connection = this.connection; this.connection = undefined; this.connecting = undefined; if (connection === undefined) { this.publishStatus('stopped'); return } await connection.dispose(); this.publishStatus('stopped') }
-  async restart(): Promise<void> {
-    for (const id of this.unsubmittedSessions) this.detachedEmptySessions.add(id)
-    await this.stop()
-    await this.start()
-  }
-  private async runtime(): Promise<AcpRuntimeConnection> { await this.start(); if (this.connection === undefined) throw new Error('ACP Runtime is not available'); return this.connection }
-  workspace(): string { return desktopWorkspace() }
-  async listSessions(cwd = desktopWorkspace()): Promise<DesktopSessionSummary[]> {
-    const runtime = await this.runtime()
-    const result = await runtime.client.listSessions({ cwd })
-    const rows = result.sessions.map(session => ({
-      sessionId: session.sessionId,
-      cwd: session.cwd,
-      ...(session.title === undefined || session.title === null ? {} : { title: session.title }),
-    }))
-    return filterEnterpriseSessions(rows)
-  }
-  async createSession(cwd = desktopWorkspace(), replaceEmptySessionId?: string): Promise<string> {
-    if (replaceEmptySessionId !== undefined) {
-      await assertEnterpriseSessionAccess(replaceEmptySessionId)
-      if (!this.unsubmittedSessions.has(replaceEmptySessionId) || this.sessionWorkspaces.get(replaceEmptySessionId) !== cwd) throw new Error('只能重新建立当前工作区中尚未发送的空会话')
-    }
-    const runtime = await this.runtime()
-    const created = await runtime.client.newSession({ cwd, mcpServers: [] })
-    await claimEnterpriseSession(created.sessionId, cwd)
-    this.sessionWorkspaces.set(created.sessionId, cwd)
-    this.unsubmittedSessions.add(created.sessionId)
-    if (replaceEmptySessionId !== undefined) {
-      desktopContent().transferDraftAttachments(replaceEmptySessionId, created.sessionId)
-      this.detachedEmptySessions.delete(replaceEmptySessionId)
-      this.unsubmittedSessions.delete(replaceEmptySessionId)
-      this.sessionWorkspaces.delete(replaceEmptySessionId)
-    }
-    return created.sessionId
-  }
-  async loadSession(sessionId: string, cwd = desktopWorkspace()): Promise<void> {
-    const current = this.loadingSessions.get(sessionId)
-    if (current) {
-      if (current.cwd !== cwd) throw new Error('会话正在另一个工作区恢复。')
-      return current.promise
-    }
-    const promise = this.replaySession(sessionId, cwd)
-    this.loadingSessions.set(sessionId, { cwd, promise })
-    try { await promise } finally {
-      if (this.loadingSessions.get(sessionId)?.promise === promise) this.loadingSessions.delete(sessionId)
-    }
-  }
-  private async replaySession(sessionId: string, cwd: string): Promise<void> {
-    await assertEnterpriseSessionAccess(sessionId)
-    const runtime = await this.runtime()
-    this.publish({ type: 'session-replay', sessionId, phase: 'starting' })
-    try {
-      await runtime.client.loadSession({ sessionId, cwd, mcpServers: [] })
-      await this.notifications
-      this.publish({ type: 'session-replay', sessionId, phase: 'ready' })
-      this.sessionWorkspaces.set(sessionId, cwd)
-    } catch (error) {
-      this.publish({ type: 'session-replay', sessionId, phase: 'failed' })
-      throw error
-    }
-  }
-  private activePrompts = 0
-  hasActivePrompts(): boolean { return this.activePrompts > 0 }
-  private async renewCredentials(): Promise<void> {
-    this.restoringSessions = true
-    try {
-      await this.restart()
-      for (const [id, cwd] of this.sessionWorkspaces) {
-        if (!this.unsubmittedSessions.has(id)) await this.loadSession(id, cwd)
-      }
-    } finally { this.restoringSessions = false }
-  }
-  async prepareSession(sessionId: string): Promise<string> {
-    const current = this.preparingSessions.get(sessionId)
-    if (current) return current
-    const operation = this.prepareOwnedSession(sessionId)
-    this.preparingSessions.set(sessionId, operation)
-    try { return await operation } finally {
-      if (this.preparingSessions.get(sessionId) === operation) this.preparingSessions.delete(sessionId)
-    }
-  }
-  private async prepareOwnedSession(sessionId: string): Promise<string> {
-    await assertEnterpriseSessionAccess(sessionId)
-    return this.credentialLifetime.run(() => this.renewCredentials(), async () => {
-      if (!this.detachedEmptySessions.has(sessionId)) return sessionId
-      const cwd = this.sessionWorkspaces.get(sessionId)
-      if (cwd === undefined) throw new Error('空会话缺少工作区')
-      return this.createSession(cwd, sessionId)
-    })
-  }
-  async prompt(sessionId: string, parts: readonly DesktopPromptPart[]): Promise<DesktopPromptResult> {
-    if (modelManager.changing) throw new Error('模型正在切换，请稍后发送')
-    this.activePrompts++
-    try {
-      return await this.credentialLifetime.run(() => this.renewCredentials(), () => this.performPrompt(sessionId, parts))
-    } finally { this.activePrompts-- }
-  }
-  private async performPrompt(sessionId: string, parts: readonly DesktopPromptPart[]): Promise<DesktopPromptResult> { await assertEnterpriseSessionAccess(sessionId); const runtime = await this.runtime(), cwd = this.sessionWorkspaces.get(sessionId) ?? desktopWorkspace(), before = await desktopContent().snapshot(cwd), prompt: ContentBlock[] = [], attachmentIds: string[] = []; for (const part of parts) { if (part.type === 'text') { if (part.text !== '') prompt.push({ type: 'text', text: part.text }); continue } prompt.push(...await desktopContent().promptBlocks(sessionId, [part.attachmentId])); attachmentIds.push(part.attachmentId) } this.unsubmittedSessions.delete(sessionId); const result = await runtime.client.prompt({ sessionId, prompt }); desktopContent().consumeAttachments(sessionId, [...new Set(attachmentIds)]); return { stopReason: result.stopReason, artifacts: await desktopContent().captureArtifacts(sessionId, cwd, before) } }
-  cancel(sessionId: string): void { void assertEnterpriseSessionAccess(sessionId).then(() => this.runtime()).then(runtime => runtime.client.cancel({ sessionId })).catch((error: unknown) => { this.publishStatus('failed', error instanceof Error ? error.message : String(error)) }) }
-  async closeSession(sessionId: string): Promise<void> {
-    await assertEnterpriseSessionAccess(sessionId)
-    const runtime = await this.runtime()
-    await runtime.client.closeSession({ sessionId })
-    this.unsubmittedSessions.delete(sessionId)
-    this.detachedEmptySessions.delete(sessionId)
-    this.sessionWorkspaces.delete(sessionId)
-  }
-}
-
-const supervisor = new AcpRuntimeSupervisor()
-const modelManager = new DesktopModelManager({
-  read: readStoredModelSettings,
-  write: writeStoredModelSettings,
-  validate: validateModelUpdate,
-  decrypt: settings => safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, 'base64')),
-  restart: () => supervisor.restart(),
-  active: () => supervisor.hasActivePrompts(),
-})
+const supervisor = new DesktopRuntimePool(
+  () => modelManager.read(),
+  snapshot => new AcpRuntimeSupervisor(desktopRuntimeSpec, snapshot, desktopContent, desktopDiagnostics, desktopWorkspace),
+  desktopWorkspace,
+  (previous, next) => { desktopContent().transferDraftAttachments(previous, next) },
+)
 onEnterpriseRuntimeScopeChange((_previous, next) => {
-  if (!supervisor.running()) return
-  const transition = next === undefined ? supervisor.stop() : supervisor.restart()
-  void transition.catch((error: unknown) => {
-    console.error('[enterprise-scope] failed to rotate ACP Runtime after scope change:', error)
-  })
+  const draining = diagnosticsStore?.shutdown()
+  void supervisor.invalidate(true).then(async () => {
+    await draining
+    if (next !== undefined) await supervisor.start()
+  }).catch((error: unknown) => { console.error('[enterprise-scope] failed to rotate ACP Runtime:', error) })
 })
+let diagnosticsStore: DesktopDiagnostics | undefined
+function desktopDiagnostics(): DesktopDiagnostics {
+  diagnosticsStore ??= new DesktopDiagnostics(join(app.getPath('userData'), 'logs', 'turns'), (error) => { console.error('[desktop-diagnostics]', error) })
+  return diagnosticsStore
+}
 let contentStore: DesktopContentStore | undefined
 function desktopContent(): DesktopContentStore { contentStore ??= new DesktopContentStore(join(app.getPath('home'), '.dsh', 'skills'), () => app.isPackaged ? packagedRuntimePath('app', 'skills') : resolve(REPOSITORY_ROOT, 'apps/cli/config/skills'), enterpriseRuntimeScope); return contentStore }
-function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean { return event.senderFrame?.url.startsWith(`${APP_ORIGIN}/`) === true }
+function trustedSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean { const raw = event.senderFrame?.url; if (raw === undefined) return false; try { const url = new URL(raw); return url.protocol === 'dsh-app:' && url.host === 'app' } catch { return false } }
 function nonEmptyString(value: unknown, label: string): string { if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${label} must be a non-empty string`); return value }
 
 function installIpc(): void {
   ipcMain.handle('dsh:workspace', (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return supervisor.workspace() })
   ipcMain.handle('dsh:session-list', async (event, rawCwd: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return supervisor.listSessions(workspacePath(rawCwd)) })
-  ipcMain.handle('dsh:session-create', async (event, rawCwd: unknown, replaceEmptySessionId?: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return supervisor.createSession(workspacePath(rawCwd), replaceEmptySessionId === undefined ? undefined : nonEmptyString(replaceEmptySessionId, 'replaceEmptySessionId')) })
-  ipcMain.handle('dsh:session-prepare', async (event, rawSessionId: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return supervisor.prepareSession(nonEmptyString(rawSessionId, 'sessionId')) })
+  ipcMain.handle('dsh:session-create', async (event, rawCwd: unknown, replaceEmptySessionId?: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const previous = replaceEmptySessionId === undefined ? undefined : nonEmptyString(replaceEmptySessionId, 'replaceEmptySessionId'); if (previous !== undefined) await assertEnterpriseSessionAccess(previous); return supervisor.createSession(workspacePath(rawCwd), previous) })
+  ipcMain.handle('dsh:session-prepare', async (event, rawSessionId: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const id = nonEmptyString(rawSessionId, 'sessionId'); await assertEnterpriseSessionAccess(id); return supervisor.prepareSession(id) })
   ipcMain.handle('dsh:session-load', async (event, rawSessionId: unknown, rawCwd: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); await supervisor.loadSession(nonEmptyString(rawSessionId, 'sessionId'), workspacePath(rawCwd)) })
-  ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawPrompt: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return supervisor.prompt(nonEmptyString(rawSessionId, 'sessionId'), promptParts(rawPrompt)) })
-  ipcMain.on('dsh:session-cancel', (event, value: unknown) => { if (trustedSender(event) && typeof value === 'string' && value.length > 0) supervisor.cancel(value) })
+  ipcMain.handle('dsh:session-prompt', async (event, rawSessionId: unknown, rawPrompt: unknown) => {
+    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
+    const sessionId = nonEmptyString(rawSessionId, 'sessionId')
+    await assertEnterpriseSessionAccess(sessionId)
+    if (supervisor.busy(sessionId)) throw new Error('同一会话已有任务正在运行')
+    const parts = promptParts(rawPrompt)
+    const log = desktopDiagnostics().begin(sessionId, { sessionId, parts })
+    try {
+      const result = await supervisor.prompt(sessionId, parts)
+      await desktopDiagnostics().finish(sessionId, log, 'completed', result)
+      return result
+    } catch (error: unknown) {
+      await desktopDiagnostics().finish(sessionId, log, 'failed', { error })
+      throw error
+    }
+  })
+  ipcMain.on('dsh:session-cancel', (event, value: unknown) => { if (trustedSender(event) && typeof value === 'string' && value.length > 0) void assertEnterpriseSessionAccess(value).then(() => { supervisor.cancel(value) }).catch(console.error) })
   ipcMain.handle('dsh:session-close', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); await supervisor.closeSession(nonEmptyString(value, 'sessionId')) })
   ipcMain.handle('dsh:directory-pick', async (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const window = BrowserWindow.fromWebContents(event.sender), options: Electron.OpenDialogOptions = { defaultPath: desktopWorkspace(), properties: ['openDirectory', 'createDirectory'] }; const result = window === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(window, options); return result.canceled ? null : result.filePaths[0] ?? null })
   ipcMain.handle('dsh:directory-list', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return listDirectory(value) })
@@ -489,18 +321,27 @@ function installIpc(): void {
   ipcMain.handle('dsh:attachment-remove', async (event, rawSessionId: unknown, rawId: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const sessionId=nonEmptyString(rawSessionId,'sessionId');await assertEnterpriseSessionAccess(sessionId);await desktopContent().removeAttachment(sessionId, nonEmptyString(rawId, 'attachmentId')) })
   ipcMain.handle('dsh:artifact-save', async (event, rawSessionId: unknown, rawPath: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const sessionId = nonEmptyString(rawSessionId, 'sessionId'); await assertEnterpriseSessionAccess(sessionId); const path = workspacePath(rawPath), window = BrowserWindow.fromWebContents(event.sender), options: Electron.SaveDialogOptions = { title: '另存产物', defaultPath: basename(path) }, result = window === null ? await dialog.showSaveDialog(options) : await dialog.showSaveDialog(window, options); if (result.canceled) return null; await desktopContent().copyArtifact(sessionId, path, result.filePath); return result.filePath })
   ipcMain.handle('dsh:artifact-export', async (event, rawSessionId: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const sessionId = nonEmptyString(rawSessionId, 'sessionId'); await assertEnterpriseSessionAccess(sessionId); const window = BrowserWindow.fromWebContents(event.sender), options: Electron.SaveDialogOptions = { title: '导出全部产物', defaultPath: `dsh-artifacts-${sessionId.slice(0, 8)}.zip` }, result = window === null ? await dialog.showSaveDialog(options) : await dialog.showSaveDialog(window, options); if (result.canceled) return null; await desktopContent().exportZip(sessionId, result.filePath); return result.filePath })
-  ipcMain.handle('dsh:model-settings', async (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return publicModelSettings(await readStoredModelSettings()) })
-  ipcMain.handle('dsh:model-settings-save', async (event, value: unknown) => {
+  ipcMain.handle('dsh:model-settings', async (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.settings() })
+  ipcMain.handle('dsh:model-profiles', async (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.list() })
+  ipcMain.handle('dsh:model-inspect', async (event, value: unknown, target: unknown, profileId: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return publicModelSettings(await modelManager.save(value))
+    if (target !== undefined && target !== 'primary' && target !== 'subagent') throw new Error('模型检测目标无效')
+    return modelManager.inspect(value, target, profileId === undefined ? undefined : nonEmptyString(profileId, 'profileId'))
   })
-  ipcMain.handle('dsh:model-discover', async (event, value: unknown) => {
+  ipcMain.handle('dsh:model-settings-save', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.save(value) })
+  ipcMain.handle('dsh:model-discover', async (event, value) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.discover(value) })
+  ipcMain.handle('dsh:model-select', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.selectModel(nonEmptyString(value, 'model')) })
+  ipcMain.handle('dsh:model-profile-select', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.select(nonEmptyString(value, 'profileId')) })
+  ipcMain.handle('dsh:model-remove', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return modelManager.remove(nonEmptyString(value, 'profileId')) })
+  ipcMain.handle('dsh:turn-log-open', async (event, rawSessionId: unknown, rawMessageId: unknown) => {
     if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return modelManager.discover(value)
-  })
-  ipcMain.handle('dsh:model-select', async (event, value: unknown) => {
-    if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender')
-    return publicModelSettings(await modelManager.select(value))
+    const sessionId = nonEmptyString(rawSessionId, 'sessionId')
+    const messageId = nonEmptyString(rawMessageId, 'messageId')
+    await assertEnterpriseSessionAccess(sessionId)
+    const path = await desktopDiagnostics().find(sessionId, messageId)
+    await assertEnterpriseSessionAccess(sessionId)
+    const error = await shell.openPath(path)
+    if (error) throw new Error(error)
   })
   ipcMain.handle('dsh:web-search-settings', async (event) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); return publicWebSearchSettings(await readStoredWebSearchSettings()) })
   ipcMain.handle('dsh:web-search-settings-save', async (event, value: unknown) => { if (!trustedSender(event)) throw new Error('desktop IPC rejected an untrusted sender'); const stored = validateWebSearchUpdate(value, await readStoredWebSearchSettings()); await writeStoredWebSearchSettings(stored); await supervisor.restart(); return publicWebSearchSettings(stored) })
@@ -511,7 +352,7 @@ function installIpc(): void {
 }
 
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf' }
-function installResourceProtocol(): void { protocol.handle('dsh-app', async (request) => { const url = new URL(request.url); if (url.host !== 'app' || request.method !== 'GET') return new Response('not found', { status: 404 }); const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html', path = resolve(RENDERER_ROOT, relative); if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) return new Response('forbidden', { status: 403 }); try { const body = await readFile(path); return new Response(body, { headers: { 'content-type': MIME[extname(path)] ?? 'application/octet-stream', 'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src http: https: file: about:; connect-src 'none'; base-uri 'none'; form-action 'none'" } }) } catch { return new Response('not found', { status: 404 }) } }) }
+function installResourceProtocol(): void { protocol.handle('dsh-app', async (request) => { const url = new URL(request.url); if (url.host !== 'app' || request.method !== 'GET') return new Response('not found', { status: 404 }); const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html', path = resolve(RENDERER_ROOT, relative); if (path !== RENDERER_ROOT && !path.startsWith(RENDERER_ROOT + sep)) return new Response('forbidden', { status: 403 }); try { const body = await readFile(path); return new Response(body, { headers: { 'content-type': MIME[extname(path)] ?? 'application/octet-stream', 'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src http: https: file: about:; connect-src 'none'; base-uri 'none'; form-action 'none'" } }) } catch { return new Response('not found', { status: 404 }) } }) }
 
 async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({ width: 1280, height: 820, minWidth: 860, minHeight: 560, title: 'Orbis AI', titleBarStyle: 'hidden', trafficLightPosition: { x: 18, y: 18 }, backgroundColor: '#ffffff', webPreferences: { preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: true } })
@@ -534,6 +375,7 @@ async function main(): Promise<void> {
     await mkdir(isolatedData, { recursive: true, mode: 0o700 })
     app.setPath('userData', isolatedData)
   }
+  await mkdir((process.platform === 'win32' ? join(desktopWorkspace(), '.dsh', 'cache', 'npm') : join(app.getPath('userData'), 'cache', 'npm')), { recursive: true, mode: 0o700 })
   if (!app.requestSingleInstanceLock()) { app.quit(); return }
   await app.whenReady()
   app.on('web-contents-created', (_event, contents) => { if (contents.getType() !== 'webview') return; contents.setWindowOpenHandler(({ url }) => { try { const parsed = new URL(url); if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'file:') void contents.loadURL(parsed.href) } catch {} return { action: 'deny' } }); contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) }) })
@@ -547,10 +389,23 @@ async function main(): Promise<void> {
   ] }, { role: 'editMenu', label: '编辑' }, { role: 'windowMenu', label: '窗口' }]))
   const window = await createWindow()
   app.on('second-instance', () => { if (window.isMinimized()) window.restore(); window.focus() })
+  window.on('unresponsive', () => { desktopDiagnostics().broadcast('renderer-unresponsive', {}) })
+  window.on('responsive', () => { desktopDiagnostics().broadcast('renderer-responsive', {}) })
+  window.webContents.on('render-process-gone', (_event, details) => { desktopDiagnostics().broadcast('renderer-crash', details) })
   const runtimeStart = supervisor.start()
-  if (process.env.DSH_DESKTOP_DIST_SMOKE === '1') void runtimeStart.then(() => supervisor.listSessions()).then(() => { process.stderr.write('desktop-dist-smoke: ready\n'); app.quit() }).catch((error: unknown) => { process.stderr.write(`desktop-dist-smoke: ${error instanceof Error ? error.message : String(error)}\n`); app.exit(1) }); else void runtimeStart.catch(() => {})
+  if (process.env.DSH_DESKTOP_DIST_SMOKE === '1') void runtimeStart.then(() => supervisor.listSessions()).then(async () => { await verifyDesktopTheme(window); process.stderr.write('desktop-dist-smoke: ready\n'); app.quit() }).catch((error: unknown) => { process.stderr.write(`desktop-dist-smoke: ${error instanceof Error ? error.message : String(error)}\n`); app.exit(1) }); else void runtimeStart.catch(() => {})
 }
 
-app.on('before-quit', (event) => { if (!supervisor.running()) return; event.preventDefault(); void supervisor.stop().finally(() => { app.quit() }) })
+let quitting = false
+app.on('before-quit', (event) => {
+  if (quitting || (!supervisor.running() && diagnosticsStore === undefined)) return
+  event.preventDefault()
+  quitting = true
+  void (async () => {
+    try { await supervisor.stop() } finally { await diagnosticsStore?.shutdown() }
+  })()
+    .catch((error: unknown) => { console.error('[desktop-shutdown]', error) })
+    .finally(() => { app.quit() })
+})
 app.on('window-all-closed', () => { app.quit() })
 void main()

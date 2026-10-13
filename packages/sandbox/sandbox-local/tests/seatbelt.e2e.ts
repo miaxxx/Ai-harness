@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -51,6 +51,22 @@ function runConfined(sandbox: LocalSandboxProvider, command: string, policy: San
 }
 
 describe.skipIf(!seatbeltUsable)('sandbox-local: real Seatbelt confinement through sandbox-exec', () => {
+  it('installs with a dedicated npm cache while keeping sibling application data protected', async () => {
+    const workdir = await tempDir(homedir())
+    const cache = await tempDir(homedir())
+    const protectedData = await tempDir(homedir())
+    await writeFile(join(workdir, 'package.json'), JSON.stringify({ name: 'mona-cache-smoke', version: '1.0.0' }))
+    const sandbox = await provider()
+    const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: workdir, extraWriteRoots: [cache] }
+    const installed = runConfined(sandbox, `cd '${workdir}' && npm install --offline --ignore-scripts --no-audit --no-fund --cache '${cache}'`, policy)
+    expect(installed.result.status, installed.result.stderr).toBe(0)
+    expect(existsSync(join(cache, '_logs'))).toBe(true)
+    const denied = runConfined(sandbox, `echo forbidden > '${protectedData}/denied.txt'`, policy)
+    expect(denied.result.status).not.toBe(0)
+    expect(existsSync(join(protectedData, 'denied.txt'))).toBe(false)
+    const readOnly = runConfined(sandbox, `echo forbidden > '${cache}/denied.txt'`, { ...policy, mode: 'read-only' })
+    expect(readOnly.result.status).not.toBe(0)
+  })
   it('read-only denies a write — the file must NOT exist, and the kernel speaks the advertised dialect', async () => {
     const workdir = await tempDir(tmpdir())
     const sandbox = await provider()
