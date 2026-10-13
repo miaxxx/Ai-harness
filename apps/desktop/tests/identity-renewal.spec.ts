@@ -3,10 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 
-const native = vi.hoisted(() => ({ directory: '', synchronize: vi.fn() }))
+const native = vi.hoisted(() => {
+  let start!: () => void
+  const ready = new Promise<void>((resolve) => { start = resolve })
+  return { directory: '', synchronize: vi.fn(), ready, start,
+    handlers: new Map<string, (...args: unknown[]) => unknown>() }
+})
 vi.mock('electron', () => ({
-  app: { getPath: () => native.directory, whenReady: () => new Promise(() => {}), getVersion: () => '0.1.0' },
-  ipcMain: { handle: vi.fn() },
+  app: { getPath: () => native.directory, whenReady: () => native.ready, getVersion: () => '0.1.0' },
+  ipcMain: { handle: (name: string, handler: (...args: unknown[]) => unknown) => { native.handlers.set(name, handler) } },
   safeStorage: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value),
     decryptString: (value: Buffer) => value.toString() },
 }))
@@ -63,5 +68,21 @@ it('shares native renewal and waits for the linked Web session before releasing 
     const cleared = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
     expect(cleared['encryptedRefreshToken']).toBeUndefined()
     expect(cleared['businessWebURL']).toBe(previous.businessWebURL)
+    await writeFile(path, JSON.stringify({ ...previous, expiresAt: '2099-01-01T00:00:00Z' }))
+    native.start()
+    await vi.waitFor(() => { expect(native.handlers.has('dsh:obis-identity-logout')).toBe(true) })
+    let completeLogout!: () => void
+    const logoutReady = new Promise<void>((resolve) => { completeLogout = resolve })
+    const logoutFetch = vi.fn(async () => { await logoutReady; return new Response('{}', { status: 200 }) })
+    vi.stubGlobal('fetch', logoutFetch)
+    const logout = native.handlers.get('dsh:obis-identity-logout')
+    if (!logout) throw new Error('Identity logout was not installed')
+    const signingOut = logout({ senderFrame: { url: 'dsh-app://app/index.html' } })
+    await vi.waitFor(() => { expect(logoutFetch).toHaveBeenCalledOnce() })
+    await expect(desktopObisAccess()).rejects.toThrow('正在退出企业')
+    completeLogout()
+    await signingOut
+    const loggedOut = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    expect(loggedOut['encryptedAccessToken']).toBeUndefined()
   } finally { releaseWeb(); await rm(native.directory, { recursive: true }); vi.unstubAllGlobals(); vi.unstubAllEnvs() }
 })

@@ -303,6 +303,7 @@ let linkedBusinessAccessToken: string | undefined
 let linkedBusinessSession: { sessionToken: string; expiresAt: string } | undefined
 
 let renewal: Promise<StoredObisIdentity> | undefined
+let signingOut = false
 
 async function refreshStored(stored: StoredObisIdentity): Promise<StoredObisIdentity> {
   if (renewal) return renewal
@@ -332,6 +333,7 @@ async function renewStored(stored: StoredObisIdentity): Promise<StoredObisIdenti
   } catch (error) {
     if (error instanceof ObisHttpError && (error.status === 401 || error.status === 403)) {
       setEnterpriseRuntimeScope(undefined)
+      await clearBusinessIdentity()
       await writeStored(withoutSession(stored))
     }
     throw error
@@ -341,6 +343,7 @@ async function renewStored(stored: StoredObisIdentity): Promise<StoredObisIdenti
 async function authenticatedStored(): Promise<{ stored: StoredObisIdentity; accessToken: string }> {
   if (renewal) await renewal
   let stored = await ensureStored()
+  if (signingOut) throw new Error('正在退出企业，请稍后重新登录。')
   if (!stored) throw new Error('Configure OBIS before using enterprise controls')
   let accessToken = decrypted(stored.encryptedAccessToken)
   const expiring = stored.expiresAt !== undefined && Date.parse(stored.expiresAt) <= Date.now() + 30_000
@@ -515,6 +518,7 @@ function installIdentityIpc(): void {
       throw new Error('OBIS URL and tenant are required')
     }
     if (renewal) await renewal
+    if (signingOut) throw new Error('正在退出企业，请稍后重新登录。')
     const existing = await readStored()
     const baseURL = validateBaseURL(row.baseURL)
     const tenantId = row.tenantId.trim()
@@ -550,6 +554,7 @@ function installIdentityIpc(): void {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       throw new Error('Email and password are required')
     }
+    if (signingOut) throw new Error('正在退出企业，请稍后重新登录。')
     const credentials = value as { email?: unknown; password?: unknown }
     if (typeof credentials.email !== 'string' || !credentials.email.trim() || typeof credentials.password !== 'string' || !credentials.password) {
       throw new Error('Email and password are required')
@@ -642,6 +647,7 @@ function installIdentityIpc(): void {
       accessToken,
     })
     if (target?.deviceId === stored.deviceId) {
+      await clearBusinessIdentity()
       setEnterpriseRuntimeScope(undefined)
       await writeStored(withoutSession(stored))
     }
@@ -677,32 +683,37 @@ function installIdentityIpc(): void {
 
   ipcMain.handle('dsh:obis-identity-logout', async (event) => {
     requireTrusted(event)
-    await clearBusinessIdentity()
-    if (renewal) await renewal.catch(() => { /* Local logout still clears credentials after failed renewal. */ })
-    const stored = await ensureStored()
-    setEnterpriseRuntimeScope(undefined)
-    if (!stored) return publicStatus(undefined)
+    signingOut = true
+    try {
+      await clearBusinessIdentity()
+      if (renewal) await renewal.catch(() => { /* Local logout still clears credentials after failed renewal. */ })
+      const stored = await ensureStored()
+      setEnterpriseRuntimeScope(undefined)
+      if (!stored) return publicStatus(undefined)
 
-    let accessToken = decrypted(stored.encryptedAccessToken)
-    const expired = stored.expiresAt !== undefined && Date.parse(stored.expiresAt) <= Date.now()
-    if ((!accessToken || expired) && stored.encryptedRefreshToken) {
-      try {
-        const refreshed = await refreshStored(stored)
-        accessToken = decrypted(refreshed.encryptedAccessToken)
-      } catch {
-        accessToken = undefined
+      let accessToken = decrypted(stored.encryptedAccessToken)
+      const expired = stored.expiresAt !== undefined && Date.parse(stored.expiresAt) <= Date.now()
+      if ((!accessToken || expired) && stored.encryptedRefreshToken) {
+        try {
+          const refreshed = await refreshStored(stored)
+          accessToken = decrypted(refreshed.encryptedAccessToken)
+        } catch {
+          accessToken = undefined
+        }
       }
-    }
-    if (accessToken) {
-      try {
-        await requestJson<unknown>(stored, '/v1/auth/logout', { method: 'POST', accessToken })
-      } catch {
-        // Local credentials are destroyed even if OBIS is offline.
+      if (accessToken) {
+        try {
+          await requestJson<unknown>(stored, '/v1/auth/logout', { method: 'POST', accessToken })
+        } catch {
+          // Local credentials are destroyed even if OBIS is offline.
+        }
       }
+      const cleared = withoutSession(stored)
+      await writeStored(cleared)
+      return publicStatus(cleared)
+    } finally {
+      try { await clearBusinessIdentity() } finally { signingOut = false }
     }
-    const cleared = withoutSession(stored)
-    await writeStored(cleared)
-    return publicStatus(cleared)
   })
 }
 
