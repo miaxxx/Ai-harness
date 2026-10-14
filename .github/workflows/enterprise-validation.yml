@@ -161,6 +161,25 @@ jobs:
           NODE
       - name: Install OBIS Kernel fixture dependencies
         run: npm --prefix _compat/obis/10-kernel ci --no-audit --no-fund
+      - name: Build the pinned OBIS Web and certify API route coverage
+        run: |
+          npm --prefix _compat/obis/20-web ci --no-audit --no-fund
+          npm --prefix _compat/obis/20-web run build -- --webpack
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { execFileSync } from 'node:child_process'
+          import { access, readFile } from 'node:fs/promises'
+          const root='_compat/obis'
+          const paths=execFileSync('git',['-C',root,'ls-files','-z','20-web/app/api/**/route.ts'],{encoding:'utf8'}).split('\0').filter(Boolean)
+          assert.ok(paths.length > 0,'The pinned checkout contains no Web API routes.')
+          const built=JSON.parse(await readFile(`${root}/20-web/.next/server/app-paths-manifest.json`,'utf8'))
+          for(const path of paths){
+            await access(`${root}/${path}`)
+            const route='/'+path.slice('20-web/app/'.length).replace(/\.ts$/,'')
+            assert.ok(Object.hasOwn(built,route),`Missing built Web API route: ${route}`)
+          }
+          console.log(`Pinned OBIS Web API coverage: ${paths.length} routes passed.`)
+          NODE
       - name: Verify shared renderer behavior
         run: npm --prefix _compat/obis/25-ui-runtime run verify
       - name: Verify real Kernel persistence and login handoff
