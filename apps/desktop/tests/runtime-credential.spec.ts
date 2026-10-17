@@ -1,9 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopRuntimeCredentialLifetime } from '../src/desktop-runtime-credential.ts'
+import { DesktopRuntimeCredentialLifetime, desktopRuntimeCredentialExpiry } from '../src/desktop-runtime-credential.ts'
 
 afterEach(() => vi.useRealTimers())
 
 describe('native runtime delegation lifetime', () => {
+  it('renews before the source human session rotates even when the delegated token expires later', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0)
+    const lifetime = new DesktopRuntimeCredentialLifetime()
+    const expiry = desktopRuntimeCredentialExpiry(new Date(1_200_000).toISOString(), new Date(900_000).toISOString(), 30_000)
+    expect(Date.parse(expiry)).toBe(870_000)
+    lifetime.setExpiry(expiry)
+    const renew = vi.fn(async () => { lifetime.setExpiry(new Date(1_700_000).toISOString()) })
+    vi.setSystemTime(869_999)
+    await lifetime.run(renew, async () => 'before')
+    expect(renew).not.toHaveBeenCalled()
+    vi.setSystemTime(870_000)
+    expect(await lifetime.run(renew, async () => 'after')).toBe('after')
+    expect(renew).toHaveBeenCalledOnce()
+    expect(desktopRuntimeCredentialExpiry(new Date(100).toISOString(), undefined, 30)).toBe(new Date(100).toISOString())
+    expect(desktopRuntimeCredentialExpiry(new Date(100).toISOString(), new Date(500).toISOString(), 30)).toBe(new Date(100).toISOString())
+    expect(() => desktopRuntimeCredentialExpiry('invalid', undefined, 30)).toThrow('有效期无效')
+    expect(() => desktopRuntimeCredentialExpiry(new Date(100).toISOString(), 'invalid', 30)).toThrow('有效期无效')
+  })
+
   it('leaves valid and undelegated runtime prompts unchanged', async () => {
     const lifetime = new DesktopRuntimeCredentialLifetime(), renew = vi.fn()
     expect(await lifetime.run(renew, async () => 'local')).toBe('local')

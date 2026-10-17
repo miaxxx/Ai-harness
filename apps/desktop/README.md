@@ -86,3 +86,5 @@ Authenticated startup prepares the first business document behind chat. Business
 Valid linked Web sessions are reused without decrypting native credentials or rewriting the browser cookie on each navigation. Credential rotation updates the cookie through the identity owner; logout and server sign-in redirects clear it.
 
 The native identity owner schedules access renewal 30 seconds before expiry without renderer activity, synchronizes the linked Web cookie, and retries network failures after 30 seconds. Credential writes are serialized; status responses cannot overwrite rotated or cleared credentials. Shutdown cancels pending deadlines. Business operations are never replayed by renewal.
+
+Host credential readiness expires at the earlier of delegated expiry and the source human session’s planned renewal. A later delegated expiry cannot keep an idle Host using a source session that native renewal has revoked; prompt admission obtains a new runtime credential before sending.

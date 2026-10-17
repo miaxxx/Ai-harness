@@ -1,4 +1,24 @@
 /** Host credential expiry is checked before a prompt can reach ACP. */
+/**
+ * Bound Host readiness by its delegation expiry and the planned rotation of its source human session.
+ * @param delegatedExpiresAt Expiry returned by the delegation issuer.
+ * @param sourceExpiresAt Persisted human access expiry, when present.
+ * @param renewalLeadMs Native renewal lead time in milliseconds.
+ * @returns The earliest deadline after which a prompt must obtain a new runtime credential.
+ */
+export function desktopRuntimeCredentialExpiry(
+  delegatedExpiresAt: string,
+  sourceExpiresAt: string | undefined,
+  renewalLeadMs: number,
+): string {
+  const delegated = Date.parse(delegatedExpiresAt)
+  const source = sourceExpiresAt === undefined ? undefined : Date.parse(sourceExpiresAt)
+  if (!Number.isFinite(delegated) || (source !== undefined && !Number.isFinite(source))
+    || !Number.isSafeInteger(renewalLeadMs) || renewalLeadMs < 0) throw new Error('企业运行凭证有效期无效。')
+  return new Date(source === undefined ? delegated : Math.min(delegated, source - renewalLeadMs)).toISOString()
+}
+
+/** Admit prompts after credential renewal without interrupting active replies or replaying operations. */
 export class DesktopRuntimeCredentialLifetime {
   private expiresAt: number | undefined
   private renewing: Promise<void> | undefined

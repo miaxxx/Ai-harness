@@ -1,3 +1,4 @@
+import { desktopRuntimeCredentialExpiry } from './desktop-runtime-credential.ts'
 import { DesktopIdentityRefreshTimer } from './desktop-identity-refresh-timer.ts'
 import { validateBusinessWebURL } from './desktop-business-url.ts'
 import { configureBusinessIdentity, clearBusinessIdentity, refreshBusinessIdentity } from './desktop-business-window.ts'
@@ -37,6 +38,7 @@ import {
 
 const APP_ORIGIN = 'dsh-app://app'
 const STORE_VERSION = 1
+const IDENTITY_RENEWAL_LEAD_MS = 30_000
 
 interface StoredObisIdentity {
   version: 1
@@ -363,7 +365,7 @@ async function authenticatedStored(): Promise<{ stored: StoredObisIdentity; acce
   if (signingOut) throw new Error('正在退出企业，请稍后重新登录。')
   if (!stored) throw new Error('Configure OBIS before using enterprise controls')
   let accessToken = decrypted(stored.encryptedAccessToken)
-  const expiring = stored.expiresAt !== undefined && Date.parse(stored.expiresAt) <= Date.now() + 30_000
+  const expiring = stored.expiresAt !== undefined && Date.parse(stored.expiresAt) <= Date.now() + IDENTITY_RENEWAL_LEAD_MS
   if (!accessToken || expiring) {
     stored = await refreshStored(stored)
     accessToken = decrypted(stored.encryptedAccessToken)
@@ -389,7 +391,7 @@ async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
 
   const accessToken = decrypted(stored.encryptedAccessToken)
   const stillValid = accessToken !== undefined
-    && (stored.expiresAt === undefined || Date.parse(stored.expiresAt) > Date.now() + 30_000)
+    && (stored.expiresAt === undefined || Date.parse(stored.expiresAt) > Date.now() + IDENTITY_RENEWAL_LEAD_MS)
   if (stillValid) {
     try {
       const me = await fetchMe({ baseURL: stored.baseURL, accessToken })
@@ -518,7 +520,7 @@ export async function desktopObisRuntimeEnvironment(expected: DesktopEnterpriseR
     deviceId: stored.deviceId, harnessOrigin: new URL(webURL).origin, scope: expected, autonomy: 'human-approved' })
   if (!sameEnterpriseRuntimeScope(enterpriseRuntimeScope(), expected)) throw new Error('企业作用域已变化，请重新启动对话。')
   return { OBIS_RUNTIME_BASE_URL: stored.baseURL, OBIS_DELEGATED_ACCESS_TOKEN: delegated.accessToken,
-    OBIS_DELEGATED_EXPIRES_AT: delegated.expiresAt }
+    OBIS_DELEGATED_EXPIRES_AT: desktopRuntimeCredentialExpiry(delegated.expiresAt, stored.expiresAt, IDENTITY_RENEWAL_LEAD_MS) }
 }
 
 function installIdentityIpc(): void {
@@ -738,7 +740,7 @@ function installIdentityIpc(): void {
 }
 
 void app.whenReady().then(async () => {
-  refreshTimer = new DesktopIdentityRefreshTimer(30_000, 30_000, async () => {
+  refreshTimer = new DesktopIdentityRefreshTimer(IDENTITY_RENEWAL_LEAD_MS, 30_000, async () => {
     if (signingOut) return undefined
     const { stored } = await authenticatedStored()
     return stored.expiresAt

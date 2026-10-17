@@ -57,3 +57,5 @@ Business entry changes retain the visible remote view while Next handles same-or
 The cross-repository candidate workflow builds the pinned OBIS Web checkout and compares its tracked API route files with the Next server manifest. A healthy page alone does not certify the administrator mutation interfaces.
 
 Idle business forms need native renewal before access expiry because their next submission uses the linked Web cookie directly. The native timer updates that cookie without replaying the submission. Serialized credential writes compare the status request’s original credential before accepting metadata, preventing delayed reads from undoing logout or credential rotation. Shutdown invalidates the timer generation so pending completions cannot rearm it.
+
+A delegated token can advertise an expiry later than its source human session. Host prompt readiness therefore uses the earlier of delegated expiry and source access expiry minus the native renewal lead. The existing idle-runtime replacement and active-reply guard handle this deadline without replaying a sent operation.
