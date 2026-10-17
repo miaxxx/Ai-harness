@@ -30,7 +30,7 @@ it.each([false, true])('validates the selected environment before saving or reta
     if (rejected) {
       expect(save).not.toHaveBeenCalled()
       expect(changed).not.toHaveBeenCalled()
-      expect((screen.getByLabelText('业务环境') as HTMLSelectElement).value).toBe('production')
+      expect(screen.getByLabelText<HTMLSelectElement>('业务环境').value).toBe('production')
       expect(screen.getByRole('alert').textContent).toBe('工作范围切换失败，请重试。')
     } else {
       expect(save).toHaveBeenCalledWith(expect.objectContaining({ defaultProjectId: 'project', defaultEnvironmentId: 'development' }))

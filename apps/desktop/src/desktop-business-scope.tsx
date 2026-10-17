@@ -8,7 +8,7 @@ interface ScopeProps {
   tenant: DesktopEnterpriseTenantContext
   scope: DesktopEnterpriseScopeRequest
   preferences: DesktopUserPreference
-  onChanged(): void
+  onChanged: () => void
 }
 
 /**

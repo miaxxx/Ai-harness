@@ -20,6 +20,8 @@ vi.mock('../src/desktop-business-window.ts', () => ({
 }))
 import { desktopObisAccess } from '../src/desktop-obis-identity-main.ts'
 
+const requestURL = (input: string | URL | Request): string => typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+
 it('shares native renewal and waits for the linked Web session before releasing credentials to consumers', async () => {
   native.directory = await mkdtemp(join(tmpdir(), 'desktop-identity-renewal-'))
   const path = join(native.directory, 'obis-enterprise.json')
@@ -32,7 +34,7 @@ it('shares native renewal and waits for the linked Web session before releasing 
   const webReady = new Promise<void>((resolve) => { releaseWeb = resolve })
   native.synchronize.mockImplementation(async () => { await webReady })
   const fetchMock = vi.fn(async (url: string | URL | Request) => {
-    const target = url.toString()
+    const target = requestURL(url)
     let body: unknown
     if (target.endsWith('/v1/auth/refresh')) body = { sessionId: 'session-new', accessToken: 'new-access', refreshToken: 'new-refresh',
       expiresAt: new Date(Date.now() + 900_000).toISOString(), refreshExpiresAt: '2099-01-01T00:00:00Z' }
@@ -53,11 +55,11 @@ it('shares native renewal and waits for the linked Web session before releasing 
     releaseWeb()
     const results = await Promise.all([...readers, fourth])
     expect(results.every(item => item.accessToken === 'new-access')).toBe(true)
-    expect(fetchMock.mock.calls.filter(([url]) => url.toString().endsWith('/v1/auth/refresh'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => requestURL(url).endsWith('/v1/auth/refresh'))).toHaveLength(1)
     const stored = JSON.parse(await readFile(path, 'utf8')) as { businessWebURL: string }
     expect(stored.businessWebURL).toBe(previous.businessWebURL)
     await desktopObisAccess()
-    expect(fetchMock.mock.calls.filter(([url]) => url.toString().endsWith('/v1/auth/refresh'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([url]) => requestURL(url).endsWith('/v1/auth/refresh'))).toHaveLength(1)
     const active = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
     await writeFile(path, JSON.stringify({ ...active, expiresAt: new Date(0).toISOString() }))
     const denied = vi.fn(async () => new Response(JSON.stringify({ error: { message: 'Session revoked' } }), { status: 401 }))
