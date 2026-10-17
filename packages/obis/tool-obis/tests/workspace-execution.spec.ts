@@ -413,6 +413,23 @@ describe('OBIS governed workspace behavior', () => {
     const approvalEvents = agent.session.events.filter(event => event.type.startsWith('approval/'))
     expect(approvalEvents.map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
     expect(approvalEvents[1]?.data).toMatchObject({ outcome: 'allowed-once' })
+
+    agent.session.append('user/message', {
+      id: 'message-2' as never, role: 'user', source: { kind: 'user' },
+      content: [{ type: 'text', text: 'Propose a second supplier update.' }],
+    }, { surfaceOp: 'append' })
+    const second = await execute(ctx, agent, 'call-propose-second', 'obis_propose_action', {
+      action: 'supplier.update', input: { status: 'reviewed' },
+    })
+    expect(second.isError).toBe(false)
+    const creations = requests.filter(request => request.url.pathname === '/v1/agent-runs')
+    expect(creations).toHaveLength(2)
+    expect(new Set(creations.map(request => request.headers.get('idempotency-key'))).size).toBe(2)
+    expect(creations[1]?.body?.goal).toBe('Propose a second supplier update.')
+    await execute(ctx, agent, 'call-propose-second', 'obis_propose_action', {
+      action: 'supplier.update', input: { status: 'reviewed' },
+    })
+    expect(requests.filter(request => request.url.pathname === '/v1/agent-runs')).toHaveLength(2)
   })
 
   it('fails closed when the human rejects and never exposes an execute call to the model path', async () => {

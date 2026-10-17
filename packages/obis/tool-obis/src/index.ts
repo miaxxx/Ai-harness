@@ -124,7 +124,7 @@ function record(value: unknown): JsonRecord | undefined {
 }
 
 function humanGoal(agent: Agent): string {
-  for (const event of agent.session.events) {
+  for (const event of [...agent.session.events].reverse()) {
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
     const text = event.data.content
       .filter((block): block is Extract<(typeof event.data.content)[number], { type: 'text' }> => block.type === 'text')
@@ -234,7 +234,7 @@ export function apply(ctx: Context, input: Config): void {
   const definitions = [...createObisTools(client), createRunEventTool(client, config.eventReadTimeoutMs)]
   const bindings = new Map<string, Promise<AgentRunBinding>>()
 
-  const ensureBinding = async (agent: Agent, toolName: ToolName): Promise<AgentRunBinding> => {
+  const ensureBinding = async (agent: Agent, toolName: ToolName, callId: string): Promise<AgentRunBinding> => {
     let selected: ReturnType<typeof readObisBusinessReferences>[number] | undefined
     for (const event of [...agent.session.events].reverse()) {
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
@@ -255,8 +255,9 @@ export function apply(ctx: Context, input: Config): void {
     const autonomy = selection
       ? toolName === 'obis_propose_action' ? config.referenceAutonomy ?? 'read-only' : 'read-only'
       : config.autonomy
-    const key = selection
+    const scopeKey = selection
       ? JSON.stringify([sessionKey, selection.projectId, selection.applicationModuleId, selected?.moduleVersion, autonomy]) : sessionKey
+    const key = toolName === 'obis_propose_action' && !config.runId ? JSON.stringify([scopeKey, callId]) : scopeKey
     const current = bindings.get(key)
     if (current) {
       const binding = await current
@@ -264,7 +265,7 @@ export function apply(ctx: Context, input: Config): void {
       const expiresAt = Date.parse(binding.capabilityLease.expiresAt)
       if (!Number.isFinite(expiresAt)) throw new TypeError('OBIS capability lease has an invalid expiry.')
       if (expiresAt > Date.now()) return binding
-      if (bindings.get(key) !== current) return ensureBinding(agent, toolName)
+      if (bindings.get(key) !== current) return ensureBinding(agent, toolName, callId)
       const renewed = (async () => {
         const attached = await client.attachAgentRun(binding.id, {
           environmentId: config.environmentId, harnessSessionId: sessionKey,
@@ -312,7 +313,7 @@ export function apply(ctx: Context, input: Config): void {
 
   const toolContext = async (exec: ToolRunContext, toolName: ToolName): Promise<{ context: ObisToolContext; binding: AgentRunBinding }> => {
     if (!exec.agent) throw new Error('OBIS tools require an active Harness Agent scope.')
-    const binding = await ensureBinding(exec.agent, toolName)
+    const binding = await ensureBinding(exec.agent, toolName, String(exec.callId))
     const capabilityLease = config.capabilityLease ?? binding.capabilityLease?.id
     return {
       binding,
