@@ -84,3 +84,5 @@ Desktop preserves the bundled Node priority while adding the user's macOS login-
 Authenticated startup prepares the first business document behind chat. Business entry changes keep the view visible and dispatch validated same-origin routes to Next; the initial document uses normal navigation when no Next handler is mounted.
 
 Valid linked Web sessions are reused without decrypting native credentials or rewriting the browser cookie on each navigation. Credential rotation updates the cookie through the identity owner; logout and server sign-in redirects clear it.
+
+The native identity owner schedules access renewal 30 seconds before expiry without renderer activity, synchronizes the linked Web cookie, and retries network failures after 30 seconds. Credential writes are serialized; status responses cannot overwrite rotated or cleared credentials. Shutdown cancels pending deadlines. Business operations are never replayed by renewal.

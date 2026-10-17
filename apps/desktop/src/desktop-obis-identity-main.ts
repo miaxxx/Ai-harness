@@ -1,3 +1,4 @@
+import { DesktopIdentityRefreshTimer } from './desktop-identity-refresh-timer.ts'
 import { validateBusinessWebURL } from './desktop-business-url.ts'
 import { configureBusinessIdentity, clearBusinessIdentity, refreshBusinessIdentity } from './desktop-business-window.ts'
 import { randomUUID } from 'node:crypto'
@@ -129,12 +130,28 @@ async function readStored(): Promise<StoredObisIdentity | undefined> {
   }
 }
 
-async function writeStored(stored: StoredObisIdentity): Promise<void> {
-  const path = storePath()
-  const temporary = `${path}.tmp`
-  await mkdir(app.getPath('userData'), { recursive: true })
-  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 })
-  await rename(temporary, path)
+let storedWrites: Promise<unknown> = Promise.resolve()
+let refreshTimer: DesktopIdentityRefreshTimer | undefined
+
+async function writeStored(
+  stored: StoredObisIdentity,
+  expectedAccessToken?: string,
+): Promise<StoredObisIdentity | undefined> {
+  const operation = storedWrites.then(async () => {
+    if (expectedAccessToken !== undefined) {
+      const current = await readStored()
+      if (signingOut || current?.encryptedAccessToken !== expectedAccessToken) return current
+    }
+    const path = storePath()
+    const temporary = `${path}.tmp`
+    await mkdir(app.getPath('userData'), { recursive: true })
+    await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 })
+    await rename(temporary, path)
+    refreshTimer?.schedule(stored.encryptedRefreshToken ? stored.expiresAt : undefined)
+    return stored
+  })
+  storedWrites = operation.catch(() => { /* Each writer receives its own persistence failure. */ })
+  return operation
 }
 
 async function ensureStored(): Promise<StoredObisIdentity | undefined> {
@@ -246,6 +263,7 @@ function installationBody(stored: StoredObisIdentity) {
 async function ensureInstallation(
   stored: StoredObisIdentity,
   accessToken: string,
+  expectedAccessToken?: string,
 ): Promise<StoredObisIdentity> {
   if (stored.installationId) {
     try {
@@ -277,8 +295,7 @@ async function ensureInstallation(
   })
   const installationId = registered.installation.id
   const next = { ...stored, installationId }
-  await writeStored(next)
-  return next
+  return await writeStored(next, expectedAccessToken) ?? next
 }
 
 async function attachIdentity(stored: StoredObisIdentity, tokens: TokenPair): Promise<StoredObisIdentity> {
@@ -381,13 +398,15 @@ async function currentIdentity(): Promise<DesktopObisIdentityStatus> {
         user: me.user,
         membership: me.membership,
         ...(me.memberships ? { memberships: me.memberships } : {}),
-      }, accessToken)
-      await writeStored(next)
-      return publicStatus(next)
+      }, accessToken, stored.encryptedAccessToken)
+      return publicStatus(await writeStored(next, stored.encryptedAccessToken))
     } catch (error) {
       if (!(error instanceof ObisHttpError && error.status === 401)) throw error
     }
   }
+
+  const current = await readStored()
+  if (signingOut || current?.encryptedAccessToken !== stored.encryptedAccessToken) return publicStatus(current)
 
   try {
     return publicStatus(await refreshStored(stored))
@@ -684,6 +703,7 @@ function installIdentityIpc(): void {
   ipcMain.handle('dsh:obis-identity-logout', async (event) => {
     requireTrusted(event)
     signingOut = true
+    refreshTimer?.schedule(undefined)
     try {
       await clearBusinessIdentity()
       if (renewal) await renewal.catch(() => { /* Local logout still clears credentials after failed renewal. */ })
@@ -717,7 +737,15 @@ function installIdentityIpc(): void {
   })
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  refreshTimer = new DesktopIdentityRefreshTimer(30_000, 30_000, async () => {
+    if (signingOut) return undefined
+    const { stored } = await authenticatedStored()
+    return stored.expiresAt
+  })
+  app.once('before-quit', () => { refreshTimer?.stop() })
+  const stored = await readStored()
+  refreshTimer.schedule(stored?.encryptedRefreshToken ? stored.expiresAt : undefined)
   configureBusinessIdentity(async (previous) => {
     const { stored, accessToken } = await authenticatedStored()
     if (previous && linkedBusinessAccessToken === accessToken && linkedBusinessSession

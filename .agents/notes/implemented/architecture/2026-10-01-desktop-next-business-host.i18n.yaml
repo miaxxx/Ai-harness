@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-01-desktop-next-business-host.md
-2026-10-01-desktop-next-business-host.md: 4c97355ee1ae71305fcc03aeddfb19224a0d18c0
-2026-10-01-desktop-next-business-host.zh.md: 53f162aaf533764e8a9d23d80495dc75c52f0d24
+2026-10-01-desktop-next-business-host.md: f368f371b0811e8d68d1078b794daa0cd253d6dc
+2026-10-01-desktop-next-business-host.zh.md: 1e53c3ef175b796f4e13648a41ea231d63ef134b

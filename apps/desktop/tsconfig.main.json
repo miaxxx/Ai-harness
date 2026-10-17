@@ -42,7 +42,8 @@
     "src/platform/main/tool-path.ts",
     "src/desktop-model-policy.ts",
     "src/platform/main/theme-smoke.ts",
-    "src/desktop-business-url.ts"
+    "src/desktop-business-url.ts",
+    "src/desktop-identity-refresh-timer.ts"
   ],
   "references": [
     {

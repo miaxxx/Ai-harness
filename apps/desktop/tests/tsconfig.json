@@ -16,7 +16,8 @@
     "../src/desktop-obis-identity-shared.ts",
     "../src/desktop-obis-identity-protocol.ts",
     "../src/desktop-application-contract.ts",
-    "../src/desktop-business-url.ts"
+    "../src/desktop-business-url.ts",
+    "../src/desktop-identity-refresh-timer.ts"
   ],
   "references": [
     {

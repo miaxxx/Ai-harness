@@ -10,7 +10,7 @@ const native = vi.hoisted(() => {
     handlers: new Map<string, (...args: unknown[]) => unknown>() }
 })
 vi.mock('electron', () => ({
-  app: { getPath: () => native.directory, whenReady: () => native.ready, getVersion: () => '0.1.0' },
+  app: { once: vi.fn(), getPath: () => native.directory, whenReady: () => native.ready, getVersion: () => '0.1.0' },
   ipcMain: { handle: (name: string, handler: (...args: unknown[]) => unknown) => { native.handlers.set(name, handler) } },
   safeStorage: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value),
     decryptString: (value: Buffer) => value.toString() },
@@ -86,5 +86,29 @@ it('shares native renewal and waits for the linked Web session before releasing 
     await signingOut
     const loggedOut = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
     expect(loggedOut['encryptedAccessToken']).toBeUndefined()
+    await writeFile(path, JSON.stringify({ ...previous, expiresAt: '2099-01-01T00:00:00Z' }))
+    let releaseStatus!: () => void
+    const statusReady = new Promise<void>((resolve) => { releaseStatus = resolve })
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      if (requestURL(url).endsWith('/v1/me')) {
+        await statusReady
+        return new Response(JSON.stringify({ user: { id: 'user', displayName: 'Employee' },
+          membership: { tenantId: 'tenant', roles: ['employee'], status: 'active' } }))
+      }
+      if (requestURL(url).endsWith('/heartbeat')) {
+        return new Response(JSON.stringify({ installation: { id: 'installation', deviceId: 'device', status: 'online' } }))
+      }
+      return new Response('{}')
+    }))
+    const status = native.handlers.get('dsh:obis-identity-status')
+    if (!status) throw new Error('Identity status was not installed')
+    const staleStatus = status({ senderFrame: { url: 'dsh-app://app/index.html' } })
+    await vi.waitFor(() => { expect(vi.mocked(fetch).mock.calls.some(([url]) => requestURL(url).endsWith('/v1/me'))).toBe(true) })
+    await logout({ senderFrame: { url: 'dsh-app://app/index.html' } })
+    releaseStatus()
+    expect(await staleStatus).toMatchObject({ authenticated: false })
+    const afterStatus = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    expect(afterStatus['encryptedAccessToken']).toBeUndefined()
+
   } finally { releaseWeb(); await rm(native.directory, { recursive: true }); vi.unstubAllGlobals(); vi.unstubAllEnvs() }
 })
