@@ -199,6 +199,23 @@ afterEach(() => {
 })
 
 describe('OBIS governed workspace behavior', () => {
+  it('resumes a read Run with its stable goal after a later human message', async () => {
+    const { requests } = captureFetch()
+    const agent = fakeAgent()
+    const first = await mounted()
+    await execute(first, agent, 'read-before-restart', 'obis_context', {})
+    agent.session.append('user/message', {
+      id: 'follow-up' as never, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Read again.' }],
+    }, { surfaceOp: 'append' })
+    const resumed = await mounted()
+    await execute(resumed, agent, 'read-after-restart', 'obis_context', {})
+    const creations = requests.filter(request => request.url.pathname === '/v1/agent-runs')
+    expect(creations.map(request => request.body?.goal)).toEqual([
+      'Approve the governed supplier change.', 'Approve the governed supplier change.',
+    ])
+    expect(new Set(creations.map(request => request.headers.get('idempotency-key'))).size).toBe(1)
+  })
+
   it('binds a durable human-selected Module and attaches using the original Harness session', async () => {
     const { requests } = captureFetch({ moduleBinding: { projectId: 'p', moduleId: 'supplier-risk', version: '0.1.0' } })
     const ctx = await mounted({ config: { workspaceProjectId: 'p', referenceAutonomy: 'human-approved' } }), agent = fakeAgent()

@@ -123,8 +123,9 @@ function record(value: unknown): JsonRecord | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined
 }
 
-function humanGoal(agent: Agent): string {
-  for (const event of [...agent.session.events].reverse()) {
+function humanGoal(agent: Agent, latest: boolean): string {
+  const events = [...agent.session.events]
+  for (const event of latest ? events.reverse() : events) {
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
     const text = event.data.content
       .filter((block): block is Extract<(typeof event.data.content)[number], { type: 'text' }> => block.type === 'text')
@@ -289,7 +290,7 @@ export function apply(ctx: Context, input: Config): void {
         : await client.createAgentRun({
           environmentId: config.environmentId,
           agentId: config.agentId,
-          goal: humanGoal(agent),
+          goal: humanGoal(agent, toolName === 'obis_propose_action'),
           autonomy,
           ...(moduleBinding ? { projectId: moduleBinding.projectId, applicationModuleId: moduleBinding.applicationModuleId } : {}),
         }, { idempotencyKey: `workspace:${key}` })

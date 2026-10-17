@@ -4,7 +4,7 @@
 
 原生 Harness 插件通过工具目录注册 `obis_context`、`obis_query`、`obis_get_object`、`obis_search_knowledge`、`obis_propose_action`、`obis_list_tasks`、`obis_get_task`、`obis_list_approvals`、`obis_list_skills` 和 `obis_get_skill`。任务和审批工具只读取 Kernel 收件箱，不做审批决策；技能工具只读取当前部署的技能目录与定义，不启动技能沙箱。本插件不修改 Agent Loop，也不在本地实现企业策略、审批、本体或生产写操作。
 
-配置仅保存凭证引用，每次操作通过 `ctx.credentials` 获取短期令牌。常规配置使用会话中最新一条持久化人工消息创建或恢复一个 OBIS AgentRun，关联 Harness Session id，并使用 Run 的能力租约。`installationId` 用于注册设备的绑定租约；`runId` 和 `capabilityLease` 支持受管理或诊断组合的显式覆盖。`projectId` 和 `applicationModuleId` 必须同时配置，将已发布 Module 快照绑定到 Run。未配置时，成功调用 `module-page` 后从可选 Host `obisLaunch` 获取同一对标识。未绑定 Module 的 Run 使用 Workspace AI 范围。
+配置仅保存凭证引用，每次操作通过 `ctx.credentials` 获取短期令牌。常规配置使用会话中第一条持久化人工消息创建或恢复一个 OBIS AgentRun，关联 Harness Session id，并使用 Run 的能力租约。`installationId` 用于注册设备的绑定租约；`runId` 和 `capabilityLease` 支持受管理或诊断组合的显式覆盖。`projectId` 和 `applicationModuleId` 必须同时配置，将已发布 Module 快照绑定到 Run。未配置时，成功调用 `module-page` 后从可选 Host `obisLaunch` 获取同一对标识。未绑定 Module 的 Run 使用 Workspace AI 范围。
 
 `obis_propose_action` 创建企业提案，不向模型提供执行工具。OBIS 允许提案且 Run 自主级别允许执行时，适配器通过 `ctx.approval` 请求同一轮中的人工确认。只有 `allowed-once` 才提交到 `/v1/harness/proposals/{id}/execute`；OBIS 再次检查当前策略、业务审批、ActionRuntime 和幂等性。拒绝、取消或无法确认时不执行；需要业务审批时保留 `approval-required` 状态。
 

@@ -11,13 +11,13 @@ import { serializeObisBusinessReference } from '@deepseek-ai/dsh-obis-bridge'
 
 it('replays the public event read through a runnable ACP composition', async () => {
   const requests: Array<{ url: string | undefined; lease: string | string[] | undefined; token: string | undefined }> = []
-  const runRequests: Array<{ autonomy?: string }> = []
+  const runRequests: Array<{ autonomy?: string; goal?: string }> = []
   const respond = async (request: IncomingMessage, response: ServerResponse) => {
     requests.push({ url: request.url, lease: request.headers['ohp-capability-lease'], token: request.headers.authorization })
     if (request.url === '/v1/agent-runs') {
       let body = ''
       for await (const chunk of request) body += String(chunk)
-      runRequests.push(JSON.parse(body) as { autonomy?: string })
+      runRequests.push(JSON.parse(body) as { autonomy?: string; goal?: string })
     }
     if (!request.url?.includes('/events?')) {
       response.writeHead(200, { 'content-type': 'application/json' })
@@ -70,6 +70,7 @@ it('replays the public event read through a runnable ACP composition', async () 
     expect(renewed.stopReason, agent.stderr()).toBe('end_turn')
     expect(requests.at(-1)?.token).toBe('Bearer private-token-renewed')
     expect(runRequests.map(request => request.autonomy)).toEqual(['read-only', 'read-only'])
+    expect(runRequests[1]?.goal).toBe(runRequests[0]?.goal)
     const renewedText = agent.updates.slice(replayCount).flatMap(update => update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []).join('')
     expect({ initial: text, renewed: renewedText }).toMatchInlineSnapshot(`
       {
