@@ -61,7 +61,18 @@ jobs:
           pnpm exec tsx --test apps/desktop/tests/application-runtime.spec.ts apps/desktop/tests/enterprise-runtime-scope.spec.ts
           pnpm exec vitest run apps/desktop/tests/application-golden-contract.spec.ts
       - name: Native credentials and shared business host regressions
-        run: pnpm exec vitest run apps/desktop/tests/obis-runtime-delegation.spec.ts apps/desktop/tests/runtime-credential.spec.ts apps/desktop/tests/message-projection.spec.ts apps/desktop/tests/business-window.spec.ts apps/desktop/tests/model-runtime.spec.ts apps/desktop/tests/model-manager.spec.ts
+        run: |
+          pnpm exec vitest run \
+            apps/desktop/tests/obis-runtime-delegation.spec.ts \
+            apps/desktop/tests/runtime-credential.spec.ts \
+            apps/desktop/tests/message-projection.spec.ts \
+            apps/desktop/tests/business-window.spec.ts \
+            apps/desktop/tests/model-runtime.spec.ts \
+            apps/desktop/tests/model-manager.spec.ts \
+            apps/desktop/tests/identity-renewal.spec.ts \
+            apps/desktop/tests/identity-refresh-timer.spec.ts \
+            apps/desktop/tests/product-enterprise.client.spec.ts \
+            apps/desktop/tests/business-scope.client.spec.ts
       - name: Keyless assembled OBIS event transcript
         run: pnpm exec vitest run examples/acp-agent/tests/obis-event-transcript.spec.ts
       - name: Desktop build smoke
