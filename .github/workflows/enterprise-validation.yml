@@ -195,6 +195,8 @@ jobs:
         run: npm --prefix _compat/obis/25-ui-runtime run verify
       - name: Verify Module admission and read-only capability leases
         working-directory: _compat/obis/10-kernel
+        env:
+          OBIS_DATABASE_URL: ''
         run: node --import tsx --test --test-concurrency=1 test/agent-module-binding.test.ts test/agent-http-lease.test.ts
       - name: Verify real Kernel persistence and login handoff
         env:
