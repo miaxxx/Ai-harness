@@ -96,6 +96,14 @@ async function main(): Promise<void> {
     const execution = action.execution as Record<string, unknown>
     const executionResult = execution.result as Record<string, unknown>
     assert.equal(executionResult.status, 'executed')
+    const operationRun = execution.run as { id: string; taskId: string }
+    assert.notEqual(operationRun.id, boundRun.id)
+    const operationBinding = await client.attachAgentRun(operationRun.id, {
+      environmentId, harnessSessionId: sessionId, installationId: registration.installation.id,
+    })
+    assert.equal(operationBinding.harnessSessionId, sessionId)
+    assert.ok(operationBinding.capabilityLease?.id)
+    const operationGoverned = { agentRunId: operationRun.id, capabilityLease: operationBinding.capabilityLease!.id }
     assert.equal(approvals.length, 1)
     assert.equal(ctx.tools.schemas(agent).some(schema => schema.name === 'obis_execute_action'), false)
 
@@ -107,14 +115,15 @@ async function main(): Promise<void> {
     assert.deepEqual(items[0]?.values, { amount: 125, status: 'open' })
 
     console.log('E2E 08/13 Task read reflects completed governed work')
-    const completedRun = await client.getAgentRun(boundRun.id, environmentId)
-    const task = await client.getTask(completedRun.taskId, environmentId, governed)
+    const completedRun = await client.getAgentRun(operationRun.id, environmentId)
+    assert.equal(completedRun.status, 'completed')
+    const task = await client.getTask(completedRun.taskId, environmentId, operationGoverned)
     assert.equal(task.status, 'completed')
 
     console.log('E2E 09/13 OHP SSE exposes normalized enterprise run events')
     const eventTypes: string[] = []
-    for await (const event of client.streamAgentRunEvents(boundRun.id, environmentId, governed)) {
-      assert.equal(event.runId, boundRun.id)
+    for await (const event of client.streamAgentRunEvents(operationRun.id, environmentId, operationGoverned)) {
+      assert.equal(event.runId, operationRun.id)
       eventTypes.push(event.type)
       if (event.type === 'run.completed') break
     }
