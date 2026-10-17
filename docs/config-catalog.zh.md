@@ -2771,7 +2771,7 @@ export interface Config {
   applicationModuleId?: string
   /** Validated workspace project restricting user-selected business references. */
   workspaceProjectId?: string
-  /** Autonomy for explicitly referenced Modules; defaults to read-only. */
+  /** Proposal autonomy for explicitly referenced Modules; reads stay read-only. Defaults to read-only. */
   referenceAutonomy?: 'read-only' | 'human-approved'
   /** Maximum wait for a public SSE event; defaults to 5000 milliseconds. */
   eventReadTimeoutMs?: number
