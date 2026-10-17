@@ -14,7 +14,7 @@ The model does not manage `AgentRun.version`: the bridge reads current governed 
 
 `obis_next_run_event` reads one public event from the bound Run through authenticated SSE and closes the connection. An optional `afterId` resumes after a returned event. `eventReadTimeoutMs` bounds the wait (default 5000 ms); timeout returns `event: null` and `timedOut: true`, while caller cancellation and Kernel refusal remain errors. The lease stays in Host request headers and is absent from the result. This read does not complete a task.
 
-A durable human business reference selects a Module before tool execution. The adapter checks `workspaceProjectId` and environment, creates a separate Run for the selected Module version, and retains the original Harness Session id for attachment. Follow-ups retain the latest human selection. `referenceAutonomy` defaults to read-only; human-approved permits the existing proposal-confirm-execute flow. One prompt cannot combine different Module versions or scopes. A changed publication version rejects the reference before a governed operation.
+A durable human business reference selects a Module before tool execution. The adapter checks `workspaceProjectId` and environment, creates a separate Run for the selected Module version, and retains the original Harness Session id for attachment. Follow-ups retain the latest human selection. Module reads always use a read-only Run. `referenceAutonomy` defaults to read-only; human-approved creates a separate operation Run for the proposal-confirm-execute flow. Reads never reuse the operation Run. One prompt cannot combine different Module versions or scopes. A changed publication version rejects the reference before a governed operation.
 
 ## Model Experience
 
@@ -28,7 +28,7 @@ The `tool:obis` section directs enterprise reads and proposals through OBIS and 
 
 ```markdown
 OBIS is the enterprise authority. Use obis_* tools for enterprise facts and governed operations.
-The Harness Session is bound to one durable OBIS AgentRun before enterprise tools execute; OBIS owns its task, deployment pin, policy and capability lease.
+Each enterprise tool call is bound to a durable OBIS AgentRun; OBIS owns its task, deployment pin, policy and capability lease.
 obis_propose_action creates a governed proposal. When the run permits execution, Harness asks the human for one-shot confirmation and only the adapter may submit that proposal back to OBIS for final policy, business-approval and ActionRuntime execution.
 Never describe a proposal as executed unless the tool result contains an OBIS execution result with status executed.
 Use named governed queries for enterprise object reads; do not infer missing enterprise facts from local files or model memory.

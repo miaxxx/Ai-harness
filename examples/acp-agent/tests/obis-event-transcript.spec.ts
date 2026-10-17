@@ -1,4 +1,4 @@
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,8 +11,14 @@ import { serializeObisBusinessReference } from '@deepseek-ai/dsh-obis-bridge'
 
 it('replays the public event read through a runnable ACP composition', async () => {
   const requests: Array<{ url: string | undefined; lease: string | string[] | undefined; token: string | undefined }> = []
-  const server = createServer((request, response) => {
+  const runRequests: Array<{ autonomy?: string }> = []
+  const respond = async (request: IncomingMessage, response: ServerResponse) => {
     requests.push({ url: request.url, lease: request.headers['ohp-capability-lease'], token: request.headers.authorization })
+    if (request.url === '/v1/agent-runs') {
+      let body = ''
+      for await (const chunk of request) body += String(chunk)
+      runRequests.push(JSON.parse(body) as { autonomy?: string })
+    }
     if (!request.url?.includes('/events?')) {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ id: 'run', version: 1, autonomy: 'read-only', moduleBinding: { projectId: 'p', moduleId: 'supplier', version: '1' }, capabilityLease: { id: 'private-lease' } }))
@@ -20,6 +26,9 @@ it('replays the public event read through a runnable ACP composition', async () 
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     response.end(`data: ${JSON.stringify({ id: 'event-2', type: 'query.completed', runId: 'run', occurredAt: '2026-10-01T00:00:00Z', correlationId: 'corr-query', payload: {} })}\n\n`)
+  }
+  const server = createServer((request, response) => {
+    void respond(request, response).catch((error: unknown) => response.destroy(error instanceof Error ? error : new Error(String(error))))
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -40,7 +49,8 @@ it('replays the public event read through a runnable ACP composition', async () 
     const reference = serializeObisBusinessReference({ kind: 'module', projectId: 'p', environmentId: 'test', label: '供应商', moduleId: 'supplier', moduleVersion: '1', pageId: 'home' })
     const result = await agent.client.prompt({ sessionId, prompt: [{ type: 'text', text: `Read one public event.${reference}` }] })
     expect(result.stopReason, agent.stderr()).toBe('end_turn')
-    expect(requests.map(request => request.url)).toEqual(['/v1/agent-runs/run?environmentId=test', '/v1/agent-runs/run/attach', '/v1/agent-runs/run/events?environmentId=test&after=event-1'])
+    expect(requests.map(request => request.url)).toEqual(['/v1/agent-runs', '/v1/agent-runs/run/attach', '/v1/agent-runs/run/events?environmentId=test&after=event-1'])
+    expect(runRequests.map(request => request.autonomy)).toEqual(['read-only'])
     expect(requests.at(-1)).toEqual({ url: '/v1/agent-runs/run/events?environmentId=test&after=event-1', lease: 'private-lease', token: 'Bearer private-token' })
     const text = agent.updates.flatMap(update => update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []).join('')
     expect(text).toMatchInlineSnapshot('"Kernel SSE: query.completed (event-2)"')
@@ -59,6 +69,7 @@ it('replays the public event read through a runnable ACP composition', async () 
     }, () => agent.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'Read one public event after renewal.' }] }))
     expect(renewed.stopReason, agent.stderr()).toBe('end_turn')
     expect(requests.at(-1)?.token).toBe('Bearer private-token-renewed')
+    expect(runRequests.map(request => request.autonomy)).toEqual(['read-only', 'read-only'])
     const renewedText = agent.updates.slice(replayCount).flatMap(update => update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []).join('')
     expect({ initial: text, renewed: renewedText }).toMatchInlineSnapshot(`
       {

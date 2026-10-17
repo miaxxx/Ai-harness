@@ -204,8 +204,12 @@ describe('OBIS governed workspace behavior', () => {
     const ctx = await mounted({ config: { workspaceProjectId: 'p', referenceAutonomy: 'human-approved' } }), agent = fakeAgent()
     agent.session.append('user/message', { id: 'ref-1' as never, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: serializeObisBusinessReference({ kind: 'module', projectId: 'p', environmentId: 'prod', label: '供应商', moduleId: 'supplier-risk', moduleVersion: '0.1.0', pageId: 'home' }) }] }, { surfaceOp: 'append' })
     await execute(ctx, agent, 'module-read', 'obis_context', {})
-    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).toMatchObject({ projectId: 'p', applicationModuleId: 'supplier-risk', autonomy: 'human-approved' })
+    expect(requests.find(request => request.url.pathname === '/v1/agent-runs')?.body).toMatchObject({ projectId: 'p', applicationModuleId: 'supplier-risk', autonomy: 'read-only' })
     expect(requests.find(request => request.url.pathname.endsWith('/attach'))?.body).toMatchObject({ harnessSessionId: 'session-1' })
+    await execute(ctx, agent, 'module-write', 'obis_propose_action', { action: 'supplier.update', input: {} })
+    await execute(ctx, agent, 'module-read-again', 'obis_context', {})
+    expect(requests.filter(request => request.url.pathname === '/v1/agent-runs').map(request => request.body?.autonomy))
+      .toEqual(['read-only', 'human-approved'])
   })
 
   it('rejects cross-workspace and changed-version references before a governed operation', async () => {

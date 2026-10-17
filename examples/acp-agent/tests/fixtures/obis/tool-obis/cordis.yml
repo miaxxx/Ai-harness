@@ -23,7 +23,6 @@
     baseUrl: !!js process.env.OBIS_RUNTIME_BASE_URL
     environmentId: test
     credentialRef: OBIS_DELEGATED_ACCESS_TOKEN
-    runId: run
-    capabilityLease: private-lease
     autonomy: read-only
+    referenceAutonomy: human-approved
     eventReadTimeoutMs: 5000

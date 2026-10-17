@@ -24,7 +24,7 @@
 
 ```markdown
 OBIS is the enterprise authority. Use obis_* tools for enterprise facts and governed operations.
-The Harness Session is bound to one durable OBIS AgentRun before enterprise tools execute; OBIS owns its task, deployment pin, policy and capability lease.
+Each enterprise tool call is bound to a durable OBIS AgentRun; OBIS owns its task, deployment pin, policy and capability lease.
 obis_propose_action creates a governed proposal. When the run permits execution, Harness asks the human for one-shot confirmation and only the adapter may submit that proposal back to OBIS for final policy, business-approval and ActionRuntime execution.
 Never describe a proposal as executed unless the tool result contains an OBIS execution result with status executed.
 Use named governed queries for enterprise object reads; do not infer missing enterprise facts from local files or model memory.
@@ -60,4 +60,4 @@ obis_get_skill loads a Kernel IR skill definition for the current deployment. Fo
 
 - 插件需要 OBIS Kernel、凭证提供者和审批服务。缺少或取消人工确认时提案不执行；Harness 确认后业务审批仍可能待处理。技能工具仅读取定义，不启动技能沙箱；登录、刷新和应用渲染由客户端插件负责。
 
-持久用户业务引用在工具执行前选择 Module。适配器校验 `workspaceProjectId` 与环境，为所选 Module 版本创建独立 Run，并保留原 Harness Session 编号用于附着。后续回合沿用最新用户选择。`referenceAutonomy` 默认为只读；human-approved 启用已有的提议、确认与执行流程。单个提示词不能混合不同 Module 版本或作用域；发布版本变化后，引用在受控操作前拒绝。
+持久用户业务引用在工具执行前选择 Module。适配器校验 `workspaceProjectId` 与环境，为所选 Module 版本创建独立 Run，并保留原 Harness Session 编号用于附着。后续回合沿用最新用户选择。Module 读取始终使用只读 Run。`referenceAutonomy` 默认为只读；human-approved 仅为提议、确认与执行流程创建独立的操作 Run。读取不会复用操作 Run。单个提示词不能混合不同 Module 版本或作用域；发布版本变化后，引用在受控操作前拒绝。

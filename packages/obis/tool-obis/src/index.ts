@@ -46,7 +46,7 @@ export interface Config {
   applicationModuleId?: string
   /** Validated workspace project restricting user-selected business references. */
   workspaceProjectId?: string
-  /** Autonomy for explicitly referenced Modules; defaults to read-only. */
+  /** Proposal autonomy for explicitly referenced Modules; reads stay read-only. Defaults to read-only. */
   referenceAutonomy?: 'read-only' | 'human-approved'
   /** Maximum wait for a public SSE event; defaults to 5000 milliseconds. */
   eventReadTimeoutMs?: number
@@ -234,7 +234,7 @@ export function apply(ctx: Context, input: Config): void {
   const definitions = [...createObisTools(client), createRunEventTool(client, config.eventReadTimeoutMs)]
   const bindings = new Map<string, Promise<AgentRunBinding>>()
 
-  const ensureBinding = async (agent: Agent): Promise<AgentRunBinding> => {
+  const ensureBinding = async (agent: Agent, toolName: ToolName): Promise<AgentRunBinding> => {
     let selected: ReturnType<typeof readObisBusinessReferences>[number] | undefined
     for (const event of [...agent.session.events].reverse()) {
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
@@ -252,7 +252,9 @@ export function apply(ctx: Context, input: Config): void {
       ? { projectId: selected.projectId, applicationModuleId: selected.moduleId as string }
       : undefined
     const sessionKey = String(agent.id)
-    const autonomy = selection ? config.referenceAutonomy ?? 'read-only' : config.autonomy
+    const autonomy = selection
+      ? toolName === 'obis_propose_action' ? config.referenceAutonomy ?? 'read-only' : 'read-only'
+      : config.autonomy
     const key = selection
       ? JSON.stringify([sessionKey, selection.projectId, selection.applicationModuleId, selected?.moduleVersion, autonomy]) : sessionKey
     const current = bindings.get(key)
@@ -262,7 +264,7 @@ export function apply(ctx: Context, input: Config): void {
       const expiresAt = Date.parse(binding.capabilityLease.expiresAt)
       if (!Number.isFinite(expiresAt)) throw new TypeError('OBIS capability lease has an invalid expiry.')
       if (expiresAt > Date.now()) return binding
-      if (bindings.get(key) !== current) return ensureBinding(agent)
+      if (bindings.get(key) !== current) return ensureBinding(agent, toolName)
       const renewed = (async () => {
         const attached = await client.attachAgentRun(binding.id, {
           environmentId: config.environmentId, harnessSessionId: sessionKey,
@@ -308,9 +310,9 @@ export function apply(ctx: Context, input: Config): void {
     return pending
   }
 
-  const toolContext = async (exec: ToolRunContext): Promise<{ context: ObisToolContext; binding: AgentRunBinding }> => {
+  const toolContext = async (exec: ToolRunContext, toolName: ToolName): Promise<{ context: ObisToolContext; binding: AgentRunBinding }> => {
     if (!exec.agent) throw new Error('OBIS tools require an active Harness Agent scope.')
-    const binding = await ensureBinding(exec.agent)
+    const binding = await ensureBinding(exec.agent, toolName)
     const capabilityLease = config.capabilityLease ?? binding.capabilityLease?.id
     return {
       binding,
@@ -332,7 +334,7 @@ export function apply(ctx: Context, input: Config): void {
       parameters: schemas[toolName],
       output,
       execute: async (args, exec) => {
-        const { context, binding } = await toolContext(exec)
+        const { context, binding } = await toolContext(exec, toolName)
         const proposalResult = await definition.execute(args, context)
         if (toolName !== 'obis_propose_action') return proposalResult as JsonValue
 
@@ -385,7 +387,7 @@ export function apply(ctx: Context, input: Config): void {
     order: 145,
     text: [
       'OBIS is the enterprise authority. Use obis_* tools for enterprise facts and governed operations.',
-      'The Harness Session is bound to one durable OBIS AgentRun before enterprise tools execute; OBIS owns its task, deployment pin, policy and capability lease.',
+      'Each enterprise tool call is bound to a durable OBIS AgentRun; OBIS owns its task, deployment pin, policy and capability lease.',
       'A durable human obis-reference selects a published Module and pins its version. Follow-up requests retain that selection until the human selects another business area. References do not grant permission; stale versions and cross-workspace selections are refused.',
       'obis_propose_action creates a governed proposal. When the run permits execution, Harness asks the human for one-shot confirmation and only the adapter may submit that proposal back to OBIS for final policy, business-approval and ActionRuntime execution.',
       'Never describe a proposal as executed unless the tool result contains an OBIS execution result with status executed.',
