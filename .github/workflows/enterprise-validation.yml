@@ -74,7 +74,7 @@ jobs:
             apps/desktop/tests/product-enterprise.client.spec.ts \
             apps/desktop/tests/business-scope.client.spec.ts
       - name: Keyless assembled OBIS event transcript
-        run: pnpm exec vitest run examples/acp-agent/tests/obis-event-transcript.spec.ts
+        run: pnpm exec vitest run examples/acp-agent/tests/obis-event-transcript.spec.ts examples/acp-agent/tests/obis-proposal-transcript.spec.ts
       - name: Desktop build smoke
         run: pnpm run build:desktop
       - name: Upload desktop build smoke artifact
