@@ -11,6 +11,7 @@ import { serializeObisBusinessReference } from '@deepseek-ai/dsh-obis-bridge'
 it('confirms consecutive writes in one ACP chat with distinct governed Runs', async () => {
   const runs = new Map<string, { id: string; version: number; status: string; autonomy: string }>()
   const sessions: string[] = [], keys: Array<string | undefined> = []
+  const leases = new Map<string, { id: string; expiresAt: string; attachments: number }>()
   const respond = async (request: IncomingMessage, response: ServerResponse) => {
     let raw = ''
     for await (const chunk of request) raw += String(chunk)
@@ -32,12 +33,23 @@ it('confirms consecutive writes in one ACP chat with distinct governed Runs', as
     if (!run) { send({ error: 'Unknown governed Run' }, 404); return }
     if (request.url?.endsWith('/attach')) {
       sessions.push(body.harnessSessionId ?? '')
-      send({ ...run, capabilityLease: { id: `lease-${id}` } })
+      const attachments = (leases.get(run.id)?.attachments ?? 0) + 1
+      const lease = {
+        id: `lease-${id}-${attachments}`, attachments,
+        expiresAt: new Date(Date.now() + (attachments === 1 ? 150 : 60_000)).toISOString(),
+      }
+      leases.set(run.id, lease)
+      send({ ...run, capabilityLease: lease })
     } else if (request.url?.includes('/actions/Asset.create/propose')) {
       if (run.status === 'completed') { send({ error: 'Run is completed' }, 409); return }
       run.version = 2
       send({ run, proposal: { id: `proposal-${id}`, decision: { allowed: true } } })
     } else if (request.url?.endsWith('/execute')) {
+      const lease = leases.get(run.id)
+      if (!lease || request.headers['ohp-capability-lease'] !== lease.id || Date.parse(lease.expiresAt) <= Date.now()) {
+        send({ error: 'Execution lease expired' }, 403)
+        return
+      }
       run.version = 3
       run.status = 'completed'
       send({ run, result: { status: 'executed' } })
@@ -58,11 +70,13 @@ it('confirms consecutive writes in one ACP chat with distinct governed Runs', as
       tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
     },
     env: { DSH_HOME: cwd, OBIS_RUNTIME_BASE_URL: `http://127.0.0.1:${address.port}`, OBIS_DELEGATED_ACCESS_TOKEN: 'private-token' },
-    requestPermission(params) {
+    async requestPermission(params) {
       confirmations++
+      const expiry = Date.parse([...leases.values()].at(-1)!.expiresAt)
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, expiry - Date.now() + 20)))
       const option = params.options.find(candidate => candidate.kind === 'allow_once')
-      if (!option) return Promise.resolve({ outcome: { outcome: 'cancelled' } })
-      return Promise.resolve({ outcome: { outcome: 'selected', optionId: option.optionId } })
+      if (!option) return { outcome: { outcome: 'cancelled' } }
+      return { outcome: { outcome: 'selected', optionId: option.optionId } }
     },
   })
   try {
@@ -79,6 +93,7 @@ it('confirms consecutive writes in one ACP chat with distinct governed Runs', as
     expect(new Set(keys).size).toBe(2)
     expect(new Set(sessions).size).toBe(1)
     expect(confirmations).toBe(2)
+    expect([...leases.values()].map(lease => lease.attachments)).toEqual([2, 2])
     const text = agent.updates.flatMap(update =>
       update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : []).join('\n')
     expect(text).toMatchInlineSnapshot('"OBIS confirmed write completed.\nOBIS confirmed write completed."')

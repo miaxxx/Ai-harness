@@ -58,7 +58,7 @@ obis_get_skill loads a Kernel IR skill definition for the current deployment. Fo
 
 ## Known Limitations and Deferred Work
 
-工具调用前，Host 管理的能力租约到期后通过同一个 Run 与 Harness Session 重新附着续租；并发调用共享请求。服务端返回过期租约时，在发送业务操作前拒绝执行。显式配置的租约仍由签发方管理，缓存不替换它；服务端拒绝不会触发业务操作重试。
+工具调用前及人工允许确认后，Host 管理的能力租约到期后通过同一个 Run 与 Harness Session 重新附着续租；并发调用共享请求。服务端返回过期租约时，在发送业务操作前拒绝执行。显式配置的租约仍由签发方管理，缓存不替换它；服务端拒绝不会触发业务操作重试。
 
 - 插件需要 OBIS Kernel、凭证提供者和审批服务。缺少或取消人工确认时提案不执行；Harness 确认后业务审批仍可能待处理。技能工具仅读取定义，不启动技能沙箱；登录、刷新和应用渲染由客户端插件负责。
 

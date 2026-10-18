@@ -62,6 +62,6 @@ Stable tool definitions can reuse the request prefix. Recorded results and confi
 
 ## Known Limitations and Deferred Work
 
-Before a tool call, an expired Host-managed capability lease is renewed by attaching the same Run and Harness Session. Concurrent callers share the attachment request. A stale renewal fails before the governed operation is sent. An explicitly configured lease remains owned by its issuer and is not replaced by this cache. Server denials are not operation retries.
+Before a tool call and after an allowed human confirmation, an expired Host-managed capability lease is renewed by attaching the same Run and Harness Session. Concurrent callers share the attachment request. A stale renewal fails before the governed operation is sent. An explicitly configured lease remains owned by its issuer and is not replaced by this cache. Server denials are not operation retries.
 
 - The plugin requires OBIS Kernel, a credential provider and an approval service. Missing or cancelled human confirmation leaves proposals unexecuted. Business approval can remain pending after Harness confirmation. Skill tools read definitions without starting a skill sandbox; login, refresh and application rendering belong to their client plugins.

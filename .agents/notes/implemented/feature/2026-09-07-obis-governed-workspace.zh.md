@@ -16,6 +16,8 @@ OBIS 企业工具最初接受静态 `runId` 和 capability lease。这足以验�
 
 普通 Harness tool result 会包含 proposal、人类确认结果和最终 OBIS execution result。因此既有 Session log 继续作为产品 transcript 与 replay 的 Source of Truth；OBIS 接收的是标准化企业执行事实，而不是 Harness reasoning。
 
+人工确认可能超过能力租约有效期。人工允许后，适配器再次检查缓存租约，通过同一 Run 的附着操作续租，再提交原提案及版本。续租失败时不执行，拒绝时不续租。适配器不会重试被拒绝的执行，也不会在本地延长租约。
+
 ## Alternatives considered
 
 **向模型暴露 `obis_execute_action`。** 拒绝，因为这会把人类确认退化为 prompt 约定，并扩大模型的 mutation authority。adapter 明确把 proposal execution 保留在模型工具注册表之外。

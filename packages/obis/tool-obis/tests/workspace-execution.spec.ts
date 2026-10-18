@@ -449,11 +449,47 @@ describe('OBIS governed workspace behavior', () => {
     expect(requests.filter(request => request.url.pathname === '/v1/agent-runs')).toHaveLength(2)
   })
 
+  it('renews a lease that expires during confirmation before executing the same proposal once', async () => {
+    const { requests } = captureFetch({ renewedLease: { ...lease, id: 'lease-2', expiresAt: '2026-09-09T00:00:00Z' } })
+    const ctx = await mounted()
+    ctx.on('approval/request', () => {
+      vi.setSystemTime(new Date(lease.expiresAt))
+      return Promise.resolve<ApprovalOutcome>('allowed-once')
+    })
+    const result = await execute(ctx, fakeAgent(), 'call-delayed', 'obis_propose_action', {
+      action: 'supplier.update', input: { status: 'approved' },
+    })
+    expect(result.isError).toBe(false)
+    expect(requests.filter(request => request.url.pathname === '/v1/agent-runs')).toHaveLength(1)
+    expect(requests.filter(request => request.url.pathname.endsWith('/attach'))).toHaveLength(2)
+    const executions = requests.filter(request => request.url.pathname.endsWith('/proposal-1/execute'))
+    expect(executions).toHaveLength(1)
+    expect(executions[0]?.headers.get('ohp-capability-lease')).toBe('lease-2')
+    expect(executions[0]?.body).toMatchObject({ runId: 'run-1', expectedVersion: 2 })
+  })
+
+  it('does not execute when the issuer refuses a fresh lease after confirmation', async () => {
+    const { requests } = captureFetch({ renewedLease: lease })
+    const ctx = await mounted()
+    ctx.on('approval/request', () => {
+      vi.setSystemTime(new Date(lease.expiresAt))
+      return Promise.resolve<ApprovalOutcome>('allowed-once')
+    })
+    const result = await execute(ctx, fakeAgent(), 'call-stale-renewal', 'obis_propose_action', {
+      action: 'supplier.update', input: { status: 'approved' },
+    })
+    expect(result.isError).toBe(true)
+    expect(requests.some(request => request.url.pathname.endsWith('/execute'))).toBe(false)
+  })
+
   it('fails closed when the human rejects and never exposes an execute call to the model path', async () => {
     const { requests } = captureFetch()
     const ctx = await mounted()
     const agent = fakeAgent()
-    ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('rejected'))
+    ctx.on('approval/request', () => {
+      vi.setSystemTime(new Date(lease.expiresAt))
+      return Promise.resolve<ApprovalOutcome>('rejected')
+    })
 
     const result = await execute(ctx, agent, 'call-rejected', 'obis_propose_action', {
       action: 'supplier.update',
@@ -467,6 +503,7 @@ describe('OBIS governed workspace behavior', () => {
       execution: { status: 'not-executed' },
     })
     expect(requests.some(request => request.url.pathname.includes('/proposals/proposal-1/execute'))).toBe(false)
+    expect(requests.filter(request => request.url.pathname.endsWith('/attach'))).toHaveLength(1)
     expect(ctx.tools.schemas(agent).some(schema => schema.name === 'obis_execute_action')).toBe(false)
   })
 })

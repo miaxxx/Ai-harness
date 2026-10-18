@@ -365,13 +365,14 @@ export function apply(ctx: Context, input: Config): void {
         if (typeof proposalId !== 'string' || typeof runVersion !== 'number') {
           throw new Error('OBIS proposal response is missing proposal id or governed run version.')
         }
+        const confirmed = await toolContext(exec, toolName)
         const execution = await client.executeProposal(proposalId, {
           environmentId: config.environmentId,
           runId: binding.id,
           expectedVersion: runVersion,
         }, {
           agentRunId: binding.id,
-          ...(context.capabilityLease ? { capabilityLease: context.capabilityLease } : {}),
+          ...(confirmed.context.capabilityLease ? { capabilityLease: confirmed.context.capabilityLease } : {}),
           idempotencyKey: `execute:${String(exec.callId)}:${proposalId}`,
           signal: exec.signal,
         })
